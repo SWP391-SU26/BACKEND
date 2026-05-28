@@ -1,0 +1,2 @@
+-- Vietnamese CourseQA Database Script
+-- TODO: Paste your final 20-table SQL Server script here.
