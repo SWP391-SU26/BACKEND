@@ -1,52 +1,33 @@
 """
-Configuration module for FastAPI AI Engine
-Loads environment variables and provides config object
+Load environment variables từ .env
+Python AI Engine chỉ cần config cho AI layer — không có auth, không có Azure SQL
 """
 
 from pydantic_settings import BaseSettings
 from typing import Optional
-import logging
-
-logger = logging.getLogger(__name__)
+from loguru import logger
+from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from .env"""
-
-    # Azure SQL
-    azure_sql_server: str = "localhost"
-    azure_sql_database: str = "VietnameseCourseQA20DB"
-    azure_sql_user: str = "sa"
-    azure_sql_password: str = "password"
-
     # Qdrant Vector DB
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
 
-    # Azure Blob Storage
-    azure_storage_connection_string: Optional[str] = None
-
-    # LLM API Keys
+    # LLM
     openai_api_key: Optional[str] = None
     gemini_api_key: Optional[str] = None
     llm_model: str = "gpt-4o-mini"
 
-    # Embedding Models
+    # Embedding
     embedding_model_default: str = "BAAI/bge-m3"
 
-    # Fine-tuned Model
+    # Fine-tuned model (HuggingFace Inference API)
     finetuned_model_endpoint: Optional[str] = None
     huggingface_api_key: Optional[str] = None
 
-    # Auth & JWT
-    jwt_secret_key: str = "your-secret-key-change-in-production"
-    jwt_expiration_ms: int = 3600000  # 1 hour
-
-    # Service Ports
+    # Server
     python_ai_port: int = 8001
-    java_be_port: int = 8080
-
-    # Logging
     log_level: str = "INFO"
 
     class Config:
@@ -55,26 +36,20 @@ class Settings(BaseSettings):
         case_sensitive = False
 
 
-# Load settings
-settings = Settings()
-
-
+@lru_cache
 def get_settings() -> Settings:
-    """
-    Dependency injection for FastAPI
-    Returns the settings object
-    """
-    return settings
+    """Singleton settings — cache sau lần đầu load"""
+    return Settings()
 
 
 def log_config_status() -> None:
-    """Log which services are available/configured"""
-    logger.info("=== AI Engine Configuration ===")
-    logger.info(f"Qdrant: {settings.qdrant_host}:{settings.qdrant_port}")
-    logger.info(f"LLM Model: {settings.llm_model}")
-    logger.info(f"Embedding Model: {settings.embedding_model_default}")
-    logger.info(f"OpenAI available: {bool(settings.openai_api_key)}")
-    logger.info(f"Gemini available: {bool(settings.gemini_api_key)}")
-    logger.info(f"Fine-tuned model available: {bool(settings.finetuned_model_endpoint)}")
-    logger.info("================================")
- 
+    """Log trạng thái config khi khởi động"""
+    s = get_settings()
+    logger.info("=== AI Engine Config ===")
+    logger.info(f"Qdrant: {s.qdrant_host}:{s.qdrant_port}")
+    logger.info(f"LLM: {s.llm_model}")
+    logger.info(f"Embedding default: {s.embedding_model_default}")
+    logger.info(f"OpenAI key: {'set' if s.openai_api_key else 'NOT SET'}")
+    logger.info(f"Gemini key: {'set' if s.gemini_api_key else 'NOT SET'}")
+    logger.info(f"HuggingFace endpoint: {'set' if s.finetuned_model_endpoint else 'NOT SET'}")
+    logger.info("========================")

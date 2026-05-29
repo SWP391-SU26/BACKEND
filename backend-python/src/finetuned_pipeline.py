@@ -1,191 +1,69 @@
 """
-Fine-tuned model pipeline - Direct question answering without retrieval
-Queries a fine-tuned language model via Hugging Face Inference API
+Fine-tuned model inference qua HuggingFace Inference API
 """
 
-from typing import Dict, Optional
-import logging
 import httpx
-from app.config import settings
-
-logger = logging.getLogger(__name__)
-
-
-class FinetuneHubClient:
-    """Client for Hugging Face Inference API (fine-tuned model)"""
-
-    def __init__(self, model_endpoint: str = None, api_key: str = None):
-        """
-        Initialize HF Inference API client
-        
-        Args:
-            model_endpoint: Hugging Face model endpoint URL
-            api_key: Hugging Face API key
-        """
-        self.model_endpoint = model_endpoint or settings.finetuned_model_endpoint
-        self.api_key = api_key or settings.huggingface_api_key
-        
-        if not self.model_endpoint:
-            logger.warning("Fine-tuned model endpoint not configured")
-        
-        logger.info(f"Initialized Hugging Face client for: {self.model_endpoint}")
-
-    def query(self, question: str) -> Dict:
-        """
-        Query fine-tuned model
-        
-        Args:
-            question: Input question
-            
-        Returns:
-            Dict with generated_text and other metadata
-        """
-        if not self.model_endpoint:
-            return {
-                "status": "error",
-                "message": "Fine-tuned model endpoint not configured"
-            }
-        
-        try:
-            headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
-            
-            payload = {
-                "inputs": question,
-                "parameters": {
-                    "max_new_tokens": 256,
-                    "temperature": 0.7,
-                    "top_p": 0.9,
-                }
-            }
-            
-            response = httpx.post(
-                self.model_endpoint,
-                json=payload,
-                headers=headers,
-                timeout=30.0
-            )
-            
-            if response.status_code != 200:
-                logger.error(f"HF API error: {response.status_code} - {response.text}")
-                return {
-                    "status": "error",
-                    "message": f"Model API error: {response.status_code}"
-                }
-            
-            result = response.json()
-            logger.info("Successfully queried fine-tuned model")
-            return result
-        
-        except Exception as e:
-            logger.error(f"Error querying fine-tuned model: {str(e)}")
-            return {
-                "status": "error",
-                "message": f"Failed to query model: {str(e)}"
-            }
+import time
+from loguru import logger
+from fastapi import HTTPException
+from app.config import get_settings
 
 
-class FinetuneAnswerer:
+async def run_finetuned(question: str, conversation_history: list[dict]) -> dict:
     """
-    Pipeline for fine-tuned model inference
+    Gọi HuggingFace Inference API
+    Trả về dict khớp với ChatFinetunedResponse schema
     """
+    s = get_settings()
+    start_time = time.time()
 
-    def __init__(self, endpoint: str = None, api_key: str = None):
-        """
-        Initialize fine-tuned answerer
-        
-        Args:
-            endpoint: Model endpoint URL
-            api_key: HF API key
-        """
-        self.client = FinetuneHubClient(endpoint, api_key)
-
-    def generate_answer(self, question: str) -> str:
-        """
-        Generate answer using fine-tuned model
-        
-        Args:
-            question: User question
-            
-        Returns:
-            Generated answer text
-        """
-        # Mock implementation (for dev without actual model)
-        logger.warning("Fine-tuned model not actually deployed - returning mock answer")
-        return (
-            "Đây là câu trả lời mô phỏng từ fine-tuned model. "
-            "Trong production, câu trả lời sẽ được sinh từ fine-tuned model đã deploy."
+    if not s.finetuned_model_endpoint or not s.huggingface_api_key:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "FT-001", "message": "Fine-tuned model not configured"}
         )
 
-    def calculate_confidence_score(self, answer: str, question: str) -> float:
-        """
-        Calculate confidence score for fine-tuned answer
-        
-        Mock implementation - in production, could use model logits
-        
-        Args:
-            answer: Generated answer
-            question: Original question
-            
-        Returns:
-            Confidence score (0-100)
-        """
-        # Mock: use length and structure as proxy for confidence
-        if not answer or len(answer) < 20:
-            return 40.0
-        
-        logger.info(f"Fine-tuned model confidence: 80.0")
-        return 80.0
+    # Build input text
+    history_text = ""
+    for turn in conversation_history[-4:]:
+        role = "Sinh viên" if turn["role"] == "user" else "Trợ lý"
+        history_text += f"{role}: {turn['content']}\n"
+    input_text = f"{history_text}Sinh viên: {question}\nTrợ lý:"
 
-    def process(self, question: str) -> Dict:
-        """
-        Process question through fine-tuned model
-        
-        Args:
-            question: User question
-            
-        Returns:
-            Dict with answer, score, and status
-        """
-        # Validate input
-        if not question or len(question) < 5:
-            return {
-                "status": "error",
-                "message": "Question too short (minimum 5 characters)"
-            }
-        
-        # Generate answer
-        answer = self.generate_answer(question)
-        
-        # Calculate confidence
-        confidence_score = self.calculate_confidence_score(answer, question)
-        
+    headers = {"Authorization": f"Bearer {s.huggingface_api_key}"}
+    payload = {
+        "inputs": input_text,
+        "parameters": {
+            "max_new_tokens": 512,
+            "temperature": 0.7,
+            "do_sample": False
+        }
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(s.finetuned_model_endpoint, json=payload, headers=headers)
+            response.raise_for_status()
+            result = response.json()
+
+        # HuggingFace trả về list hoặc dict tùy model
+        if isinstance(result, list):
+            answer = result[0].get("generated_text", "").replace(input_text, "").strip()
+        else:
+            answer = result.get("generated_text", "").replace(input_text, "").strip()
+
+        latency = int((time.time() - start_time) * 1000)
+        logger.info(f"Fine-tuned inference: latency={latency}ms")
+
         return {
-            "status": "success",
-            "answer": answer,
-            "confidence_score": confidence_score,
-            "model_type": "fine-tuned"
+            "finetuned_answer": answer,
+            "finetuned_score": 0.8,  # Default score
+            "latency_ms": latency
         }
 
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail={"code": "FT-002", "message": "Fine-tuned model timeout"})
+    except Exception as e:
+        logger.error(f"Fine-tuned error: {e}")
+        raise HTTPException(status_code=502, detail={"code": "FT-001", "message": str(e)})
 
-# Singleton instance
-_finetuner = None
-
-
-def get_finetuner(endpoint: str = None, api_key: str = None) -> FinetuneAnswerer:
-    """
-    Get or create finetuned answerer instance
-    
-    Args:
-        endpoint: Model endpoint
-        api_key: HF API key
-        
-    Returns:
-        FinetuneAnswerer instance
-    """
-    global _finetuner
-    
-    if _finetuner is None:
-        _finetuner = FinetuneAnswerer(endpoint, api_key)
-    
-    return _finetuner
- 

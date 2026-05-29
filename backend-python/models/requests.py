@@ -1,134 +1,79 @@
-"""
-Request schemas for FastAPI AI Engine
-Used for input validation and documentation
-"""
+"""Pydantic request schemas — khớp với API contract Java gửi sang"""
 
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import Optional
+from enum import Enum
+
+
+class EmbeddingModel(str, Enum):
+    BGE_M3 = "bge-m3"
+    E5_BASE = "multilingual-e5-base"
+    OPENAI = "text-embedding-3-small"
+    PHOBERT = "phobert"
+
+
+class ChunkItem(BaseModel):
+    chunk_index: int
+    content: str
+    source_page: int
+    token_count: int
 
 
 class IndexDocumentRequest(BaseModel):
-    """
-    Request to index a document into vector database
-    Used by Java: POST /ai/index-document
-    """
+    """POST /ai/index-document"""
+    document_id: str
+    chunks: list[ChunkItem]
+    embedding_model: EmbeddingModel = EmbeddingModel.BGE_M3
+    collection_name: str  # ví dụ: e4_bgem3_500_k3
 
-    document_id: str = Field(
-        ..., 
-        description="Unique identifier for the document",
-        example="doc_123_calculus"
-    )
-    chunks: List[str] = Field(
-        ...,
-        description="List of text chunks from the document",
-        example=["Calculus is the study of...", "Derivatives measure..."]
-    )
-    embedding_model: str = Field(
-        default="BAAI/bge-m3",
-        description="Embedding model to use for vectorization",
-        example="BAAI/bge-m3"
-    )
-    metadata: Optional[dict] = Field(
-        default=None,
-        description="Additional metadata (course_name, chapter, etc.)",
-        example={"course": "Calculus I", "chapter": "Limits"}
-    )
+
+class ConversationTurn(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str
 
 
 class ChatRequest(BaseModel):
-    """
-    Request for RAG chat endpoint
-    Used by Java: POST /ai/chat
-    """
-
-    question: str = Field(
-        ...,
-        description="User question",
-        min_length=5,
-        max_length=500,
-        example="Định nghĩa giới hạn hàm số là gì?"
-    )
-    embedding_model: str = Field(
-        default="BAAI/bge-m3",
-        description="Embedding model for question encoding",
-        example="BAAI/bge-m3"
-    )
-    top_k: int = Field(
-        default=3,
-        description="Number of top relevant chunks to retrieve",
-        ge=1,
-        le=10,
-        example=3
-    )
-    chunking_strategy: str = Field(
-        default="recursive",
-        description="Text chunking strategy used during indexing",
-        example="recursive"
-    )
+    """POST /ai/chat"""
+    question: str
+    collection_name: str
+    embedding_model: EmbeddingModel = EmbeddingModel.BGE_M3
+    top_k: int = Field(default=5, ge=1, le=10)
+    similarity_threshold: float = Field(default=0.72, ge=0.0, le=1.0)
+    conversation_history: list[ConversationTurn] = []
 
 
-class ChatFinetuneRequest(BaseModel):
-    """
-    Request for fine-tuned model chat endpoint
-    Used by Java: POST /ai/chat-finetuned
-    """
-
-    question: str = Field(
-        ...,
-        description="User question",
-        min_length=5,
-        max_length=500,
-        example="Python là ngôn ngữ lập trình gì?"
-    )
+class ChatFinetunedRequest(BaseModel):
+    """POST /ai/chat-finetuned"""
+    question: str
+    conversation_history: list[ConversationTurn] = []
 
 
 class EvaluateRequest(BaseModel):
-    """
-    Request to evaluate and compare two answers
-    Used by Java: POST /ai/evaluate
-    """
+    """POST /ai/evaluate"""
+    question: str
+    rag_answer: str
+    finetuned_answer: str
+    rag_score: float
+    finetuned_score: float
 
-    question: str = Field(
-        ...,
-        description="Original question",
-        example="Công thức nào là đúng?"
-    )
-    rag_answer: str = Field(
-        ...,
-        description="Answer from RAG pipeline",
-        example="Công thức là..."
-    )
-    finetuned_answer: str = Field(
-        ...,
-        description="Answer from fine-tuned model",
-        example="Công thức là..."
-    )
+
+class BenchmarkConfig(BaseModel):
+    collection_name: str
+    embedding_model: EmbeddingModel
+    top_k: int = 5
+    chunk_size: int = 500
+    similarity_threshold: float = 0.72
+
+
+class QuestionItem(BaseModel):
+    question_id: str
+    question: str
+    ground_truth: str
 
 
 class BenchmarkRequest(BaseModel):
-    """
-    Request to run RAGAS benchmark
-    Used by Java: POST /ai/benchmark
-    """
+    """POST /ai/benchmark"""
+    experiment_id: str
+    config: BenchmarkConfig
+    questions: list[QuestionItem]
 
-    experiment_id: str = Field(
-        ...,
-        description="Experiment ID for tracking",
-        example="exp_001_e5base_k3"
-    )
-    questions: List[str] = Field(
-        ...,
-        description="List of test questions",
-        example=["Câu 1?", "Câu 2?"]
-    )
-    config: dict = Field(
-        ...,
-        description="Benchmark configuration",
-        example={
-            "embedding_model": "BAAI/bge-m3",
-            "chunk_size": 500,
-            "top_k": 3,
-            "chunking_strategy": "recursive"
-        }
-    )
- 

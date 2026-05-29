@@ -1,240 +1,131 @@
 """
-RAG (Retrieval Augmented Generation) pipeline
-Combines document retrieval with LLM for context-aware answers
+RAG Pipeline: embed query → search Qdrant → build prompt → call LLM → parse citations
 """
 
-from typing import List, Dict, Optional, Tuple
-import logging
-from app.config import settings
-from src.vector_store import get_vector_store
-from src.embeddings import embed_question
+from loguru import logger
+from fastapi import HTTPException
+from src.embeddings import embed_query
+from src.vector_store import search_similar
+from app.config import get_settings
+import time
 
-logger = logging.getLogger(__name__)
+
+OUT_OF_SCOPE_MSG = "Câu hỏi này nằm ngoài phạm vi tài liệu môn học. Vui lòng hỏi các nội dung liên quan đến tài liệu đã được cung cấp."
+
+SYSTEM_PROMPT = """Bạn là trợ lý học tập cho sinh viên FPT University.
+Chỉ trả lời dựa trên các đoạn tài liệu được cung cấp trong context bên dưới.
+Nếu thông tin không có trong tài liệu, trả lời đúng 1 câu: "Câu hỏi này nằm ngoài phạm vi tài liệu môn học."
+Trích dẫn nguồn theo format [1], [2] tương ứng với thứ tự chunk trong context.
+Trả lời bằng tiếng Việt, rõ ràng và chính xác."""
 
 
-class RAGPipeline:
+def _build_context(chunks: list[dict]) -> str:
+    """Ghép chunks thành context string cho prompt"""
+    parts = []
+    for i, chunk in enumerate(chunks, 1):
+        parts.append(f"[{i}] (Trang {chunk['source_page']}): {chunk['content']}")
+    return "\n\n".join(parts)
+
+
+async def _call_llm(prompt: str, system: str, conversation_history: list[dict]) -> tuple[str, int]:
     """
-    RAG pipeline: retrieve relevant documents, build context, query LLM
+    Gọi LLM API (OpenAI hoặc Gemini)
+    Trả về (answer_text, tokens_used)
     """
+    s = get_settings()
+    messages = []
 
-    def __init__(
-        self,
-        collection_name: str,
-        embedding_model: str = None,
-        top_k: int = 3,
-        min_relevance_score: float = 0.5
-    ):
-        """
-        Initialize RAG pipeline
-        
-        Args:
-            collection_name: Qdrant collection name
-            embedding_model: Embedding model to use
-            top_k: Number of top results to retrieve
-            min_relevance_score: Minimum relevance threshold
-        """
-        self.collection_name = collection_name
-        self.embedding_model = embedding_model or settings.embedding_model_default
-        self.top_k = top_k
-        self.min_relevance_score = min_relevance_score
-        
-        self.vector_store = get_vector_store(model_name=self.embedding_model)
-        logger.info(f"Initialized RAG pipeline for collection: {collection_name}")
+    # Thêm lịch sử hội thoại (tối đa 6 turns gần nhất)
+    for turn in conversation_history[-6:]:
+        messages.append({"role": turn["role"], "content": turn["content"]})
+    messages.append({"role": "user", "content": prompt})
 
-    def retrieve_context(self, question: str) -> Tuple[List[str], List[Dict]]:
-        """
-        Retrieve relevant chunks from vector database
-        
-        Args:
-            question: User question
-            
-        Returns:
-            Tuple of (retrieved_texts, metadata)
-        """
-        try:
-            results = self.vector_store.search(
-                collection_name=self.collection_name,
-                query_text=question,
-                top_k=self.top_k,
-                min_score=self.min_relevance_score
-            )
-            
-            if not results:
-                logger.warning(f"No relevant documents found for question")
-                return [], []
-            
-            texts = [r["text"] for r in results]
-            metadata = [
-                {
-                    "id": r["id"],
-                    "score": r["score"],
-                    "document_id": r["document_id"],
-                    "chunk_index": r["chunk_index"]
-                }
-                for r in results
-            ]
-            
-            logger.info(f"Retrieved {len(texts)} relevant chunks")
-            return texts, metadata
-        
-        except Exception as e:
-            logger.error(f"Error retrieving context: {str(e)}")
-            return [], []
-
-    def build_prompt(
-        self,
-        question: str,
-        context_chunks: List[str]
-    ) -> str:
-        """
-        Build LLM prompt with question and context
-        
-        Args:
-            question: User question
-            context_chunks: Retrieved context chunks
-            
-        Returns:
-            Formatted prompt for LLM
-        """
-        context_text = "\n\n".join(context_chunks)
-        
-        prompt = f"""Bạn là một trợ lý giáo dục hữu ích. Trả lời câu hỏi dưới đây dựa trên tài liệu được cung cấp.
-
-Tài liệu tham khảo:
-{context_text}
-
-Câu hỏi: {question}
-
-Hướng dẫn:
-1. Chỉ sử dụng thông tin từ tài liệu cung cấp
-2. Nếu không tìm thấy câu trả lời, hãy nói rõ "Không tìm thấy trong tài liệu"
-3. Trả lời rõ ràng, ngắn gọn (không quá 500 từ)
-4. Sử dụng tiếng Việt
-
-Trả lời:"""
-        
-        return prompt
-
-    def generate_answer_with_llm(self, prompt: str) -> str:
-        """
-        Query LLM to generate answer (mock implementation)
-        
-        In production, this calls OpenAI/Gemini API
-        
-        Args:
-            prompt: Formatted prompt for LLM
-            
-        Returns:
-            LLM-generated answer
-        """
-        # TODO: Integrate with OpenAI or Gemini API
-        # For now, return mock response
-        logger.warning("LLM integration not implemented - returning mock answer")
-        return (
-            "Đây là câu trả lời mô phỏng từ RAG pipeline. "
-            "Trong production, câu trả lời sẽ được sinh từ LLM API."
+    if s.openai_api_key:
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key=s.openai_api_key)
+        response = await client.chat.completions.create(
+            model=s.llm_model,
+            messages=messages,
+            system=system,
+            temperature=0.7,
+            max_tokens=1024,
+            timeout=30
         )
+        return response.choices[0].message.content, response.usage.total_tokens
 
-    def calculate_confidence_score(
-        self,
-        question: str,
-        retrieved_scores: List[float]
-    ) -> float:
-        """
-        Calculate RAG confidence score based on retrieval quality
-        
-        Args:
-            question: User question
-            retrieved_scores: Relevance scores from vector search
-            
-        Returns:
-            Confidence score (0-100)
-        """
-        if not retrieved_scores:
-            return 0.0
-        
-        # Average of top scores, scaled to 0-100
-        avg_score = sum(retrieved_scores) / len(retrieved_scores)
-        confidence = avg_score * 100
-        
-        logger.info(f"RAG confidence score: {confidence:.1f}")
-        return confidence
+    elif s.gemini_api_key:
+        import google.generativeai as genai
+        genai.configure(api_key=s.gemini_api_key)
+        model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=system)
+        response = model.generate_content(prompt)
+        return response.text, 0  # Gemini không trả token count dễ dàng
 
-    def process(self, question: str) -> Dict:
-        """
-        Full RAG pipeline: retrieve → build prompt → query LLM → return answer
-        
-        Args:
-            question: User question
-            
-        Returns:
-            Dict with answer, citations, and confidence score
-        """
-        # Validate input
-        if not question or len(question) < 5:
-            return {
-                "status": "error",
-                "message": "Question too short (minimum 5 characters)"
-            }
-        
-        # Step 1: Retrieve context
-        context_chunks, metadata = self.retrieve_context(question)
-        
-        if not context_chunks:
-            return {
-                "status": "error",
-                "message": "No relevant documents found in knowledge base"
-            }
-        
-        # Step 2: Build prompt
-        prompt = self.build_prompt(question, context_chunks)
-        
-        # Step 3: Generate answer
-        answer = self.generate_answer_with_llm(prompt)
-        
-        # Step 4: Calculate confidence
-        relevance_scores = [m["score"] for m in metadata]
-        confidence_score = self.calculate_confidence_score(question, relevance_scores)
-        
-        # Step 5: Format citations
-        citations = [
-            {
-                "document_id": m["document_id"],
-                "chunk_index": m["chunk_index"],
-                "relevance_score": m["score"],
-                "text_preview": context_chunks[i][:200] + "..."
-            }
-            for i, m in enumerate(metadata)
-        ]
-        
+    else:
+        raise HTTPException(status_code=500, detail={"code": "RAG-003", "message": "No LLM API key configured"})
+
+
+async def run_rag(
+    question: str,
+    collection_name: str,
+    embedding_model: str,
+    top_k: int,
+    similarity_threshold: float,
+    conversation_history: list[dict]
+) -> dict:
+    """
+    Full RAG pipeline
+    Trả về dict khớp với ChatResponse schema
+    """
+    start_time = time.time()
+
+    # 1. Embed query
+    query_vector = await embed_query(question, embedding_model)
+
+    # 2. Search Qdrant
+    chunks = await search_similar(collection_name, query_vector, top_k, similarity_threshold)
+
+    # 3. Out-of-scope check
+    if not chunks or chunks[0]["similarity_score"] < 0.5:
+        logger.info(f"Out of scope: top score={chunks[0]['similarity_score'] if chunks else 0}")
         return {
-            "status": "success",
-            "answer": answer,
-            "citations": citations,
-            "confidence_score": confidence_score,
-            "num_chunks_retrieved": len(context_chunks)
+            "rag_answer": OUT_OF_SCOPE_MSG,
+            "citations": [],
+            "rag_score": 0.0,
+            "is_out_of_scope": True,
+            "tokens_used": 0,
+            "latency_ms": int((time.time() - start_time) * 1000)
         }
 
+    # 4. Build prompt
+    context = _build_context(chunks)
+    prompt = f"Context tài liệu:\n{context}\n\nCâu hỏi: {question}"
 
-def create_rag_pipeline(
-    collection_name: str,
-    embedding_model: str = None,
-    top_k: int = 3
-) -> RAGPipeline:
-    """
-    Factory function to create RAG pipeline
-    
-    Args:
-        collection_name: Qdrant collection name
-        embedding_model: Embedding model
-        top_k: Number of results to retrieve
-        
-    Returns:
-        Initialized RAGPipeline instance
-    """
-    return RAGPipeline(
-        collection_name=collection_name,
-        embedding_model=embedding_model,
-        top_k=top_k
-    )
- 
+    # 5. Call LLM
+    answer, tokens = await _call_llm(prompt, SYSTEM_PROMPT, conversation_history)
+
+    # 6. Build citations
+    citations = [
+        {
+            "chunk_id": c["chunk_id"],
+            "document_id": c["document_id"],
+            "source_page": c["source_page"],
+            "excerpt": c["content"][:150],
+            "similarity_score": c["similarity_score"]
+        }
+        for c in chunks
+    ]
+
+    latency = int((time.time() - start_time) * 1000)
+    avg_score = sum(c["similarity_score"] for c in chunks) / len(chunks)
+
+    logger.info(f"RAG done: {len(chunks)} chunks, score={avg_score:.2f}, latency={latency}ms")
+
+    return {
+        "rag_answer": answer,
+        "citations": citations,
+        "rag_score": avg_score,
+        "is_out_of_scope": False,
+        "tokens_used": tokens,
+        "latency_ms": latency
+    }
+

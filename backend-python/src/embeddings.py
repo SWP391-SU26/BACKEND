@@ -1,168 +1,112 @@
 """
-Embeddings module - Wrapper for multiple embedding models
-Supports: bge-m3, sentence-transformers, and custom models
+Wrapper cho 4 embedding models
+Tất cả return normalized L2 vectors
+Cache model instance theo model_name (singleton per process)
 """
 
+from typing import Callable
+from loguru import logger
 import numpy as np
-from sentence_transformers import SentenceTransformer
-from typing import List, Union
-import logging
-from app.config import settings
-
-logger = logging.getLogger(__name__)
-
-# Cache for loaded models to avoid reloading
-MODEL_CACHE = {}
 
 
-class EmbeddingProvider:
-    """
-    Unified interface for different embedding models
-    """
+# Model cache — load 1 lần, tái dụng mãi
+_model_cache: dict = {}
 
-    def __init__(self, model_name: str = None):
-        """
-        Initialize embedding provider
-        
-        Args:
-            model_name: Name of embedding model (e.g., 'BAAI/bge-m3')
-        """
-        self.model_name = model_name or settings.embedding_model_default
-        self.model = self._load_model(self.model_name)
 
-    def _load_model(self, model_name: str) -> SentenceTransformer:
-        """
-        Load embedding model with caching
-        
-        Args:
-            model_name: HuggingFace model identifier
-            
-        Returns:
-            SentenceTransformer model instance
-        """
-        if model_name not in MODEL_CACHE:
-            logger.info(f"Loading embedding model: {model_name}")
-            try:
-                MODEL_CACHE[model_name] = SentenceTransformer(model_name)
-                logger.info(f"Successfully loaded: {model_name}")
-            except Exception as e:
-                logger.error(f"Failed to load embedding model {model_name}: {str(e)}")
+def _get_bge_m3(texts: list[str]) -> list[list[float]]:
+    """BAAI/bge-m3 — recommended primary model"""
+    from sentence_transformers import SentenceTransformer
+    if "bge-m3" not in _model_cache:
+        logger.info("Loading BAAI/bge-m3...")
+        _model_cache["bge-m3"] = SentenceTransformer("BAAI/bge-m3")
+    model = _model_cache["bge-m3"]
+    vectors = model.encode(texts, batch_size=32, normalize_embeddings=True)
+    return vectors.tolist()
+
+
+def _get_e5_base(texts: list[str], is_query: bool = False) -> list[list[float]]:
+    """multilingual-e5-base — cần prefix 'query:' hoặc 'passage:'"""
+    from sentence_transformers import SentenceTransformer
+    if "e5-base" not in _model_cache:
+        logger.info("Loading multilingual-e5-base...")
+        _model_cache["e5-base"] = SentenceTransformer("intfloat/multilingual-e5-base")
+    model = _model_cache["e5-base"]
+    prefix = "query: " if is_query else "passage: "
+    prefixed = [prefix + t for t in texts]
+    vectors = model.encode(prefixed, normalize_embeddings=True)
+    return vectors.tolist()
+
+
+async def _get_openai(texts: list[str]) -> list[list[float]]:
+    """text-embedding-3-small — OpenAI API, retry 3 lần"""
+    from openai import AsyncOpenAI
+    from app.config import get_settings
+    import asyncio
+    client = AsyncOpenAI(api_key=get_settings().openai_api_key)
+    for attempt in range(3):
+        try:
+            response = await client.embeddings.create(
+                model="text-embedding-3-small",
+                input=texts,
+                timeout=30
+            )
+            vectors = [item.embedding for item in response.data]
+            # Normalize L2
+            norms = [np.sqrt(sum(v**2 for v in vec)) for vec in vectors]
+            return [[x / n for x, n in zip(v, [norm]*len(v))] for v, norm in zip(vectors, norms)]
+        except Exception as e:
+            if attempt == 2:
+                logger.error(f"OpenAI embedding failed after 3 retries: {e}")
                 raise
-        return MODEL_CACHE[model_name]
-
-    def embed_text(self, text: str, normalize: bool = True) -> np.ndarray:
-        """
-        Embed a single text string
-        
-        Args:
-            text: Text to embed
-            normalize: Whether to normalize embeddings
-            
-        Returns:
-            Embedding vector (1D numpy array)
-        """
-        if not text or not isinstance(text, str):
-            raise ValueError("Input must be non-empty string")
-        
-        embedding = self.model.encode(text, normalize_embeddings=normalize)
-        return embedding
-
-    def embed_texts(self, texts: List[str], normalize: bool = True) -> List[np.ndarray]:
-        """
-        Embed multiple texts
-        
-        Args:
-            texts: List of text strings
-            normalize: Whether to normalize embeddings
-            
-        Returns:
-            List of embedding vectors
-        """
-        if not texts or not all(isinstance(t, str) for t in texts):
-            raise ValueError("Input must be list of non-empty strings")
-        
-        embeddings = self.model.encode(texts, normalize_embeddings=normalize)
-        return embeddings.tolist()
-
-    def get_embedding_dimension(self) -> int:
-        """
-        Get dimension of embeddings from this model
-        
-        Returns:
-            Dimension (e.g., 768 for bge-m3)
-        """
-        # Encode a dummy text to get dimension
-        dummy = self.embed_text("dummy")
-        return len(dummy)
-
-    def similarity_score(self, text1: str, text2: str) -> float:
-        """
-        Calculate cosine similarity between two texts
-        
-        Args:
-            text1: First text
-            text2: Second text
-            
-        Returns:
-            Similarity score (0-1)
-        """
-        emb1 = self.embed_text(text1, normalize=True)
-        emb2 = self.embed_text(text2, normalize=True)
-        
-        # Cosine similarity (dot product with normalized vectors)
-        similarity = np.dot(emb1, emb2)
-        return float(similarity)
+            await asyncio.sleep(2 ** attempt)
 
 
-# Singleton instances for each model
-_providers = {}
+def _get_phobert(texts: list[str]) -> list[list[float]]:
+    """PhoBERT — cần mean pooling thủ công"""
+    import torch
+    from transformers import AutoTokenizer, AutoModel
+    if "phobert" not in _model_cache:
+        logger.info("Loading PhoBERT...")
+        tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base")
+        model = AutoModel.from_pretrained("vinai/phobert-base")
+        model.eval()
+        _model_cache["phobert"] = (tokenizer, model)
+    tokenizer, model = _model_cache["phobert"]
+
+    encoded = tokenizer(texts, padding=True, truncation=True, max_length=256, return_tensors="pt")
+    with torch.no_grad():
+        output = model(**encoded)
+    # Mean pooling
+    attention_mask = encoded["attention_mask"]
+    token_embeddings = output.last_hidden_state
+    input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+    vectors = torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+    # Normalize L2
+    vectors = torch.nn.functional.normalize(vectors, p=2, dim=1)
+    return vectors.tolist()
 
 
-def get_embedding_provider(model_name: str = None) -> EmbeddingProvider:
+async def embed_texts(texts: list[str], model_name: str, is_query: bool = False) -> list[list[float]]:
     """
-    Get or create embedding provider (singleton per model)
-    
-    Args:
-        model_name: Embedding model name
-        
-    Returns:
-        EmbeddingProvider instance
+    Entry point chính — embed list of texts
+    model_name: "bge-m3" | "multilingual-e5-base" | "text-embedding-3-small" | "phobert"
+    is_query: True nếu embed câu hỏi (ảnh hưởng e5 prefix)
     """
-    if model_name is None:
-        model_name = settings.embedding_model_default
-    
-    if model_name not in _providers:
-        _providers[model_name] = EmbeddingProvider(model_name)
-    
-    return _providers[model_name]
+    logger.debug(f"Embedding {len(texts)} texts with {model_name}")
+    if model_name == "bge-m3":
+        return _get_bge_m3(texts)
+    elif model_name == "multilingual-e5-base":
+        return _get_e5_base(texts, is_query=is_query)
+    elif model_name == "text-embedding-3-small":
+        return await _get_openai(texts)
+    elif model_name == "phobert":
+        return _get_phobert(texts)
+    else:
+        raise ValueError(f"Unknown embedding model: {model_name}")
 
 
-def embed_question(question: str, model_name: str = None) -> np.ndarray:
-    """
-    Quick function to embed a question
-    
-    Args:
-        question: Question text
-        model_name: Embedding model to use
-        
-    Returns:
-        Question embedding
-    """
-    provider = get_embedding_provider(model_name)
-    return provider.embed_text(question, normalize=True)
+async def embed_query(query: str, model_name: str) -> list[float]:
+    """Embed 1 câu hỏi — shorthand cho single query"""
+    vectors = await embed_texts([query], model_name, is_query=True)
+    return vectors[0]
 
-
-def embed_documents(documents: List[str], model_name: str = None) -> List[np.ndarray]:
-    """
-    Quick function to embed multiple documents
-    
-    Args:
-        documents: List of document texts
-        model_name: Embedding model to use
-        
-    Returns:
-        List of document embeddings
-    """
-    provider = get_embedding_provider(model_name)
-    return provider.embed_texts(documents, normalize=True)
- 
