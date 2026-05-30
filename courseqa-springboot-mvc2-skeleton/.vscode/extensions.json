@@ -1,8 +1,0 @@
-{
-  "recommendations": [
-    "vscjava.vscode-java-pack",
-    "vmware.vscode-spring-boot",
-    "vscjava.vscode-maven",
-    "ms-mssql.mssql"
-  ]
-}
