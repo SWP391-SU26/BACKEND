@@ -1,0 +1,97 @@
+2026-05-30 21:38:11.277 Uvicorn server started on 127.0.0.1:8501
+Exception in callback AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\app_session.py:587
+handle: <Handle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\app_session.py:587>
+Traceback (most recent call last):
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\events.py", line 88, in _run
+    self._context.run(self._callback, *self._args)
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\app_session.py", line 587, in <lambda>
+    lambda: self._handle_scriptrunner_event_on_event_loop(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\app_session.py", line 682, in _handle_scriptrunner_event_on_event_loop
+    msg = self._create_new_session_message(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\app_session.py", line 841, in _create_new_session_message
+    _populate_user_info_msg(imsg.user_info)
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\app_session.py", line 1339, in _populate_user_info_msg
+    inst = Installation.instance()
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\metrics_util.py", line 435, in instance
+    cls._instance = Installation()
+                    ^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\metrics_util.py", line 444, in __init__
+    self.installation_id_v4 = _get_machine_id_v4()
+                              ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\metrics_util.py", line 416, in _get_machine_id_v4
+    with file_util.streamlit_write(filepath) as output:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\contextlib.py", line 137, in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\file_util.py", line 113, in streamlit_write
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+  File "<frozen os>", line 225, in makedirs
+PermissionError: [WinError 5] Access is denied: 'C:\\Users\\quang\\.streamlit'
+Exception in callback AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\app_session.py:587
+handle: <Handle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\app_session.py:587>
+Traceback (most recent call last):
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\events.py", line 88, in _run
+    self._context.run(self._callback, *self._args)
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\app_session.py", line 587, in <lambda>
+    lambda: self._handle_scriptrunner_event_on_event_loop(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\app_session.py", line 682, in _handle_scriptrunner_event_on_event_loop
+    msg = self._create_new_session_message(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\app_session.py", line 841, in _create_new_session_message
+    _populate_user_info_msg(imsg.user_info)
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\app_session.py", line 1339, in _populate_user_info_msg
+    inst = Installation.instance()
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\metrics_util.py", line 435, in instance
+    cls._instance = Installation()
+                    ^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\metrics_util.py", line 444, in __init__
+    self.installation_id_v4 = _get_machine_id_v4()
+                              ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\metrics_util.py", line 416, in _get_machine_id_v4
+    with file_util.streamlit_write(filepath) as output:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\contextlib.py", line 137, in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\file_util.py", line 113, in streamlit_write
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+  File "<frozen os>", line 225, in makedirs
+PermissionError: [WinError 5] Access is denied: 'C:\\Users\\quang\\.streamlit'
+Exception in callback AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\app_session.py:587
+handle: <Handle AppSession._on_scriptrunner_event.<locals>.<lambda>() at C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\app_session.py:587>
+Traceback (most recent call last):
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\asyncio\events.py", line 88, in _run
+    self._context.run(self._callback, *self._args)
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\app_session.py", line 587, in <lambda>
+    lambda: self._handle_scriptrunner_event_on_event_loop(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\app_session.py", line 682, in _handle_scriptrunner_event_on_event_loop
+    msg = self._create_new_session_message(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\app_session.py", line 841, in _create_new_session_message
+    _populate_user_info_msg(imsg.user_info)
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\app_session.py", line 1339, in _populate_user_info_msg
+    inst = Installation.instance()
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\metrics_util.py", line 435, in instance
+    cls._instance = Installation()
+                    ^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\metrics_util.py", line 444, in __init__
+    self.installation_id_v4 = _get_machine_id_v4()
+                              ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\runtime\metrics_util.py", line 416, in _get_machine_id_v4
+    with file_util.streamlit_write(filepath) as output:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\contextlib.py", line 137, in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+  File "C:\Users\quang\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\site-packages\streamlit\file_util.py", line 113, in streamlit_write
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+  File "<frozen os>", line 225, in makedirs
+PermissionError: [WinError 5] Access is denied: 'C:\\Users\\quang\\.streamlit'
