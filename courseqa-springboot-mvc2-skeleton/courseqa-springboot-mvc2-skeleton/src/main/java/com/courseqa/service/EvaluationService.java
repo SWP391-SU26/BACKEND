@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * EvaluationService - Quản lý evaluation datasets, questions, experiments, results
@@ -33,24 +34,24 @@ public class EvaluationService {
     /**
      * Tạo evaluation dataset mới
      *
-     * @param name Tên dataset
-     * @param subjectId ID của subject/course
+     * @param datasetName Tên dataset
+     * @param courseId ID của course
+     * @param workspaceId ID của workspace
      * @param createdBy ID của user tạo dataset
      * @return EvaluationDataset
      */
-    public EvaluationDataset createDataset(String name, Long subjectId, Long createdBy) {
-        logger.info("Creating evaluation dataset: name={}, subjectId={}, createdBy={}", name, subjectId, createdBy);
+    public EvaluationDataset createDataset(String datasetName, UUID courseId, UUID workspaceId, UUID createdBy) {
+        log.info("Creating evaluation dataset: name={}, courseId={}, createdBy={}", datasetName, courseId, createdBy);
 
-        EvaluationDataset dataset = EvaluationDataset.builder()
-                .name(name)
-                .subjectId(subjectId)
-                .questionCount(0)
-                .createdBy(createdBy)
-                .createdAt(LocalDateTime.now())
-                .build();
+        EvaluationDataset dataset = new EvaluationDataset();
+        dataset.setDatasetName(datasetName);
+        dataset.setCourseId(courseId);
+        dataset.setWorkspaceId(workspaceId);
+        dataset.setCreatedBy(createdBy);
+        dataset.setCreatedAt(LocalDateTime.now());
 
         EvaluationDataset savedDataset = evaluationDatasetRepository.save(dataset);
-        logger.info("Created evaluation dataset with id: {}", savedDataset.getId());
+        log.info("Created evaluation dataset with id: {}", savedDataset.getDatasetId());
         return savedDataset;
     }
 
@@ -60,44 +61,37 @@ public class EvaluationService {
      * @return List<EvaluationDataset>
      */
     public List<EvaluationDataset> listDatasets() {
-        logger.info("Fetching all evaluation datasets");
+        log.info("Fetching all evaluation datasets");
 
         List<EvaluationDataset> datasets = evaluationDatasetRepository.findAll();
-        logger.debug("Found {} datasets", datasets.size());
+        log.debug("Found {} datasets", datasets.size());
         return datasets;
     }
 
     /**
      * Thêm câu hỏi vào dataset
      * - Lưu EvaluationQuestion
-     * - Update question_count trong EvaluationDataset
      *
      * @param datasetId ID của dataset
      * @param question Nội dung câu hỏi
      * @param groundTruth Câu trả lời đúng
      * @return EvaluationQuestion
      */
-    public EvaluationQuestion addQuestion(Long datasetId, String question, String groundTruth) {
-        logger.info("Adding question to dataset: datasetId={}, question={}", datasetId, question);
+    public EvaluationQuestion addQuestion(UUID datasetId, String question, String groundTruth) {
+        log.info("Adding question to dataset: datasetId={}, question={}", datasetId, question);
 
         // Kiểm tra dataset tồn tại
-        EvaluationDataset dataset = evaluationDatasetRepository.findById(datasetId)
-                .orElseThrow(() -> new ResourceNotFoundException("EvaluationDataset", "id", datasetId));
+        evaluationDatasetRepository.findById(datasetId)
+                .orElseThrow(() -> new ResourceNotFoundException("EvaluationDataset not found with id: " + datasetId));
 
         // Tạo question mới
-        EvaluationQuestion evaluationQuestion = EvaluationQuestion.builder()
-                .datasetId(datasetId)
-                .questionText(question)
-                .groundTruthAnswer(groundTruth)
-                .build();
+        EvaluationQuestion evaluationQuestion = new EvaluationQuestion();
+        evaluationQuestion.setDatasetId(datasetId);
+        evaluationQuestion.setQuestionText(question);
+        evaluationQuestion.setGroundTruthAnswer(groundTruth);
 
         EvaluationQuestion savedQuestion = evaluationQuestionRepository.save(evaluationQuestion);
-        logger.info("Added question to dataset - questionId: {}", savedQuestion.getId());
-
-        // Update question_count trong dataset
-        dataset.setQuestionCount(dataset.getQuestionCount() + 1);
-        evaluationDatasetRepository.save(dataset);
-        logger.debug("Updated dataset question_count to: {}", dataset.getQuestionCount());
+        log.info("Added question to dataset - questionId: {}", savedQuestion.getEvaluationQuestionId());
 
         return savedQuestion;
     }
@@ -108,15 +102,15 @@ public class EvaluationService {
      * @param datasetId ID của dataset
      * @return List<EvaluationQuestion>
      */
-    public List<EvaluationQuestion> getQuestions(Long datasetId) {
-        logger.info("Fetching questions for dataset: {}", datasetId);
+    public List<EvaluationQuestion> getQuestions(UUID datasetId) {
+        log.info("Fetching questions for dataset: {}", datasetId);
 
         // Kiểm tra dataset tồn tại
         evaluationDatasetRepository.findById(datasetId)
-                .orElseThrow(() -> new ResourceNotFoundException("EvaluationDataset", "id", datasetId));
+                .orElseThrow(() -> new ResourceNotFoundException("EvaluationDataset not found with id: " + datasetId));
 
         List<EvaluationQuestion> questions = evaluationQuestionRepository.findByDatasetId(datasetId);
-        logger.debug("Found {} questions in dataset {}", questions.size(), datasetId);
+        log.debug("Found {} questions in dataset {}", questions.size(), datasetId);
         return questions;
     }
 
@@ -124,24 +118,25 @@ public class EvaluationService {
      * Tạo experiment record mới
      * - status mặc định = "PENDING"
      *
-     * @param name Tên experiment
-     * @param researcherId ID của researcher
+     * @param experimentName Tên experiment
+     * @param experimentType Loại experiment
      * @param configJson JSON config string
+     * @param createdBy ID của researcher/creator
      * @return Experiment
      */
-    public Experiment createExperiment(String name, Long researcherId, String configJson) {
-        logger.info("Creating experiment: name={}, researcherId={}", name, researcherId);
+    public Experiment createExperiment(String experimentName, String experimentType, String configJson, UUID createdBy) {
+        log.info("Creating experiment: name={}, createdBy={}", experimentName, createdBy);
 
-        Experiment experiment = Experiment.builder()
-                .name(name)
-                .researcherId(researcherId)
-                .configJson(configJson)
-                .status("PENDING")
-                .createdAt(LocalDateTime.now())
-                .build();
+        Experiment experiment = new Experiment();
+        experiment.setExperimentName(experimentName);
+        experiment.setExperimentType(experimentType);
+        experiment.setConfigJson(configJson);
+        experiment.setCreatedBy(createdBy);
+        experiment.setStatus("PENDING");
+        experiment.setCreatedAt(LocalDateTime.now());
 
         Experiment savedExperiment = experimentRepository.save(experiment);
-        logger.info("Created experiment with id: {}, status: PENDING", savedExperiment.getId());
+        log.info("Created experiment with id: {}, status: PENDING", savedExperiment.getExperimentId());
         return savedExperiment;
     }
 
@@ -151,10 +146,10 @@ public class EvaluationService {
      * @return List<Experiment>
      */
     public List<Experiment> listExperiments() {
-        logger.info("Fetching all experiments");
+        log.info("Fetching all experiments");
 
         List<Experiment> experiments = experimentRepository.findAll();
-        logger.debug("Found {} experiments", experiments.size());
+        log.debug("Found {} experiments", experiments.size());
         return experiments;
     }
 
@@ -164,15 +159,15 @@ public class EvaluationService {
      * @param experimentId ID của experiment
      * @return List<ExperimentResult>
      */
-    public List<ExperimentResult> getResults(Long experimentId) {
-        logger.info("Fetching results for experiment: {}", experimentId);
+    public List<ExperimentResult> getResults(UUID experimentId) {
+        log.info("Fetching results for experiment: {}", experimentId);
 
         // Kiểm tra experiment tồn tại
         experimentRepository.findById(experimentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Experiment", "id", experimentId));
+                .orElseThrow(() -> new ResourceNotFoundException("Experiment not found with id: " + experimentId));
 
         List<ExperimentResult> results = experimentResultRepository.findByExperimentId(experimentId);
-        logger.debug("Found {} results for experiment {}", results.size(), experimentId);
+        log.debug("Found {} results for experiment {}", results.size(), experimentId);
         return results;
     }
 
@@ -187,8 +182,8 @@ public class EvaluationService {
      * 4. Lưu từng ExperimentResult vào SQL
      * 5. Update Experiment.status = "COMPLETED"
      */
-    public void runBenchmark(Long experimentId) {
-        logger.info("TODO: Implement runBenchmark for experimentId: {}", experimentId);
+    public void runBenchmark(UUID experimentId) {
+        log.info("TODO: Implement runBenchmark for experimentId: {}", experimentId);
         throw new UnsupportedOperationException("runBenchmark not implemented yet - waiting for Python API contract from TV6");
     }
 }

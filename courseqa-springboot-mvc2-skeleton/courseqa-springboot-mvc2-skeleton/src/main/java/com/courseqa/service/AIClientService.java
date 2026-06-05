@@ -1,12 +1,10 @@
 package com.courseqa.service;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
-import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
 import java.time.Duration;
@@ -20,7 +18,6 @@ import java.time.Duration;
  */
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class AIClientService {
 
     private final WebClient webClient;
@@ -32,6 +29,10 @@ public class AIClientService {
     private static final int BENCHMARK_TIMEOUT_SECONDS = 120;
     private static final int MAX_RETRIES = 3;
 
+    public AIClientService(WebClient webClient) {
+        this.webClient = webClient;
+    }
+
     /**
      * POST /ai/chat - Gọi RAG pipeline
      * 
@@ -39,7 +40,7 @@ public class AIClientService {
      * @return ChatResponse: {rag_answer, citations, rag_score, is_out_of_scope, tokens_used, latency_ms}
      */
     public <T> T callChat(Object request, Class<T> responseType) {
-        logger.info("Calling Python AI Engine /ai/chat");
+        log.info("Calling Python AI Engine /ai/chat");
         
         return webClient.post()
                 .uri(pythonAiServiceUrl + "/ai/chat")
@@ -50,7 +51,7 @@ public class AIClientService {
                 .retryWhen(Retry.backoff(MAX_RETRIES, Duration.ofMillis(200))
                         .filter(throwable -> isRetryableError(throwable))
                         .doBeforeRetry(retrySignal -> 
-                            logger.warn("Retry {} /ai/chat - Error: {}", 
+                            log.warn("Retry {} /ai/chat - Error: {}", 
                                 retrySignal.totalRetries() + 1, 
                                 retrySignal.failure().getMessage())
                         ))
@@ -65,7 +66,7 @@ public class AIClientService {
      * @return ChatFinetuneResponse: {finetuned_answer, finetuned_score, latency_ms}
      */
     public <T> T callChatFinetuned(Object request, Class<T> responseType) {
-        logger.info("Calling Python AI Engine /ai/chat-finetuned");
+        log.info("Calling Python AI Engine /ai/chat-finetuned");
         
         return webClient.post()
                 .uri(pythonAiServiceUrl + "/ai/chat-finetuned")
@@ -76,7 +77,7 @@ public class AIClientService {
                 .retryWhen(Retry.backoff(MAX_RETRIES, Duration.ofMillis(200))
                         .filter(throwable -> isRetryableError(throwable))
                         .doBeforeRetry(retrySignal ->
-                            logger.warn("Retry {} /ai/chat-finetuned - Error: {}",
+                            log.warn("Retry {} /ai/chat-finetuned - Error: {}",
                                 retrySignal.totalRetries() + 1,
                                 retrySignal.failure().getMessage())
                         ))
@@ -91,7 +92,7 @@ public class AIClientService {
      * @return EvaluateResponse: {winner, scores, reason}
      */
     public <T> T callEvaluate(Object request, Class<T> responseType) {
-        logger.info("Calling Python AI Engine /ai/evaluate");
+        log.info("Calling Python AI Engine /ai/evaluate");
         
         return webClient.post()
                 .uri(pythonAiServiceUrl + "/ai/evaluate")
@@ -102,7 +103,7 @@ public class AIClientService {
                 .retryWhen(Retry.backoff(MAX_RETRIES, Duration.ofMillis(200))
                         .filter(throwable -> isRetryableError(throwable))
                         .doBeforeRetry(retrySignal ->
-                            logger.warn("Retry {} /ai/evaluate - Error: {}",
+                            log.warn("Retry {} /ai/evaluate - Error: {}",
                                 retrySignal.totalRetries() + 1,
                                 retrySignal.failure().getMessage())
                         ))
@@ -117,7 +118,7 @@ public class AIClientService {
      * @return BenchmarkResponse: {experiment_id, results, summary}
      */
     public <T> T callBenchmark(Object request, Class<T> responseType) {
-        logger.info("Calling Python AI Engine /ai/benchmark");
+        log.info("Calling Python AI Engine /ai/benchmark");
         
         return webClient.post()
                 .uri(pythonAiServiceUrl + "/ai/benchmark")
@@ -128,7 +129,7 @@ public class AIClientService {
                 .retryWhen(Retry.backoff(MAX_RETRIES, Duration.ofMillis(200))
                         .filter(throwable -> isRetryableError(throwable))
                         .doBeforeRetry(retrySignal ->
-                            logger.warn("Retry {} /ai/benchmark - Error: {}",
+                            log.warn("Retry {} /ai/benchmark - Error: {}",
                                 retrySignal.totalRetries() + 1,
                                 retrySignal.failure().getMessage())
                         ))
@@ -150,9 +151,7 @@ public class AIClientService {
         
         // Retry cho connection/timeout errors
         return throwable instanceof java.net.ConnectException ||
-               throwable instanceof java.net.SocketTimeoutException ||
-               throwable instanceof io.netty.channel.ConnectTimeoutException ||
-               throwable instanceof io.netty.channel.AbstractChannel.AnnotatedConnectException;
+               throwable instanceof java.net.SocketTimeoutException;
     }
 
     /**
@@ -166,14 +165,14 @@ public class AIClientService {
                 ex.getStatusCode().value(),
                 ex.getResponseBodyAsString()
             );
-            logger.error(errorMessage);
+            log.error(errorMessage);
             return new RuntimeException(errorMessage, ex);
         } else if (throwable instanceof java.util.concurrent.TimeoutException) {
             String errorMessage = "Python AI Engine timeout - took longer than expected";
-            logger.error(errorMessage);
+            log.error(errorMessage);
             return new RuntimeException(errorMessage, throwable);
         } else {
-            logger.error("Python AI Engine connection error: {}", throwable.getMessage(), throwable);
+            log.error("Python AI Engine connection error: {}", throwable.getMessage(), throwable);
             return new RuntimeException("Failed to connect to Python AI Engine: " + throwable.getMessage(), throwable);
         }
     }

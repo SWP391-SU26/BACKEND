@@ -9,8 +9,8 @@ import com.courseqa.service.EvaluationService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -24,16 +24,12 @@ import java.util.UUID;
  */
 @RestController
 @RequestMapping("/api/evaluation")
+@RequiredArgsConstructor
+@Slf4j
 @CrossOrigin
 public class EvaluationController {
 
-    private static final Logger log = LoggerFactory.getLogger(EvaluationController.class);
-
     private final EvaluationService evaluationService;
-
-    public EvaluationController(EvaluationService evaluationService) {
-        this.evaluationService = evaluationService;
-    }
 
     /**
      * GET /api/evaluation/datasets
@@ -43,7 +39,7 @@ public class EvaluationController {
      */
     @GetMapping("/datasets")
     public ResponseEntity<ApiResponse<List<EvaluationDataset>>> listDatasets() {
-        logger.info("GET /api/evaluation/datasets");
+        log.info("GET /api/evaluation/datasets");
 
         List<EvaluationDataset> datasets = evaluationService.listDatasets();
 
@@ -54,7 +50,7 @@ public class EvaluationController {
      * POST /api/evaluation/datasets
      * Tạo evaluation dataset mới
      *
-     * @param request CreateDatasetRequest: {name, subjectId, createdBy}
+     * @param request CreateDatasetRequest: {datasetName, courseId, workspaceId, createdBy}
      * @return ResponseEntity<ApiResponse<EvaluationDataset>>
      */
     @PostMapping("/datasets")
@@ -76,7 +72,7 @@ public class EvaluationController {
      * POST /api/evaluation/questions
      * Thêm câu hỏi vào dataset
      *
-     * @param request AddQuestionRequest: {datasetId, question, groundTruth}
+     * @param request AddQuestionRequest: {datasetId, questionText, groundTruthAnswer}
      * @return ResponseEntity<ApiResponse<EvaluationQuestion>>
      */
     @PostMapping("/questions")
@@ -114,7 +110,7 @@ public class EvaluationController {
      * POST /api/evaluation/experiments
      * Tạo experiment record mới
      *
-     * @param request CreateExperimentRequest: {name, researcherId, configJson}
+     * @param request CreateExperimentRequest: {experimentName, experimentType, configJson, createdBy}
      * @return ResponseEntity<ApiResponse<Experiment>>
      */
     @PostMapping("/experiments")

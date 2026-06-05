@@ -23,6 +23,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -49,18 +50,16 @@ public class FineTuningService {
      * @return Experiment
      */
     public Experiment createExperimentRecord(String name, Long researcherId, String configJson) {
-        logger.info("Creating fine-tuning experiment record: name={}, researcherId={}", name, researcherId);
+        log.info("Creating fine-tuning experiment record: name={}, researcherId={}", name, researcherId);
 
-        Experiment experiment = Experiment.builder()
-                .name(name)
-                .researcherId(researcherId)
-                .configJson(configJson)
-                .status("PENDING")
-                .createdAt(LocalDateTime.now())
-                .build();
+        Experiment experiment = new Experiment();
+        experiment.setExperimentName(name);
+        experiment.setConfigJson(configJson);
+        experiment.setStatus("PENDING");
+        experiment.setCreatedAt(LocalDateTime.now());
 
         Experiment savedExperiment = experimentRepository.save(experiment);
-        logger.info("Created fine-tuning experiment with id: {}, status: PENDING", savedExperiment.getId());
+        log.info("Created fine-tuning experiment with id: {}, status: PENDING", savedExperiment.getExperimentId());
         return savedExperiment;
     }
 
@@ -71,16 +70,16 @@ public class FineTuningService {
      * @param datasetId ID của dataset
      * @return ResponseEntity<Resource> - file download
      */
-    public ResponseEntity<Resource> exportJsonl(Long datasetId) {
-        logger.info("Exporting JSONL for datasetId: {}", datasetId);
+    public ResponseEntity<Resource> exportJsonl(UUID datasetId) {
+        log.info("Exporting JSONL for datasetId: {}", datasetId);
 
         // Kiểm tra dataset tồn tại
         evaluationDatasetRepository.findById(datasetId)
-                .orElseThrow(() -> new ResourceNotFoundException("EvaluationDataset", "id", datasetId));
+                .orElseThrow(() -> new ResourceNotFoundException("EvaluationDataset not found with id: " + datasetId));
 
         // Load tất cả questions
         List<EvaluationQuestion> questions = evaluationQuestionRepository.findByDatasetId(datasetId);
-        logger.debug("Found {} questions in dataset {}", questions.size(), datasetId);
+        log.debug("Found {} questions in dataset {}", questions.size(), datasetId);
 
         // Format thành JSONL
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -97,15 +96,15 @@ public class FineTuningService {
                 baos.write("\n".getBytes(StandardCharsets.UTF_8));
             }
         } catch (IOException e) {
-            logger.error("Error while converting questions to JSONL: {}", e.getMessage(), e);
+            log.error("Error while converting questions to JSONL: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to export JSONL: " + e.getMessage(), e);
         }
 
         // Tạo Resource từ ByteArray
         Resource resource = new ByteArrayResource(baos.toByteArray());
-        String filename = String.format("dataset_%d_train.jsonl", datasetId);
+        String filename = String.format("dataset_%s_train.jsonl", datasetId);
 
-        logger.info("Exported JSONL file: {} ({} bytes)", filename, baos.toByteArray().length);
+        log.info("Exported JSONL file: {} ({} bytes)", filename, baos.toByteArray().length);
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
@@ -120,16 +119,16 @@ public class FineTuningService {
      * @return List<String> - danh sách tên file
      */
     public List<String> listExperimentFiles() {
-        logger.info("Listing all experiment files");
+        log.info("Listing all experiment files");
 
         List<Experiment> experiments = experimentRepository.findAll();
-        logger.debug("Found {} experiments", experiments.size());
+        log.debug("Found {} experiments", experiments.size());
 
         List<String> files = experiments.stream()
-                .map(exp -> String.format("experiment_%d_%s.jsonl", exp.getId(), exp.getName()))
+                .map(exp -> String.format("experiment_%s_%s.jsonl", exp.getExperimentId(), exp.getExperimentName()))
                 .collect(Collectors.toList());
 
-        logger.debug("Generated {} file names", files.size());
+        log.debug("Generated {} file names", files.size());
         return files;
     }
 }
