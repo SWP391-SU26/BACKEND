@@ -9,8 +9,8 @@ import com.courseqa.repository.EvaluationDatasetRepository;
 import com.courseqa.repository.EvaluationQuestionRepository;
 import com.courseqa.repository.ExperimentRepository;
 import com.courseqa.repository.ExperimentResultRepository;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -22,14 +22,25 @@ import java.util.UUID;
  * Phần SQL implementation, TODO: gọi Python /ai/benchmark sau khi có API contract từ TV6
  */
 @Service
-@RequiredArgsConstructor
-@Slf4j
 public class EvaluationService {
+
+    private static final Logger log = LoggerFactory.getLogger(EvaluationService.class);
 
     private final EvaluationDatasetRepository evaluationDatasetRepository;
     private final EvaluationQuestionRepository evaluationQuestionRepository;
     private final ExperimentRepository experimentRepository;
     private final ExperimentResultRepository experimentResultRepository;
+
+    public EvaluationService(
+            EvaluationDatasetRepository evaluationDatasetRepository,
+            EvaluationQuestionRepository evaluationQuestionRepository,
+            ExperimentRepository experimentRepository,
+            ExperimentResultRepository experimentResultRepository) {
+        this.evaluationDatasetRepository = evaluationDatasetRepository;
+        this.evaluationQuestionRepository = evaluationQuestionRepository;
+        this.experimentRepository = experimentRepository;
+        this.experimentResultRepository = experimentResultRepository;
+    }
 
     /**
      * Tạo evaluation dataset mới

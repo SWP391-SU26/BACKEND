@@ -7,8 +7,8 @@ import com.courseqa.repository.EvaluationDatasetRepository;
 import com.courseqa.repository.EvaluationQuestionRepository;
 import com.courseqa.repository.ExperimentRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -31,30 +31,42 @@ import java.util.stream.Collectors;
  * 100% SQL implementation - không cần Python
  */
 @Service
-@RequiredArgsConstructor
-@Slf4j
 public class FineTuningService {
+
+    private static final Logger log = LoggerFactory.getLogger(FineTuningService.class);
 
     private final EvaluationDatasetRepository evaluationDatasetRepository;
     private final EvaluationQuestionRepository evaluationQuestionRepository;
     private final ExperimentRepository experimentRepository;
     private final ObjectMapper objectMapper;
 
+    public FineTuningService(
+            EvaluationDatasetRepository evaluationDatasetRepository,
+            EvaluationQuestionRepository evaluationQuestionRepository,
+            ExperimentRepository experimentRepository,
+            ObjectMapper objectMapper) {
+        this.evaluationDatasetRepository = evaluationDatasetRepository;
+        this.evaluationQuestionRepository = evaluationQuestionRepository;
+        this.experimentRepository = experimentRepository;
+        this.objectMapper = objectMapper;
+    }
+
     /**
      * Tạo experiment record mới
      * - status mặc định = "PENDING"
      *
      * @param name Tên experiment
-     * @param researcherId ID của researcher
+     * @param researcherId ID của researcher (UUID)
      * @param configJson JSON config string
      * @return Experiment
      */
-    public Experiment createExperimentRecord(String name, Long researcherId, String configJson) {
+    public Experiment createExperimentRecord(String name, UUID researcherId, String configJson) {
         log.info("Creating fine-tuning experiment record: name={}, researcherId={}", name, researcherId);
 
         Experiment experiment = new Experiment();
         experiment.setExperimentName(name);
         experiment.setConfigJson(configJson);
+        experiment.setCreatedBy(researcherId);
         experiment.setStatus("PENDING");
         experiment.setCreatedAt(LocalDateTime.now());
 
