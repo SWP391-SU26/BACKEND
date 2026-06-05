@@ -9,12 +9,14 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * ChatController - API endpoints cho chat functionality
@@ -25,12 +27,16 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/chat")
-@RequiredArgsConstructor
-@Slf4j
 @CrossOrigin
 public class ChatController {
 
+    private static final Logger log = LoggerFactory.getLogger(ChatController.class);
+
     private final ChatService chatService;
+
+    public ChatController(ChatService chatService) {
+        this.chatService = chatService;
+    }
 
     /**
      * POST /api/chat/sessions
@@ -41,11 +47,11 @@ public class ChatController {
      */
     @PostMapping("/sessions")
     public ResponseEntity<ApiResponse<ChatSession>> createOrGetSession(@Valid @RequestBody CreateSessionRequest request) {
-        logger.info("POST /api/chat/sessions - userId: {}, workspaceId: {}", request.getUserId(), request.getWorkspaceId());
+        log.info("POST /api/chat/sessions - userId: {}, workspaceId: {}", request.getUserId(), request.getWorkspaceId());
 
         ChatSession session = chatService.createOrGetSession(request.getUserId(), request.getWorkspaceId());
 
-        return ResponseEntity.ok(ApiResponse.success(session));
+        return ResponseEntity.ok(ApiResponse.ok(session));
     }
 
     /**
@@ -59,9 +65,9 @@ public class ChatController {
      */
     @PostMapping("/sessions/{sessionId}/ask")
     public ResponseEntity<ApiResponse<ChatMessage>> askQuestion(
-            @PathVariable Long sessionId,
+            @PathVariable UUID sessionId,
             @Valid @RequestBody AskQuestionRequest request) {
-        logger.info("POST /api/chat/sessions/{}/ask - question: {}", sessionId, request.getQuestion());
+        log.info("POST /api/chat/sessions/{}/ask - question: {}", sessionId, request.getQuestion());
 
         // TODO: Implement askQuestion logic:
         // 1. Gọi chatService.askQuestion(sessionId, question)
@@ -78,12 +84,12 @@ public class ChatController {
      * @return ResponseEntity<ApiResponse<List<ChatMessage>>>
      */
     @GetMapping("/sessions/{sessionId}/history")
-    public ResponseEntity<ApiResponse<List<ChatMessage>>> getHistory(@PathVariable Long sessionId) {
-        logger.info("GET /api/chat/sessions/{}/history", sessionId);
+    public ResponseEntity<ApiResponse<List<ChatMessage>>> getHistory(@PathVariable UUID sessionId) {
+        log.info("GET /api/chat/sessions/{}/history", sessionId);
 
         List<ChatMessage> history = chatService.getHistory(sessionId);
 
-        return ResponseEntity.ok(ApiResponse.success(history));
+        return ResponseEntity.ok(ApiResponse.ok(history));
     }
 
     /**
@@ -95,11 +101,11 @@ public class ChatController {
      */
     @PostMapping("/notes")
     public ResponseEntity<ApiResponse<SavedNote>> saveNote(@Valid @RequestBody SaveNoteRequest request) {
-        logger.info("POST /api/chat/notes - userId: {}, workspaceId: {}", request.getUserId(), request.getWorkspaceId());
+        log.info("POST /api/chat/notes - userId: {}, workspaceId: {}", request.getUserId(), request.getWorkspaceId());
 
-        SavedNote note = chatService.saveNote(request.getUserId(), request.getWorkspaceId(), request.getContent());
+        SavedNote note = chatService.saveNote(request.getUserId(), request.getWorkspaceId(), request.getNoteTitle(), request.getNoteContent());
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(note));
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(note));
     }
 
     /**
@@ -110,12 +116,12 @@ public class ChatController {
      * @return ResponseEntity<ApiResponse<List<SavedNote>>>
      */
     @GetMapping("/notes/workspace/{workspaceId}")
-    public ResponseEntity<ApiResponse<List<SavedNote>>> getNotes(@PathVariable Long workspaceId) {
-        logger.info("GET /api/chat/notes/workspace/{}", workspaceId);
+    public ResponseEntity<ApiResponse<List<SavedNote>>> getNotes(@PathVariable UUID workspaceId) {
+        log.info("GET /api/chat/notes/workspace/{}", workspaceId);
 
         List<SavedNote> notes = chatService.getNotes(workspaceId);
 
-        return ResponseEntity.ok(ApiResponse.success(notes));
+        return ResponseEntity.ok(ApiResponse.ok(notes));
     }
 
     // ==================== Request DTOs ====================
@@ -123,42 +129,114 @@ public class ChatController {
     /**
      * Request DTO cho createOrGetSession
      */
-    @lombok.Data
-    @lombok.NoArgsConstructor
-    @lombok.AllArgsConstructor
     public static class CreateSessionRequest {
         @NotNull(message = "userId is required")
-        private Long userId;
+        private UUID userId;
 
         @NotNull(message = "workspaceId is required")
-        private Long workspaceId;
+        private UUID workspaceId;
+
+        public CreateSessionRequest() {}
+
+        public CreateSessionRequest(UUID userId, UUID workspaceId) {
+            this.userId = userId;
+            this.workspaceId = workspaceId;
+        }
+
+        public UUID getUserId() {
+            return userId;
+        }
+
+        public void setUserId(UUID userId) {
+            this.userId = userId;
+        }
+
+        public UUID getWorkspaceId() {
+            return workspaceId;
+        }
+
+        public void setWorkspaceId(UUID workspaceId) {
+            this.workspaceId = workspaceId;
+        }
     }
 
     /**
      * Request DTO cho askQuestion
      */
-    @lombok.Data
-    @lombok.NoArgsConstructor
-    @lombok.AllArgsConstructor
     public static class AskQuestionRequest {
         @NotBlank(message = "question is required and cannot be empty")
         private String question;
+
+        public AskQuestionRequest() {}
+
+        public AskQuestionRequest(String question) {
+            this.question = question;
+        }
+
+        public String getQuestion() {
+            return question;
+        }
+
+        public void setQuestion(String question) {
+            this.question = question;
+        }
     }
 
     /**
      * Request DTO cho saveNote
      */
-    @lombok.Data
-    @lombok.NoArgsConstructor
-    @lombok.AllArgsConstructor
     public static class SaveNoteRequest {
         @NotNull(message = "userId is required")
-        private Long userId;
+        private UUID userId;
 
         @NotNull(message = "workspaceId is required")
-        private Long workspaceId;
+        private UUID workspaceId;
 
-        @NotBlank(message = "content is required and cannot be empty")
-        private String content;
+        @NotBlank(message = "noteTitle is required and cannot be empty")
+        private String noteTitle;
+
+        @NotBlank(message = "noteContent is required and cannot be empty")
+        private String noteContent;
+
+        public SaveNoteRequest() {}
+
+        public SaveNoteRequest(UUID userId, UUID workspaceId, String noteTitle, String noteContent) {
+            this.userId = userId;
+            this.workspaceId = workspaceId;
+            this.noteTitle = noteTitle;
+            this.noteContent = noteContent;
+        }
+
+        public UUID getUserId() {
+            return userId;
+        }
+
+        public void setUserId(UUID userId) {
+            this.userId = userId;
+        }
+
+        public UUID getWorkspaceId() {
+            return workspaceId;
+        }
+
+        public void setWorkspaceId(UUID workspaceId) {
+            this.workspaceId = workspaceId;
+        }
+
+        public String getNoteTitle() {
+            return noteTitle;
+        }
+
+        public void setNoteTitle(String noteTitle) {
+            this.noteTitle = noteTitle;
+        }
+
+        public String getNoteContent() {
+            return noteContent;
+        }
+
+        public void setNoteContent(String noteContent) {
+            this.noteContent = noteContent;
+        }
     }
 }

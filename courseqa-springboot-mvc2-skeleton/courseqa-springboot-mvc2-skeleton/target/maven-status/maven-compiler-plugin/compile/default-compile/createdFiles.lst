@@ -1,0 +1,17 @@
+com\courseqa\config\AppConfig.class
+com\courseqa\repository\ChatSessionRepository.class
+com\courseqa\controller\ChatController$SaveNoteRequest.class
+com\courseqa\model\entity\ChatSession.class
+com\courseqa\controller\ChatController.class
+com\courseqa\repository\SavedNoteRepository.class
+com\courseqa\model\entity\ChatMessage.class
+com\courseqa\controller\ChatController$CreateSessionRequest.class
+com\courseqa\CourseQaApplication.class
+com\courseqa\controller\DocumentController.class
+com\courseqa\model\entity\SavedNote.class
+com\courseqa\repository\ChatMessageRepository.class
+com\courseqa\service\ChatService.class
+com\courseqa\controller\CourseController.class
+com\courseqa\controller\ChatController$AskQuestionRequest.class
+com\courseqa\model\dto\ApiResponse.class
+com\courseqa\controller\AuthController.class

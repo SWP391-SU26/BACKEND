@@ -8,7 +8,8 @@ import com.courseqa.repository.ChatMessageRepository;
 import com.courseqa.repository.ChatSessionRepository;
 import com.courseqa.repository.SavedNoteRepository;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -16,20 +17,26 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
+import java.util.UUID;
 
 /**
  * ChatService - Quản lý chat sessions, messages, notes
  * Phần SQL implementation, TODO: gọi Python AI Engine sau khi có API contract từ TV6
  */
 @Service
-@RequiredArgsConstructor
-@Slf4j
 public class ChatService {
+
+    private static final Logger log = LoggerFactory.getLogger(ChatService.class);
 
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final SavedNoteRepository savedNoteRepository;
+
+    public ChatService(ChatSessionRepository chatSessionRepository, ChatMessageRepository chatMessageRepository, SavedNoteRepository savedNoteRepository) {
+        this.chatSessionRepository = chatSessionRepository;
+        this.chatMessageRepository = chatMessageRepository;
+        this.savedNoteRepository = savedNoteRepository;
+    }
 
     /**
      * Tạo hoặc lấy session hiện tại
@@ -40,28 +47,18 @@ public class ChatService {
      * @param workspaceId ID của workspace
      * @return ChatSession (mới hoặc đã có)
      */
-    public ChatSession createOrGetSession(Long userId, Long workspaceId) {
-        logger.info("Creating or getting chat session for userId: {}, workspaceId: {}", userId, workspaceId);
-
-        // Tìm session active đã có
-        Optional<ChatSession> existingSession = chatSessionRepository
-                .findByUserIdAndWorkspaceIdAndIsActiveTrue(userId, workspaceId);
-
-        if (existingSession.isPresent()) {
-            logger.debug("Found existing active session: {}", existingSession.get().getId());
-            return existingSession.get();
-        }
+    public ChatSession createOrGetSession(UUID userId, UUID workspaceId) {
+        log.info("Creating or getting chat session for userId: {}, workspaceId: {}", userId, workspaceId);
 
         // Tạo session mới
-        ChatSession newSession = ChatSession.builder()
-                .userId(userId)
-                .workspaceId(workspaceId)
-                .isActive(true)
-                .createdAt(LocalDateTime.now())
-                .build();
+        ChatSession newSession = new ChatSession();
+        newSession.setUserId(userId);
+        newSession.setWorkspaceId(workspaceId);
+        newSession.setIsActive(true);
+        newSession.setStartedAt(LocalDateTime.now());
 
         ChatSession savedSession = chatSessionRepository.save(newSession);
-        logger.info("Created new chat session: {}", savedSession.getId());
+        log.info("Created new chat session: {}", savedSession.getChatSessionId());
         return savedSession;
     }
 
@@ -73,19 +70,19 @@ public class ChatService {
      * @param sessionId ID của session
      * @return List<ChatMessage>
      */
-    public List<ChatMessage> getHistory(Long sessionId) {
-        logger.info("Fetching chat history for sessionId: {}", sessionId);
+    public List<ChatMessage> getHistory(UUID sessionId) {
+        log.info("Fetching chat history for sessionId: {}", sessionId);
 
         // Kiểm tra session tồn tại
         ChatSession session = chatSessionRepository.findById(sessionId)
-                .orElseThrow(() -> new ResourceNotFoundException("ChatSession", "id", sessionId));
+                .orElseThrow(() -> new ResourceNotFoundException("ChatSession not found with id: " + sessionId));
 
         // Lấy 50 messages gần nhất, sort theo created_at ASC
         Pageable pageable = PageRequest.of(0, 50, Sort.by(Sort.Direction.ASC, "createdAt"));
-        List<ChatMessage> messages = chatMessageRepository.findBySessionIdOrderByCreatedAtAsc(sessionId, pageable)
+        List<ChatMessage> messages = chatMessageRepository.findByChatSessionIdOrderByCreatedAtAsc(sessionId, pageable)
                 .getContent();
 
-        logger.debug("Found {} messages in history for sessionId: {}", messages.size(), sessionId);
+        log.debug("Found {} messages in history for sessionId: {}", messages.size(), sessionId);
         return messages;
     }
 
@@ -94,21 +91,22 @@ public class ChatService {
      *
      * @param userId ID của user
      * @param workspaceId ID của workspace
-     * @param content Nội dung note
+     * @param noteTitle Tiêu đề note
+     * @param noteContent Nội dung note
      * @return SavedNote
      */
-    public SavedNote saveNote(Long userId, Long workspaceId, String content) {
-        logger.info("Saving note for userId: {}, workspaceId: {}", userId, workspaceId);
+    public SavedNote saveNote(UUID userId, UUID workspaceId, String noteTitle, String noteContent) {
+        log.info("Saving note for userId: {}, workspaceId: {}", userId, workspaceId);
 
-        SavedNote note = SavedNote.builder()
-                .userId(userId)
-                .workspaceId(workspaceId)
-                .content(content)
-                .createdAt(LocalDateTime.now())
-                .build();
+        SavedNote note = new SavedNote();
+        note.setUserId(userId);
+        note.setWorkspaceId(workspaceId);
+        note.setNoteTitle(noteTitle);
+        note.setNoteContent(noteContent);
+        note.setCreatedAt(LocalDateTime.now());
 
         SavedNote savedNote = savedNoteRepository.save(note);
-        logger.info("Saved note with id: {}", savedNote.getId());
+        log.info("Saved note with id: {}", savedNote.getNoteId());
         return savedNote;
     }
 
@@ -118,11 +116,11 @@ public class ChatService {
      * @param workspaceId ID của workspace
      * @return List<SavedNote>
      */
-    public List<SavedNote> getNotes(Long workspaceId) {
-        logger.info("Fetching notes for workspaceId: {}", workspaceId);
+    public List<SavedNote> getNotes(UUID workspaceId) {
+        log.info("Fetching notes for workspaceId: {}", workspaceId);
 
         List<SavedNote> notes = savedNoteRepository.findByWorkspaceIdOrderByCreatedAtDesc(workspaceId);
-        logger.debug("Found {} notes for workspaceId: {}", notes.size(), workspaceId);
+        log.debug("Found {} notes for workspaceId: {}", notes.size(), workspaceId);
         return notes;
     }
 
@@ -140,8 +138,8 @@ public class ChatService {
      * 5. Lưu AnswerCitation nếu có citations
      * 6. Trả về response cho FE
      */
-    public void askQuestion(Long sessionId, String question) {
-        logger.info("TODO: Implement askQuestion for sessionId: {}, question: {}", sessionId, question);
+    public void askQuestion(UUID sessionId, String question) {
+        log.info("TODO: Implement askQuestion for sessionId: {}, question: {}", sessionId, question);
         throw new UnsupportedOperationException("askQuestion not implemented yet - waiting for Python API contract from TV6");
     }
 }
