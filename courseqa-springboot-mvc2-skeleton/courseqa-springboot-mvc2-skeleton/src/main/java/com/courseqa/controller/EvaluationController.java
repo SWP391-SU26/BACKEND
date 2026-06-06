@@ -43,7 +43,7 @@ public class EvaluationController {
      */
     @GetMapping("/datasets")
     public ResponseEntity<ApiResponse<List<EvaluationDataset>>> listDatasets() {
-        logger.info("GET /api/evaluation/datasets");
+        log.info("GET /api/evaluation/datasets");
 
         List<EvaluationDataset> datasets = evaluationService.listDatasets();
 
@@ -54,7 +54,7 @@ public class EvaluationController {
      * POST /api/evaluation/datasets
      * Tạo evaluation dataset mới
      *
-     * @param request CreateDatasetRequest: {name, subjectId, createdBy}
+     * @param request CreateDatasetRequest: {datasetName, courseId, workspaceId, createdBy}
      * @return ResponseEntity<ApiResponse<EvaluationDataset>>
      */
     @PostMapping("/datasets")
@@ -76,7 +76,7 @@ public class EvaluationController {
      * POST /api/evaluation/questions
      * Thêm câu hỏi vào dataset
      *
-     * @param request AddQuestionRequest: {datasetId, question, groundTruth}
+     * @param request AddQuestionRequest: {datasetId, questionText, groundTruthAnswer}
      * @return ResponseEntity<ApiResponse<EvaluationQuestion>>
      */
     @PostMapping("/questions")
@@ -114,7 +114,7 @@ public class EvaluationController {
      * POST /api/evaluation/experiments
      * Tạo experiment record mới
      *
-     * @param request CreateExperimentRequest: {name, researcherId, configJson}
+     * @param request CreateExperimentRequest: {experimentName, experimentType, configJson, createdBy}
      * @return ResponseEntity<ApiResponse<Experiment>>
      */
     @PostMapping("/experiments")

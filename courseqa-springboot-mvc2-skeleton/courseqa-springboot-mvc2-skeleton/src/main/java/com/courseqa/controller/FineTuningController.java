@@ -6,14 +6,15 @@ import com.courseqa.service.FineTuningService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * FineTuningController - API endpoints cho fine-tuning functionality
@@ -23,12 +24,16 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/fine-tuning")
-@RequiredArgsConstructor
-@Slf4j
 @CrossOrigin
 public class FineTuningController {
 
+    private static final Logger log = LoggerFactory.getLogger(FineTuningController.class);
+
     private final FineTuningService fineTuningService;
+
+    public FineTuningController(FineTuningService fineTuningService) {
+        this.fineTuningService = fineTuningService;
+    }
 
     /**
      * POST /api/fine-tuning/export-jsonl/{datasetId}
@@ -39,8 +44,8 @@ public class FineTuningController {
      * @return ResponseEntity<Resource> - file download (Content-Disposition: attachment)
      */
     @PostMapping("/export-jsonl/{datasetId}")
-    public ResponseEntity<Resource> exportJsonl(@PathVariable Long datasetId) {
-        logger.info("POST /api/fine-tuning/export-jsonl/{}", datasetId);
+    public ResponseEntity<Resource> exportJsonl(@PathVariable UUID datasetId) {
+        log.info("POST /api/fine-tuning/export-jsonl/{}", datasetId);
 
         return fineTuningService.exportJsonl(datasetId);
     }
@@ -53,11 +58,11 @@ public class FineTuningController {
      */
     @GetMapping("/files")
     public ResponseEntity<ApiResponse<List<String>>> listExperimentFiles() {
-        logger.info("GET /api/fine-tuning/files");
+        log.info("GET /api/fine-tuning/files");
 
         List<String> files = fineTuningService.listExperimentFiles();
 
-        return ResponseEntity.ok(ApiResponse.success(files));
+        return ResponseEntity.ok(ApiResponse.ok(files));
     }
 
     /**
@@ -70,7 +75,7 @@ public class FineTuningController {
     @PostMapping("/experiments")
     public ResponseEntity<ApiResponse<Experiment>> createExperimentRecord(
             @Valid @RequestBody CreateExperimentRecordRequest request) {
-        logger.info("POST /api/fine-tuning/experiments - name: {}, researcherId: {}", 
+        log.info("POST /api/fine-tuning/experiments - name: {}, researcherId: {}", 
             request.getName(), request.getResearcherId());
 
         Experiment experiment = fineTuningService.createExperimentRecord(
@@ -79,7 +84,7 @@ public class FineTuningController {
                 request.getConfigJson()
         );
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(experiment));
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(experiment));
     }
 
     // ==================== Request DTOs ====================
@@ -87,17 +92,46 @@ public class FineTuningController {
     /**
      * Request DTO cho createExperimentRecord
      */
-    @lombok.Data
-    @lombok.NoArgsConstructor
-    @lombok.AllArgsConstructor
     public static class CreateExperimentRecordRequest {
         @NotBlank(message = "name is required and cannot be empty")
         private String name;
 
         @NotNull(message = "researcherId is required")
-        private Long researcherId;
+        private UUID researcherId;
 
         @NotBlank(message = "configJson is required and cannot be empty")
         private String configJson;
+
+        public CreateExperimentRecordRequest() {}
+
+        public CreateExperimentRecordRequest(String name, UUID researcherId, String configJson) {
+            this.name = name;
+            this.researcherId = researcherId;
+            this.configJson = configJson;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public UUID getResearcherId() {
+            return researcherId;
+        }
+
+        public void setResearcherId(UUID researcherId) {
+            this.researcherId = researcherId;
+        }
+
+        public String getConfigJson() {
+            return configJson;
+        }
+
+        public void setConfigJson(String configJson) {
+            this.configJson = configJson;
+        }
     }
 }
