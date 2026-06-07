@@ -55,7 +55,7 @@ import {
 } from '../../data/adminMockData.js'
 import { documents as seedDocuments } from '../../data/mockData.js'
 import { AdminPageHeader } from '../../layouts/AdminLayout.jsx'
-import { getUsers } from '../../services/authService.js'
+import { getUsers, updateUserRole } from '../../services/authService.js'
 import { cn } from '../../utils/cn.js'
 
 const allOption = 'All'
@@ -242,8 +242,18 @@ export function AdminUsersPage() {
     )
   })
 
-  function changeRole(userId, nextRole) {
+  async function changeRole(userId, nextRole) {
+    const previousUsers = users
     setUsers((current) => current.map((user) => user.id === userId ? { ...user, role: nextRole } : user))
+    setApiError('')
+
+    try {
+      const updatedUser = await updateUserRole(userId, nextRole.toUpperCase())
+      setUsers((current) => current.map((user) => user.id === userId ? toAdminUser(updatedUser) : user))
+    } catch (error) {
+      setUsers(previousUsers)
+      setApiError(error.message)
+    }
   }
 
   function toggleLock(userId) {

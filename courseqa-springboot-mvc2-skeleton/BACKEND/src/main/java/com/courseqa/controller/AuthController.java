@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -47,5 +48,13 @@ public class AuthController {
     @GetMapping("/users/{userId}/roles")
     public ApiResponse<List<String>> getRoles(@PathVariable UUID userId) {
         return ApiResponse.ok(authService.getRoles(userId));
+    }
+
+    @PutMapping("/users/{userId}/role")
+    public ApiResponse<AuthDto.UserResponse> updateUserRole(
+            @PathVariable UUID userId,
+            @RequestBody AuthDto.UpdateUserRoleRequest request
+    ) {
+        return ApiResponse.ok(authService.updateUserRole(userId, request));
     }
 }

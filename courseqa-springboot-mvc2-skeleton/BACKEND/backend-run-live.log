@@ -37,189 +37,40 @@ Standard Commons Logging discovery in action with spring-jcl: please remove comm
 
  :: Spring Boot ::                (v3.3.5)
 
-2026-06-07T13:40:06.831+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Starting CourseQaApplication using Java 26.0.1 with PID 26964 (C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND\target\classes started by dinhd in C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND)
-2026-06-07T13:40:06.835+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : No active profile set, falling back to 1 default profile: "default"
-2026-06-07T13:40:06.955+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .e.DevToolsPropertyDefaultsPostProcessor : Devtools property defaults active! Set 'spring.devtools.add-properties' to 'false' to disable
-2026-06-07T13:40:06.956+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .e.DevToolsPropertyDefaultsPostProcessor : For additional web related logging consider setting the 'logging.level.web' property to 'DEBUG'
-2026-06-07T13:40:07.911+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
-2026-06-07T13:40:08.035+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 115 ms. Found 13 JPA repository interfaces.
+2026-06-07T20:32:17.147+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Starting CourseQaApplication using Java 26.0.1 with PID 10012 (C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND\target\classes started by dinhd in C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND)
+2026-06-07T20:32:17.150+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : No active profile set, falling back to 1 default profile: "default"
+2026-06-07T20:32:17.213+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .e.DevToolsPropertyDefaultsPostProcessor : Devtools property defaults active! Set 'spring.devtools.add-properties' to 'false' to disable
+2026-06-07T20:32:17.213+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .e.DevToolsPropertyDefaultsPostProcessor : For additional web related logging consider setting the 'logging.level.web' property to 'DEBUG'
+2026-06-07T20:32:18.070+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-06-07T20:32:18.193+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 112 ms. Found 12 JPA repository interfaces.
 WARNING: A restricted method in java.lang.System has been called
 WARNING: java.lang.System::load has been called by org.apache.tomcat.jni.Library in an unnamed module (file:/C:/Users/dinhd/.m2/repository/org/apache/tomcat/embed/tomcat-embed-core/10.1.31/tomcat-embed-core-10.1.31.jar)
 WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
 WARNING: Restricted methods will be blocked in a future release unless native access is enabled
 
-2026-06-07T13:40:08.872+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8080 (http)
-2026-06-07T13:40:08.893+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
-2026-06-07T13:40:08.895+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.31]
-2026-06-07T13:40:09.057+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
-2026-06-07T13:40:09.059+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 2100 ms
+2026-06-07T20:32:18.904+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8080 (http)
+2026-06-07T20:32:18.920+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-06-07T20:32:18.921+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.31]
+2026-06-07T20:32:18.978+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-06-07T20:32:18.979+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 1764 ms
 Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-2026-06-07T13:40:09.584+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
-2026-06-07T13:40:09.784+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] org.hibernate.Version                    : HHH000412: Hibernate ORM core version 6.5.3.Final
-2026-06-07T13:40:09.923+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
-2026-06-07T13:40:10.921+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
-2026-06-07T13:40:10.953+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
-2026-06-07T13:40:11.779+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection ConnectionID:1 ClientConnectionId: 1984a4cb-ce2a-4e38-bcbe-c896e4990027
-2026-06-07T13:40:11.782+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
-2026-06-07T13:40:11.910+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] org.hibernate.orm.deprecation            : HHH90000025: SQLServerDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
-2026-06-07T13:40:14.855+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
-2026-06-07T13:40:14.860+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T13:40:16.529+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] JpaBaseConfiguration$JpaWebConfiguration : spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
-2026-06-07T13:40:17.273+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.d.a.OptionalLiveReloadServer       : LiveReload server is running on port 35729
-2026-06-07T13:40:17.365+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8080 (http) with context path '/'
-2026-06-07T13:40:17.371+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Started CourseQaApplication in 11.005 seconds (process running for 11.617)
-2026-06-07T13:40:34.577+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
-2026-06-07T13:40:34.578+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
-2026-06-07T13:40:34.579+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 1 ms
-Hibernate: 
-    select
-        u1_0.user_id,
-        u1_0.avatar_url,
-        u1_0.created_at,
-        u1_0.email,
-        u1_0.full_name,
-        u1_0.is_active,
-        u1_0.last_login_at,
-        u1_0.last_logout_at,
-        u1_0.password_hash,
-        u1_0.updated_at 
-    from
-        users u1_0 
-    where
-        u1_0.email=?
-Hibernate: 
-    update
-        users 
-    set
-        avatar_url=?,
-        created_at=?,
-        email=?,
-        full_name=?,
-        is_active=?,
-        last_login_at=?,
-        last_logout_at=?,
-        password_hash=?,
-        updated_at=? 
-    where
-        user_id=?
-Hibernate: 
-    select
-        ur1_0.user_role_id,
-        ur1_0.assigned_at,
-        ur1_0.is_active,
-        ur1_0.permission_json,
-        ur1_0.role_name,
-        ur1_0.user_id 
-    from
-        user_roles ur1_0 
-    where
-        ur1_0.user_id=? 
-        and ur1_0.is_active=1
-Hibernate: 
-    select
-        top (?) u1_0.user_id 
-    from
-        users u1_0 
-    where
-        u1_0.email=?
-Hibernate: 
-    insert 
-    into
-        users
-        (avatar_url, created_at, email, full_name, is_active, last_login_at, last_logout_at, password_hash, updated_at, user_id) 
-    values
-        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-Hibernate: 
-    insert 
-    into
-        user_roles
-        (assigned_at, is_active, permission_json, role_name, user_id, user_role_id) 
-    values
-        (?, ?, ?, ?, ?, ?)
-2026-06-07T13:40:42.976+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-2] o.h.engine.jdbc.spi.SqlExceptionHelper   : SQL Error: 547, SQLState: 23000
-2026-06-07T13:40:42.977+07:00 ERROR 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-2] o.h.engine.jdbc.spi.SqlExceptionHelper   : The INSERT statement conflicted with the CHECK constraint "chk_user_roles_role". The conflict occurred in database "VietnameseCourseQA20DB", table "dbo.user_roles", column 'role_name'.
-2026-06-07T13:40:43.005+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-2] .m.m.a.ExceptionHandlerExceptionResolver : Resolved [org.springframework.dao.DataIntegrityViolationException: could not execute statement [The INSERT statement conflicted with the CHECK constraint "chk_user_roles_role". The conflict occurred in database "VietnameseCourseQA20DB", table "dbo.user_roles", column 'role_name'.] [insert into user_roles (assigned_at,is_active,permission_json,role_name,user_id,user_role_id) values (?,?,?,?,?,?)]; SQL [insert into user_roles (assigned_at,is_active,permission_json,role_name,user_id,user_role_id) values (?,?,?,?,?,?)]; constraint [null]]
-2026-06-07T13:41:34.433+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [   File Watcher] rtingClassPathChangeChangedEventListener : Restarting due to 109 class path changes (0 additions, 109 deletions, 0 modifications)
-2026-06-07T13:41:34.455+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [       Thread-5] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T13:41:34.461+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [       Thread-5] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
-2026-06-07T13:41:34.517+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [       Thread-5] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-
-  .   ____          _            __ _ _
- /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
-( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
- \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
-  '  |____| .__|_| |_|_| |_\__, | / / / /
- =========|_|==============|___/=/_/_/_/
-
- :: Spring Boot ::                (v3.3.5)
-
-2026-06-07T13:41:34.749+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Starting CourseQaApplication using Java 26.0.1 with PID 26964 (C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND\target\classes started by dinhd in C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND)
-2026-06-07T13:41:34.749+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : No active profile set, falling back to 1 default profile: "default"
-2026-06-07T13:41:35.240+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
-2026-06-07T13:41:35.450+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 202 ms. Found 0 JPA repository interfaces.
-2026-06-07T13:41:35.612+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8080 (http)
-2026-06-07T13:41:35.615+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
-2026-06-07T13:41:35.617+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.31]
-2026-06-07T13:41:35.758+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
-2026-06-07T13:41:35.760+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 1009 ms
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-2026-06-07T13:41:35.837+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
-2026-06-07T13:41:35.840+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
-2026-06-07T13:41:35.848+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
-2026-06-07T13:41:35.850+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-2 - Starting...
-2026-06-07T13:41:35.888+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.pool.HikariPool        : HikariPool-2 - Added connection ConnectionID:11 ClientConnectionId: 32245344-c662-4893-83d7-7ee9344818c6
-2026-06-07T13:41:35.889+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-2 - Start completed.
-2026-06-07T13:41:35.891+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] org.hibernate.orm.deprecation            : HHH90000025: SQLServerDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
-2026-06-07T13:41:35.913+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
-2026-06-07T13:41:35.914+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T13:41:35.947+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] JpaBaseConfiguration$JpaWebConfiguration : spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
-2026-06-07T13:41:36.322+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.d.a.OptionalLiveReloadServer       : LiveReload server is running on port 35729
-2026-06-07T13:41:36.517+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8080 (http) with context path '/'
-2026-06-07T13:41:36.522+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Started CourseQaApplication in 1.832 seconds (process running for 90.768)
-2026-06-07T13:41:36.528+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .ConditionEvaluationDeltaLoggingListener : Condition evaluation unchanged
-2026-06-07T13:41:39.244+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [   File Watcher] rtingClassPathChangeChangedEventListener : Restarting due to 109 class path changes (109 additions, 0 deletions, 0 modifications)
-2026-06-07T13:41:39.249+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [       Thread-7] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T13:41:39.250+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [       Thread-7] com.zaxxer.hikari.HikariDataSource       : HikariPool-2 - Shutdown initiated...
-2026-06-07T13:41:39.252+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [       Thread-7] com.zaxxer.hikari.HikariDataSource       : HikariPool-2 - Shutdown completed.
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-
-  .   ____          _            __ _ _
- /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
-( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
- \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
-  '  |____| .__|_| |_|_| |_\__, | / / / /
- =========|_|==============|___/=/_/_/_/
-
- :: Spring Boot ::                (v3.3.5)
-
-2026-06-07T13:41:39.298+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Starting CourseQaApplication using Java 26.0.1 with PID 26964 (C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND\target\classes started by dinhd in C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND)
-2026-06-07T13:41:39.299+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : No active profile set, falling back to 1 default profile: "default"
-2026-06-07T13:41:39.719+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
-2026-06-07T13:41:39.822+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 102 ms. Found 13 JPA repository interfaces.
-2026-06-07T13:41:39.941+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8080 (http)
-2026-06-07T13:41:39.942+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
-2026-06-07T13:41:39.942+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.31]
-2026-06-07T13:41:39.956+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
-2026-06-07T13:41:39.957+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 657 ms
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-2026-06-07T13:41:39.976+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
-2026-06-07T13:41:39.977+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
-2026-06-07T13:41:39.982+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
-2026-06-07T13:41:39.983+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-3 - Starting...
-2026-06-07T13:41:39.996+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.pool.HikariPool        : HikariPool-3 - Added connection ConnectionID:21 ClientConnectionId: e7815ac6-3a8e-4c2c-82af-85aba5c6ce96
-2026-06-07T13:41:39.996+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-3 - Start completed.
-2026-06-07T13:41:39.997+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] org.hibernate.orm.deprecation            : HHH90000025: SQLServerDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
-2026-06-07T13:41:40.641+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
-2026-06-07T13:41:40.642+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T13:41:41.057+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] JpaBaseConfiguration$JpaWebConfiguration : spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
-2026-06-07T13:41:41.361+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.d.a.OptionalLiveReloadServer       : LiveReload server is running on port 35729
-2026-06-07T13:41:41.368+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8080 (http) with context path '/'
-2026-06-07T13:41:41.370+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Started CourseQaApplication in 2.086 seconds (process running for 95.616)
-2026-06-07T13:41:41.373+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .ConditionEvaluationDeltaLoggingListener : Condition evaluation unchanged
-2026-06-07T13:41:53.239+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
-2026-06-07T13:41:53.239+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
-2026-06-07T13:41:53.241+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 2 ms
+2026-06-07T20:32:19.235+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
+2026-06-07T20:32:19.350+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] org.hibernate.Version                    : HHH000412: Hibernate ORM core version 6.5.3.Final
+2026-06-07T20:32:19.512+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
+2026-06-07T20:32:21.044+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-06-07T20:32:21.140+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-06-07T20:32:22.217+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection ConnectionID:1 ClientConnectionId: f7153411-1462-4fa6-bfa6-331a06288e80
+2026-06-07T20:32:22.223+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-06-07T20:32:22.381+07:00  WARN 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] org.hibernate.orm.deprecation            : HHH90000025: SQLServerDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2026-06-07T20:32:28.219+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-06-07T20:32:28.223+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-06-07T20:32:31.137+07:00  WARN 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] JpaBaseConfiguration$JpaWebConfiguration : spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2026-06-07T20:32:32.854+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.d.a.OptionalLiveReloadServer       : LiveReload server is running on port 35729
+2026-06-07T20:32:32.916+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8080 (http) with context path '/'
+2026-06-07T20:32:32.993+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Started CourseQaApplication in 16.208 seconds (process running for 16.742)
+2026-06-07T20:33:03.149+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-06-07T20:33:03.149+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-06-07T20:33:03.151+07:00  INFO 10012 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 0 ms
 Hibernate: 
     select
         top (?) u1_0.user_id 
@@ -254,101 +105,6 @@ Hibernate:
     where
         ur1_0.user_id=? 
         and ur1_0.is_active=1
-2026-06-07T13:42:27.014+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [   File Watcher] rtingClassPathChangeChangedEventListener : Restarting due to 109 class path changes (0 additions, 109 deletions, 0 modifications)
-2026-06-07T13:42:27.031+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [      Thread-11] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T13:42:27.031+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [      Thread-11] com.zaxxer.hikari.HikariDataSource       : HikariPool-3 - Shutdown initiated...
-2026-06-07T13:42:27.036+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [      Thread-11] com.zaxxer.hikari.HikariDataSource       : HikariPool-3 - Shutdown completed.
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-
-  .   ____          _            __ _ _
- /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
-( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
- \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
-  '  |____| .__|_| |_|_| |_\__, | / / / /
- =========|_|==============|___/=/_/_/_/
-
- :: Spring Boot ::                (v3.3.5)
-
-2026-06-07T13:42:27.154+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Starting CourseQaApplication using Java 26.0.1 with PID 26964 (C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND\target\classes started by dinhd in C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND)
-2026-06-07T13:42:27.155+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : No active profile set, falling back to 1 default profile: "default"
-2026-06-07T13:42:27.592+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
-2026-06-07T13:42:27.703+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 109 ms. Found 5 JPA repository interfaces.
-2026-06-07T13:42:28.053+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8080 (http)
-2026-06-07T13:42:28.056+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
-2026-06-07T13:42:28.057+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.31]
-2026-06-07T13:42:28.084+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
-2026-06-07T13:42:28.086+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 929 ms
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-2026-06-07T13:42:28.247+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
-2026-06-07T13:42:28.249+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
-2026-06-07T13:42:28.257+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
-2026-06-07T13:42:28.262+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-4 - Starting...
-2026-06-07T13:42:28.328+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.pool.HikariPool        : HikariPool-4 - Added connection ConnectionID:31 ClientConnectionId: 6c2dd0d2-d76a-490b-81aa-915b43944d14
-2026-06-07T13:42:28.329+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-4 - Start completed.
-2026-06-07T13:42:28.330+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] org.hibernate.orm.deprecation            : HHH90000025: SQLServerDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
-2026-06-07T13:42:28.633+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
-2026-06-07T13:42:28.634+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T13:42:28.704+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'courseController' defined in file [C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND\target\classes\com\courseqa\controller\CourseController.class]: Unsatisfied dependency expressed through constructor parameter 0: No qualifying bean of type 'com.courseqa.service.CourseService' available: expected at least 1 bean which qualifies as autowire candidate. Dependency annotations: {}
-2026-06-07T13:42:28.705+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T13:42:28.706+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-4 - Shutdown initiated...
-2026-06-07T13:42:28.728+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-4 - Shutdown completed.
-2026-06-07T13:42:28.730+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardService   : Stopping service [Tomcat]
-2026-06-07T13:42:28.737+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.b.a.l.ConditionEvaluationReportLogger : 
-
-Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
-2026-06-07T13:42:28.770+07:00 ERROR 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.d.LoggingFailureAnalysisReporter   : 
-
-***************************
-APPLICATION FAILED TO START
-***************************
-
-Description:
-
-Parameter 0 of constructor in com.courseqa.controller.CourseController required a bean of type 'com.courseqa.service.CourseService' that could not be found.
-
-
-Action:
-
-Consider defining a bean of type 'com.courseqa.service.CourseService' in your configuration.
-
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-
-  .   ____          _            __ _ _
- /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
-( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
- \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
-  '  |____| .__|_| |_|_| |_\__, | / / / /
- =========|_|==============|___/=/_/_/_/
-
- :: Spring Boot ::                (v3.3.5)
-
-2026-06-07T13:42:30.291+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Starting CourseQaApplication using Java 26.0.1 with PID 26964 (C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND\target\classes started by dinhd in C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND)
-2026-06-07T13:42:30.291+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : No active profile set, falling back to 1 default profile: "default"
-2026-06-07T13:42:30.434+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
-2026-06-07T13:42:30.476+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 40 ms. Found 13 JPA repository interfaces.
-2026-06-07T13:42:30.531+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8080 (http)
-2026-06-07T13:42:30.533+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
-2026-06-07T13:42:30.533+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.31]
-2026-06-07T13:42:30.544+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.a.c.c.C.[Tomcat-1].[localhost].[/]     : Initializing Spring embedded WebApplicationContext
-2026-06-07T13:42:30.545+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 251 ms
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-2026-06-07T13:42:30.565+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
-2026-06-07T13:42:30.567+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
-2026-06-07T13:42:30.572+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
-2026-06-07T13:42:30.573+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-5 - Starting...
-2026-06-07T13:42:30.587+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.pool.HikariPool        : HikariPool-5 - Added connection ConnectionID:35 ClientConnectionId: 15e94771-849e-4087-8973-87791717f560
-2026-06-07T13:42:30.588+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-5 - Start completed.
-2026-06-07T13:42:30.588+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] org.hibernate.orm.deprecation            : HHH90000025: SQLServerDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
-2026-06-07T13:42:30.729+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
-2026-06-07T13:42:30.730+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T13:42:30.924+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] JpaBaseConfiguration$JpaWebConfiguration : spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
-2026-06-07T13:42:30.988+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.d.a.OptionalLiveReloadServer       : LiveReload server is running on port 35729
-2026-06-07T13:42:30.993+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8080 (http) with context path '/'
-2026-06-07T13:42:30.995+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Started CourseQaApplication in 0.743 seconds (process running for 145.241)
-2026-06-07T13:42:30.995+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .ConditionEvaluationDeltaLoggingListener : Condition evaluation unchanged
-2026-06-07T13:42:31.583+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.a.c.c.C.[Tomcat-1].[localhost].[/]     : Initializing Spring DispatcherServlet 'dispatcherServlet'
-2026-06-07T13:42:31.584+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
-2026-06-07T13:42:31.585+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 1 ms
 Hibernate: 
     select
         u1_0.user_id,
@@ -364,7 +120,7 @@ Hibernate:
     from
         users u1_0 
     where
-        u1_0.email=?
+        u1_0.user_id=?
 Hibernate: 
     select
         ur1_0.user_role_id,
@@ -376,8 +132,7 @@ Hibernate:
     from
         user_roles ur1_0 
     where
-        ur1_0.user_id=? 
-        and ur1_0.is_active=1
+        ur1_0.user_id=?
 Hibernate: 
     insert 
     into
@@ -401,221 +156,16 @@ Hibernate:
     where
         user_id=?
 Hibernate: 
-    select
-        ur1_0.user_role_id,
-        ur1_0.assigned_at,
-        ur1_0.is_active,
-        ur1_0.permission_json,
-        ur1_0.role_name,
-        ur1_0.user_id 
-    from
-        user_roles ur1_0 
-    where
-        ur1_0.user_id=? 
-        and ur1_0.is_active=1
-Hibernate: 
-    select
-        u1_0.user_id,
-        u1_0.avatar_url,
-        u1_0.created_at,
-        u1_0.email,
-        u1_0.full_name,
-        u1_0.is_active,
-        u1_0.last_login_at,
-        u1_0.last_logout_at,
-        u1_0.password_hash,
-        u1_0.updated_at 
-    from
-        users u1_0 
-    where
-        u1_0.email=?
-Hibernate: 
     update
-        users 
+        user_roles 
     set
-        avatar_url=?,
-        created_at=?,
-        email=?,
-        full_name=?,
+        assigned_at=?,
         is_active=?,
-        last_login_at=?,
-        last_logout_at=?,
-        password_hash=?,
-        updated_at=? 
+        permission_json=?,
+        role_name=?,
+        user_id=? 
     where
-        user_id=?
-Hibernate: 
-    select
-        ur1_0.user_role_id,
-        ur1_0.assigned_at,
-        ur1_0.is_active,
-        ur1_0.permission_json,
-        ur1_0.role_name,
-        ur1_0.user_id 
-    from
-        user_roles ur1_0 
-    where
-        ur1_0.user_id=? 
-        and ur1_0.is_active=1
-2026-06-07T14:13:17.779+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [   File Watcher] rtingClassPathChangeChangedEventListener : Restarting due to 102 class path changes (0 additions, 1 deletion, 101 modifications)
-2026-06-07T14:13:18.075+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [      Thread-15] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T14:13:18.084+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [      Thread-15] com.zaxxer.hikari.HikariDataSource       : HikariPool-5 - Shutdown initiated...
-2026-06-07T14:13:18.094+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [      Thread-15] com.zaxxer.hikari.HikariDataSource       : HikariPool-5 - Shutdown completed.
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-
-  .   ____          _            __ _ _
- /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
-( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
- \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
-  '  |____| .__|_| |_|_| |_\__, | / / / /
- =========|_|==============|___/=/_/_/_/
-
- :: Spring Boot ::                (v3.3.5)
-
-2026-06-07T14:13:18.359+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Starting CourseQaApplication using Java 26.0.1 with PID 26964 (C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND\target\classes started by dinhd in C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND)
-2026-06-07T14:13:18.360+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : No active profile set, falling back to 1 default profile: "default"
-2026-06-07T14:13:20.789+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
-2026-06-07T14:13:20.920+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 130 ms. Found 12 JPA repository interfaces.
-2026-06-07T14:13:21.211+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8080 (http)
-2026-06-07T14:13:21.213+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
-2026-06-07T14:13:21.217+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.31]
-2026-06-07T14:13:21.249+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.a.c.c.C.[Tomcat-1].[localhost].[/]     : Initializing Spring embedded WebApplicationContext
-2026-06-07T14:13:21.253+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 2891 ms
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-2026-06-07T14:13:21.313+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
-2026-06-07T14:13:21.317+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
-2026-06-07T14:13:21.342+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
-2026-06-07T14:13:21.344+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-6 - Starting...
-2026-06-07T14:13:21.463+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.pool.HikariPool        : HikariPool-6 - Added connection ConnectionID:55 ClientConnectionId: 5751d17d-c2be-437e-aded-328869dc6947
-2026-06-07T14:13:21.464+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-6 - Start completed.
-2026-06-07T14:13:21.465+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] org.hibernate.orm.deprecation            : HHH90000025: SQLServerDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
-2026-06-07T14:13:24.658+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
-2026-06-07T14:13:24.660+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T14:13:25.164+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] JpaBaseConfiguration$JpaWebConfiguration : spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
-2026-06-07T14:13:25.444+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.d.a.OptionalLiveReloadServer       : LiveReload server is running on port 35729
-2026-06-07T14:13:25.466+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8080 (http) with context path '/'
-2026-06-07T14:13:25.470+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Started CourseQaApplication in 7.152 seconds (process running for 1999.715)
-2026-06-07T14:13:25.471+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .ConditionEvaluationDeltaLoggingListener : Condition evaluation unchanged
-2026-06-07T14:13:44.342+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.a.c.c.C.[Tomcat-1].[localhost].[/]     : Initializing Spring DispatcherServlet 'dispatcherServlet'
-2026-06-07T14:13:44.343+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
-2026-06-07T14:13:44.343+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 0 ms
-Hibernate: 
-    select
-        u1_0.user_id,
-        u1_0.avatar_url,
-        u1_0.created_at,
-        u1_0.email,
-        u1_0.full_name,
-        u1_0.is_active,
-        u1_0.last_login_at,
-        u1_0.last_logout_at,
-        u1_0.password_hash,
-        u1_0.updated_at 
-    from
-        users u1_0 
-    where
-        u1_0.email=?
-Hibernate: 
-    update
-        users 
-    set
-        avatar_url=?,
-        created_at=?,
-        email=?,
-        full_name=?,
-        is_active=?,
-        last_login_at=?,
-        last_logout_at=?,
-        password_hash=?,
-        updated_at=? 
-    where
-        user_id=?
-Hibernate: 
-    select
-        ur1_0.user_role_id,
-        ur1_0.assigned_at,
-        ur1_0.is_active,
-        ur1_0.permission_json,
-        ur1_0.role_name,
-        ur1_0.user_id 
-    from
-        user_roles ur1_0 
-    where
-        ur1_0.user_id=? 
-        and ur1_0.is_active=1
-2026-06-07T14:34:59.240+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [   File Watcher] rtingClassPathChangeChangedEventListener : Restarting due to 108 class path changes (0 additions, 0 deletions, 108 modifications)
-2026-06-07T14:34:59.270+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [      Thread-22] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T14:34:59.272+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [      Thread-22] com.zaxxer.hikari.HikariDataSource       : HikariPool-6 - Shutdown initiated...
-2026-06-07T14:34:59.392+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [      Thread-22] com.zaxxer.hikari.HikariDataSource       : HikariPool-6 - Shutdown completed.
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-
-  .   ____          _            __ _ _
- /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
-( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
- \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
-  '  |____| .__|_| |_|_| |_\__, | / / / /
- =========|_|==============|___/=/_/_/_/
-
- :: Spring Boot ::                (v3.3.5)
-
-2026-06-07T14:34:59.942+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Starting CourseQaApplication using Java 26.0.1 with PID 26964 (C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND\target\classes started by dinhd in C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND)
-2026-06-07T14:34:59.943+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : No active profile set, falling back to 1 default profile: "default"
-2026-06-07T14:35:00.599+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
-2026-06-07T14:35:00.639+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 40 ms. Found 12 JPA repository interfaces.
-2026-06-07T14:35:00.751+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8080 (http)
-2026-06-07T14:35:00.754+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
-2026-06-07T14:35:00.754+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.31]
-2026-06-07T14:35:00.799+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.a.c.c.C.[Tomcat-1].[localhost].[/]     : Initializing Spring embedded WebApplicationContext
-2026-06-07T14:35:00.799+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 849 ms
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-2026-06-07T14:35:00.881+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
-2026-06-07T14:35:00.887+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
-2026-06-07T14:35:00.904+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
-2026-06-07T14:35:00.906+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-7 - Starting...
-2026-06-07T14:35:00.944+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.pool.HikariPool        : HikariPool-7 - Added connection ConnectionID:65 ClientConnectionId: 197780c3-69b6-460e-8eb1-9197e37bdaaa
-2026-06-07T14:35:00.945+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-7 - Start completed.
-2026-06-07T14:35:00.945+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] org.hibernate.orm.deprecation            : HHH90000025: SQLServerDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
-2026-06-07T14:35:01.933+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
-2026-06-07T14:35:01.934+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T14:35:02.521+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] JpaBaseConfiguration$JpaWebConfiguration : spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
-2026-06-07T14:35:02.661+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.d.a.OptionalLiveReloadServer       : LiveReload server is running on port 35729
-2026-06-07T14:35:02.691+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8080 (http) with context path '/'
-2026-06-07T14:35:02.700+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Started CourseQaApplication in 3.06 seconds (process running for 3296.945)
-2026-06-07T14:35:02.702+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .ConditionEvaluationDeltaLoggingListener : Condition evaluation unchanged
-2026-06-07T14:37:33.789+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.a.c.c.C.[Tomcat-1].[localhost].[/]     : Initializing Spring DispatcherServlet 'dispatcherServlet'
-2026-06-07T14:37:33.789+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
-2026-06-07T14:37:33.790+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 1 ms
-Hibernate: 
-    select
-        u1_0.user_id,
-        u1_0.avatar_url,
-        u1_0.created_at,
-        u1_0.email,
-        u1_0.full_name,
-        u1_0.is_active,
-        u1_0.last_login_at,
-        u1_0.last_logout_at,
-        u1_0.password_hash,
-        u1_0.updated_at 
-    from
-        users u1_0 
-    where
-        u1_0.email=?
-Hibernate: 
-    update
-        users 
-    set
-        avatar_url=?,
-        created_at=?,
-        email=?,
-        full_name=?,
-        is_active=?,
-        last_login_at=?,
-        last_logout_at=?,
-        password_hash=?,
-        updated_at=? 
-    where
-        user_id=?
+        user_role_id=?
 Hibernate: 
     select
         ur1_0.user_role_id,
@@ -631,169 +181,24 @@ Hibernate:
         and ur1_0.is_active=1
 Hibernate: 
     select
-        top (?) u1_0.user_id 
+        count_big(*) 
     from
         users u1_0 
     where
-        u1_0.email=?
-2026-06-07T14:39:16.552+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-4] .m.m.a.ExceptionHandlerExceptionResolver : Resolved [org.springframework.web.server.ResponseStatusException: 409 CONFLICT "Email is already registered."]
+        u1_0.user_id=?
 Hibernate: 
     select
-        top (?) u1_0.user_id 
+        ur1_0.user_role_id,
+        ur1_0.assigned_at,
+        ur1_0.is_active,
+        ur1_0.permission_json,
+        ur1_0.role_name,
+        ur1_0.user_id 
     from
-        users u1_0 
+        user_roles ur1_0 
     where
-        u1_0.email=?
-Hibernate: 
-    insert 
-    into
-        users
-        (avatar_url, created_at, email, full_name, is_active, last_login_at, last_logout_at, password_hash, updated_at, user_id) 
-    values
-        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-2026-06-07T14:39:26.789+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-5] .m.m.a.ExceptionHandlerExceptionResolver : Resolved [org.springframework.web.server.ResponseStatusException: 400 BAD_REQUEST "Invalid role."]
-Hibernate: 
-    select
-        top (?) u1_0.user_id 
-    from
-        users u1_0 
-    where
-        u1_0.email=?
-2026-06-07T14:40:52.251+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-6] .m.m.a.ExceptionHandlerExceptionResolver : Resolved [org.springframework.web.server.ResponseStatusException: 409 CONFLICT "Email is already registered."]
-2026-06-07T14:41:38.569+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [   File Watcher] rtingClassPathChangeChangedEventListener : Restarting due to 108 class path changes (0 additions, 108 deletions, 0 modifications)
-2026-06-07T14:41:38.579+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [      Thread-26] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T14:41:38.580+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [      Thread-26] com.zaxxer.hikari.HikariDataSource       : HikariPool-7 - Shutdown initiated...
-2026-06-07T14:41:38.582+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [      Thread-26] com.zaxxer.hikari.HikariDataSource       : HikariPool-7 - Shutdown completed.
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-
-  .   ____          _            __ _ _
- /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
-( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
- \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
-  '  |____| .__|_| |_|_| |_\__, | / / / /
- =========|_|==============|___/=/_/_/_/
-
- :: Spring Boot ::                (v3.3.5)
-
-2026-06-07T14:41:38.651+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Starting CourseQaApplication using Java 26.0.1 with PID 26964 (C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND\target\classes started by dinhd in C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND)
-2026-06-07T14:41:38.651+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : No active profile set, falling back to 1 default profile: "default"
-2026-06-07T14:41:38.824+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
-2026-06-07T14:41:38.886+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 61 ms. Found 7 JPA repository interfaces.
-2026-06-07T14:41:39.022+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8080 (http)
-2026-06-07T14:41:39.024+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
-2026-06-07T14:41:39.024+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.31]
-2026-06-07T14:41:39.040+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.a.c.c.C.[Tomcat-1].[localhost].[/]     : Initializing Spring embedded WebApplicationContext
-2026-06-07T14:41:39.040+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 387 ms
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-2026-06-07T14:41:39.094+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
-2026-06-07T14:41:39.097+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
-2026-06-07T14:41:39.109+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
-2026-06-07T14:41:39.110+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-8 - Starting...
-2026-06-07T14:41:39.139+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.pool.HikariPool        : HikariPool-8 - Added connection ConnectionID:75 ClientConnectionId: 6f868bf8-8754-424a-8786-dbbb9edb7368
-2026-06-07T14:41:39.139+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-8 - Start completed.
-2026-06-07T14:41:39.140+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] org.hibernate.orm.deprecation            : HHH90000025: SQLServerDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
-2026-06-07T14:41:39.334+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
-2026-06-07T14:41:39.335+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T14:41:39.397+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'documentController' defined in file [C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND\target\classes\com\courseqa\controller\DocumentController.class]: Unsatisfied dependency expressed through constructor parameter 0: No qualifying bean of type 'com.courseqa.service.DocumentService' available: expected at least 1 bean which qualifies as autowire candidate. Dependency annotations: {}
-2026-06-07T14:41:39.398+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T14:41:39.398+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-8 - Shutdown initiated...
-2026-06-07T14:41:39.424+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-8 - Shutdown completed.
-2026-06-07T14:41:39.425+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardService   : Stopping service [Tomcat]
-2026-06-07T14:41:39.428+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.b.a.l.ConditionEvaluationReportLogger : 
-
-Error starting ApplicationContext. To display the condition evaluation report re-run your application with 'debug' enabled.
-2026-06-07T14:41:39.432+07:00 ERROR 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.d.LoggingFailureAnalysisReporter   : 
-
-***************************
-APPLICATION FAILED TO START
-***************************
-
-Description:
-
-Parameter 0 of constructor in com.courseqa.controller.DocumentController required a bean of type 'com.courseqa.service.DocumentService' that could not be found.
-
-
-Action:
-
-Consider defining a bean of type 'com.courseqa.service.DocumentService' in your configuration.
-
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-
-  .   ____          _            __ _ _
- /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
-( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
- \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
-  '  |____| .__|_| |_|_| |_\__, | / / / /
- =========|_|==============|___/=/_/_/_/
-
- :: Spring Boot ::                (v3.3.5)
-
-2026-06-07T14:41:40.883+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Starting CourseQaApplication using Java 26.0.1 with PID 26964 (C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND\target\classes started by dinhd in C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND)
-2026-06-07T14:41:40.883+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : No active profile set, falling back to 1 default profile: "default"
-2026-06-07T14:41:41.049+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
-2026-06-07T14:41:41.074+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 24 ms. Found 12 JPA repository interfaces.
-2026-06-07T14:41:41.120+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8080 (http)
-2026-06-07T14:41:41.121+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
-2026-06-07T14:41:41.121+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.31]
-2026-06-07T14:41:41.131+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.a.c.c.C.[Tomcat-2].[localhost].[/]     : Initializing Spring embedded WebApplicationContext
-2026-06-07T14:41:41.131+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 246 ms
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-2026-06-07T14:41:41.150+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
-2026-06-07T14:41:41.152+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
-2026-06-07T14:41:41.156+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
-2026-06-07T14:41:41.156+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-9 - Starting...
-2026-06-07T14:41:41.171+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.pool.HikariPool        : HikariPool-9 - Added connection ConnectionID:80 ClientConnectionId: 2d384c15-14e6-4dcf-8e85-a17d4e02e8f2
-2026-06-07T14:41:41.171+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-9 - Start completed.
-2026-06-07T14:41:41.172+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] org.hibernate.orm.deprecation            : HHH90000025: SQLServerDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
-2026-06-07T14:41:41.324+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
-2026-06-07T14:41:41.324+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T14:41:41.502+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] JpaBaseConfiguration$JpaWebConfiguration : spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
-2026-06-07T14:41:41.590+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.d.a.OptionalLiveReloadServer       : LiveReload server is running on port 35729
-2026-06-07T14:41:41.600+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8080 (http) with context path '/'
-2026-06-07T14:41:41.603+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Started CourseQaApplication in 0.732 seconds (process running for 3695.848)
-2026-06-07T14:41:41.604+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .ConditionEvaluationDeltaLoggingListener : Condition evaluation unchanged
-2026-06-07T14:42:02.496+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [   File Watcher] rtingClassPathChangeChangedEventListener : Restarting due to 108 class path changes (0 additions, 0 deletions, 108 modifications)
-2026-06-07T14:42:02.502+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [      Thread-30] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T14:42:02.504+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [      Thread-30] com.zaxxer.hikari.HikariDataSource       : HikariPool-9 - Shutdown initiated...
-2026-06-07T14:42:02.505+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [      Thread-30] com.zaxxer.hikari.HikariDataSource       : HikariPool-9 - Shutdown completed.
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-
-  .   ____          _            __ _ _
- /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
-( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
- \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
-  '  |____| .__|_| |_|_| |_\__, | / / / /
- =========|_|==============|___/=/_/_/_/
-
- :: Spring Boot ::                (v3.3.5)
-
-2026-06-07T14:42:02.554+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Starting CourseQaApplication using Java 26.0.1 with PID 26964 (C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND\target\classes started by dinhd in C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND)
-2026-06-07T14:42:02.555+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : No active profile set, falling back to 1 default profile: "default"
-2026-06-07T14:42:02.679+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
-2026-06-07T14:42:02.704+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 25 ms. Found 12 JPA repository interfaces.
-2026-06-07T14:42:02.747+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8080 (http)
-2026-06-07T14:42:02.748+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
-2026-06-07T14:42:02.748+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.31]
-2026-06-07T14:42:02.758+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.a.c.c.C.[Tomcat-2].[localhost].[/]     : Initializing Spring embedded WebApplicationContext
-2026-06-07T14:42:02.759+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 204 ms
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-2026-06-07T14:42:02.778+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
-2026-06-07T14:42:02.779+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
-2026-06-07T14:42:02.784+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
-2026-06-07T14:42:02.785+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-10 - Starting...
-2026-06-07T14:42:02.799+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.pool.HikariPool        : HikariPool-10 - Added connection ConnectionID:90 ClientConnectionId: d428605c-69e7-433e-a371-03ef2b7e4051
-2026-06-07T14:42:02.800+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-10 - Start completed.
-2026-06-07T14:42:02.800+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] org.hibernate.orm.deprecation            : HHH90000025: SQLServerDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
-2026-06-07T14:42:02.934+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
-2026-06-07T14:42:02.935+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T14:42:03.048+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] JpaBaseConfiguration$JpaWebConfiguration : spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
-2026-06-07T14:42:03.094+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.d.a.OptionalLiveReloadServer       : LiveReload server is running on port 35729
-2026-06-07T14:42:03.098+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8080 (http) with context path '/'
-2026-06-07T14:42:03.101+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Started CourseQaApplication in 0.56 seconds (process running for 3717.347)
-2026-06-07T14:42:03.102+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .ConditionEvaluationDeltaLoggingListener : Condition evaluation unchanged
-2026-06-07T14:42:04.751+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.a.c.c.C.[Tomcat-2].[localhost].[/]     : Initializing Spring DispatcherServlet 'dispatcherServlet'
-2026-06-07T14:42:04.751+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
-2026-06-07T14:42:04.753+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 1 ms
+        ur1_0.user_id=? 
+        and ur1_0.is_active=1
 Hibernate: 
     select
         u1_0.user_id,
@@ -809,14 +214,19 @@ Hibernate:
     from
         users u1_0 
     where
-        u1_0.email=?
+        u1_0.user_id=?
 Hibernate: 
-    insert 
-    into
-        users
-        (avatar_url, created_at, email, full_name, is_active, last_login_at, last_logout_at, password_hash, updated_at, user_id) 
-    values
-        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    select
+        ur1_0.user_role_id,
+        ur1_0.assigned_at,
+        ur1_0.is_active,
+        ur1_0.permission_json,
+        ur1_0.role_name,
+        ur1_0.user_id 
+    from
+        user_roles ur1_0 
+    where
+        ur1_0.user_id=?
 Hibernate: 
     insert 
     into
@@ -825,6 +235,52 @@ Hibernate:
     values
         (?, ?, ?, ?, ?, ?)
 Hibernate: 
+    update
+        users 
+    set
+        avatar_url=?,
+        created_at=?,
+        email=?,
+        full_name=?,
+        is_active=?,
+        last_login_at=?,
+        last_logout_at=?,
+        password_hash=?,
+        updated_at=? 
+    where
+        user_id=?
+Hibernate: 
+    update
+        user_roles 
+    set
+        assigned_at=?,
+        is_active=?,
+        permission_json=?,
+        role_name=?,
+        user_id=? 
+    where
+        user_role_id=?
+Hibernate: 
+    select
+        ur1_0.user_role_id,
+        ur1_0.assigned_at,
+        ur1_0.is_active,
+        ur1_0.permission_json,
+        ur1_0.role_name,
+        ur1_0.user_id 
+    from
+        user_roles ur1_0 
+    where
+        ur1_0.user_id=? 
+        and ur1_0.is_active=1
+Hibernate: 
+    select
+        count_big(*) 
+    from
+        users u1_0 
+    where
+        u1_0.user_id=?
+Hibernate: 
     select
         ur1_0.user_role_id,
         ur1_0.assigned_at,
@@ -852,24 +308,26 @@ Hibernate:
     from
         users u1_0 
     where
-        u1_0.email=?
-2026-06-07T14:47:51.510+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-2] .m.m.a.ExceptionHandlerExceptionResolver : Resolved [org.springframework.web.server.ResponseStatusException: 401 UNAUTHORIZED "Invalid email or password."]
+        u1_0.user_id=?
 Hibernate: 
     select
-        u1_0.user_id,
-        u1_0.avatar_url,
-        u1_0.created_at,
-        u1_0.email,
-        u1_0.full_name,
-        u1_0.is_active,
-        u1_0.last_login_at,
-        u1_0.last_logout_at,
-        u1_0.password_hash,
-        u1_0.updated_at 
+        ur1_0.user_role_id,
+        ur1_0.assigned_at,
+        ur1_0.is_active,
+        ur1_0.permission_json,
+        ur1_0.role_name,
+        ur1_0.user_id 
     from
-        users u1_0 
+        user_roles ur1_0 
     where
-        u1_0.email=?
+        ur1_0.user_id=?
+Hibernate: 
+    insert 
+    into
+        user_roles
+        (assigned_at, is_active, permission_json, role_name, user_id, user_role_id) 
+    values
+        (?, ?, ?, ?, ?, ?)
 Hibernate: 
     update
         users 
@@ -885,6 +343,17 @@ Hibernate:
         updated_at=? 
     where
         user_id=?
+Hibernate: 
+    update
+        user_roles 
+    set
+        assigned_at=?,
+        is_active=?,
+        permission_json=?,
+        role_name=?,
+        user_id=? 
+    where
+        user_role_id=?
 Hibernate: 
     select
         ur1_0.user_role_id,
@@ -929,123 +398,6 @@ Hibernate:
         updated_at=? 
     where
         user_id=?
-Hibernate: 
-    select
-        u1_0.user_id,
-        u1_0.avatar_url,
-        u1_0.created_at,
-        u1_0.email,
-        u1_0.full_name,
-        u1_0.is_active,
-        u1_0.last_login_at,
-        u1_0.last_logout_at,
-        u1_0.password_hash,
-        u1_0.updated_at 
-    from
-        users u1_0 
-    where
-        u1_0.email=?
-Hibernate: 
-    update
-        users 
-    set
-        avatar_url=?,
-        created_at=?,
-        email=?,
-        full_name=?,
-        is_active=?,
-        last_login_at=?,
-        last_logout_at=?,
-        password_hash=?,
-        updated_at=? 
-    where
-        user_id=?
-Hibernate: 
-    select
-        ur1_0.user_role_id,
-        ur1_0.assigned_at,
-        ur1_0.is_active,
-        ur1_0.permission_json,
-        ur1_0.role_name,
-        ur1_0.user_id 
-    from
-        user_roles ur1_0 
-    where
-        ur1_0.user_id=? 
-        and ur1_0.is_active=1
-Hibernate: 
-    select
-        u1_0.user_id,
-        u1_0.avatar_url,
-        u1_0.created_at,
-        u1_0.email,
-        u1_0.full_name,
-        u1_0.is_active,
-        u1_0.last_login_at,
-        u1_0.last_logout_at,
-        u1_0.password_hash,
-        u1_0.updated_at 
-    from
-        users u1_0 
-    where
-        u1_0.user_id=?
-Hibernate: 
-    update
-        users 
-    set
-        avatar_url=?,
-        created_at=?,
-        email=?,
-        full_name=?,
-        is_active=?,
-        last_login_at=?,
-        last_logout_at=?,
-        password_hash=?,
-        updated_at=? 
-    where
-        user_id=?
-2026-06-07T15:17:03.069+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [   File Watcher] rtingClassPathChangeChangedEventListener : Restarting due to 2 class path changes (0 additions, 0 deletions, 2 modifications)
-2026-06-07T15:17:03.086+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [      Thread-37] j.LocalContainerEntityManagerFactoryBean : Closing JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T15:17:03.089+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [      Thread-37] com.zaxxer.hikari.HikariDataSource       : HikariPool-10 - Shutdown initiated...
-2026-06-07T15:17:03.093+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [      Thread-37] com.zaxxer.hikari.HikariDataSource       : HikariPool-10 - Shutdown completed.
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-
-  .   ____          _            __ _ _
- /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
-( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
- \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
-  '  |____| .__|_| |_|_| |_\__, | / / / /
- =========|_|==============|___/=/_/_/_/
-
- :: Spring Boot ::                (v3.3.5)
-
-2026-06-07T15:17:03.386+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Starting CourseQaApplication using Java 26.0.1 with PID 26964 (C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND\target\classes started by dinhd in C:\Users\dinhd\Documents\GitHub\BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND)
-2026-06-07T15:17:03.387+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : No active profile set, falling back to 1 default profile: "default"
-2026-06-07T15:17:04.493+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
-2026-06-07T15:17:04.562+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 68 ms. Found 12 JPA repository interfaces.
-2026-06-07T15:17:04.732+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8080 (http)
-2026-06-07T15:17:04.733+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
-2026-06-07T15:17:04.734+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.31]
-2026-06-07T15:17:04.789+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.a.c.c.C.[Tomcat-2].[localhost].[/]     : Initializing Spring embedded WebApplicationContext
-2026-06-07T15:17:04.790+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 1396 ms
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
-2026-06-07T15:17:04.841+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
-2026-06-07T15:17:04.845+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
-2026-06-07T15:17:04.861+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
-2026-06-07T15:17:04.863+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-11 - Starting...
-2026-06-07T15:17:04.882+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.pool.HikariPool        : HikariPool-11 - Added connection ConnectionID:110 ClientConnectionId: d77803fc-75a1-441d-acf8-1dede1eb60c2
-2026-06-07T15:17:04.882+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-11 - Start completed.
-2026-06-07T15:17:04.884+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] org.hibernate.orm.deprecation            : HHH90000025: SQLServerDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
-2026-06-07T15:17:05.164+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
-2026-06-07T15:17:05.165+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
-2026-06-07T15:17:05.371+07:00  WARN 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] JpaBaseConfiguration$JpaWebConfiguration : spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
-2026-06-07T15:17:05.432+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.d.a.OptionalLiveReloadServer       : LiveReload server is running on port 35729
-2026-06-07T15:17:05.440+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8080 (http) with context path '/'
-2026-06-07T15:17:05.444+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] com.courseqa.CourseQaApplication         : Started CourseQaApplication in 2.219 seconds (process running for 5819.689)
-2026-06-07T15:17:05.444+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [  restartedMain] .ConditionEvaluationDeltaLoggingListener : Condition evaluation unchanged
-2026-06-07T15:18:48.769+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.a.c.c.C.[Tomcat-2].[localhost].[/]     : Initializing Spring DispatcherServlet 'dispatcherServlet'
-2026-06-07T15:18:48.770+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
-2026-06-07T15:18:48.772+07:00  INFO 26964 --- [courseqa-springboot-mvc2-skeleton] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 2 ms
 Hibernate: 
     select
         u1_0.user_id,

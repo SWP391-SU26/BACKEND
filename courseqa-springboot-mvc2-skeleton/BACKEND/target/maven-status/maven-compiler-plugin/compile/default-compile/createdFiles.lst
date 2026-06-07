@@ -87,6 +87,7 @@ com\courseqa\model\dto\ChatDto$CitationItem.class
 com\courseqa\model\dto\CourseDto$WorkspaceResponse.class
 com\courseqa\CourseQaApplication.class
 com\courseqa\model\dto\RagDto$RetrievalQueryResponse.class
+com\courseqa\model\dto\AuthDto$UpdateUserRoleRequest.class
 com\courseqa\model\dto\CourseDto$CourseResponse.class
 com\courseqa\model\dto\RagDto$RetrievalResultResponse.class
 com\courseqa\repository\ChunkEmbeddingRepository.class

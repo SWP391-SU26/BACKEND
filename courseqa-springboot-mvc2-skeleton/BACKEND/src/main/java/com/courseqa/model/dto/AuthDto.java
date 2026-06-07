@@ -17,6 +17,10 @@ public class AuthDto {
         public String password;
     }
 
+    public static class UpdateUserRoleRequest {
+        public String roleName;
+    }
+
     public static class AuthResponse {
         public String token;
         public UserResponse user;

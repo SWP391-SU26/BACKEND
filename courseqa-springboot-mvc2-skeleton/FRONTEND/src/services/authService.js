@@ -37,6 +37,13 @@ export function getUserRoles(userId) {
   return request(`/auth/users/${userId}/roles`)
 }
 
+export function updateUserRole(userId, roleName) {
+  return request(`/auth/users/${userId}/role`, {
+    method: 'PUT',
+    body: JSON.stringify({ roleName }),
+  })
+}
+
 export function saveSession(session) {
   localStorage.setItem('fstu_access_token', session.accessToken)
   localStorage.setItem('fstu_user', JSON.stringify(session.user))

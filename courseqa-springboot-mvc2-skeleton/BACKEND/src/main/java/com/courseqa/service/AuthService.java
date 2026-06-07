@@ -12,11 +12,12 @@ import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AuthService {
-    private static final List<String> ALLOWED_ROLES = List.of("ADMIN", "TEACHER", "STUDENT", "RESEARCHER");
+    private static final List<String> ALLOWED_ROLES = List.of("ADMIN", "USER", "TEACHER", "STUDENT", "RESEARCHER");
 
     private final UserRepository userRepository;
     private final UserRoleRepository userRoleRepository;
@@ -32,7 +33,11 @@ public class AuthService {
         this.passwordEncoder = passwordEncoder;
     }
 
+    @Transactional
     public AuthDto.AuthResponse register(AuthDto.RegisterRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Register request is required.");
+        }
         String email = normalizeEmail(request.email);
 
         if (request.fullName == null || request.fullName.trim().isEmpty()) {
@@ -69,6 +74,9 @@ public class AuthService {
     }
 
     public AuthDto.AuthResponse login(AuthDto.LoginRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Login request is required.");
+        }
         String email = normalizeEmail(request.email);
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password."));
@@ -109,6 +117,33 @@ public class AuthService {
         return getRoleNames(userId);
     }
 
+    @Transactional
+    public AuthDto.UserResponse updateUserRole(UUID userId, AuthDto.UpdateUserRoleRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found."));
+        String roleName = normalizeRole(request == null ? null : request.roleName);
+        LocalDateTime now = LocalDateTime.now();
+
+        List<UserRole> roles = userRoleRepository.findByUserId(userId);
+        for (UserRole role : roles) {
+            role.setIsActive(false);
+        }
+        userRoleRepository.saveAll(roles);
+
+        UserRole role = new UserRole();
+        role.setUserId(userId);
+        role.setRoleName(roleName);
+        role.setPermissionJson(roleName.equals("ADMIN") ? "{\"all\":true}" : "{}");
+        role.setAssignedAt(now);
+        role.setIsActive(true);
+        userRoleRepository.save(role);
+
+        user.setUpdatedAt(now);
+        userRepository.save(user);
+
+        return new AuthDto.UserResponse(user, getRoleNames(userId));
+    }
+
     private AuthDto.AuthResponse buildAuthResponse(User user) {
         return new AuthDto.AuthResponse(UUID.randomUUID().toString(), user, getRoleNames(user.getUserId()));
     }
@@ -135,6 +170,6 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid role.");
         }
 
-        return normalizedRole;
+        return normalizedRole.equals("USER") ? "STUDENT" : normalizedRole;
     }
 }
