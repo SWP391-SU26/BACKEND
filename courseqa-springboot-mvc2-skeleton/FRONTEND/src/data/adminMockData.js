@@ -1,0 +1,337 @@
+export const adminUsers = [
+  {
+    id: 'u-001',
+    name: 'Nguyen Minh Anh',
+    email: 'minhanh@student.edu.vn',
+    role: 'User',
+    status: 'Active',
+    documents: 12,
+    chats: 48,
+    lastActive: 'May 28, 2026 09:12',
+  },
+  {
+    id: 'u-002',
+    name: 'Tran Quoc Bao',
+    email: 'baotq@research.edu.vn',
+    role: 'User',
+    status: 'Active',
+    documents: 34,
+    chats: 112,
+    lastActive: 'May 28, 2026 10:03',
+  },
+  {
+    id: 'u-003',
+    name: 'Le Ha Linh',
+    email: 'linhle@admin.edu.vn',
+    role: 'Admin',
+    status: 'Active',
+    documents: 8,
+    chats: 21,
+    lastActive: 'May 27, 2026 22:40',
+  },
+  {
+    id: 'u-004',
+    name: 'Pham Duc Huy',
+    email: 'huypham@student.edu.vn',
+    role: 'User',
+    status: 'Locked',
+    documents: 3,
+    chats: 9,
+    lastActive: 'May 25, 2026 13:05',
+  },
+]
+
+export const adminSubjects = [
+  {
+    id: 'sub-ai',
+    name: 'Artificial Intelligence',
+    code: 'AI101',
+    description: 'Intelligent agents, search, knowledge representation, and RAG.',
+    active: true,
+    chapters: ['Chapter 1', 'Chapter 2', 'Chapter 5'],
+    documents: 3,
+  },
+  {
+    id: 'sub-swe',
+    name: 'Software Project',
+    code: 'SWP391',
+    description: 'Requirements, project management, and software testing.',
+    active: true,
+    chapters: ['Chapter 3'],
+    documents: 1,
+  },
+  {
+    id: 'sub-db',
+    name: 'Database Systems',
+    code: 'DBI202',
+    description: 'Normalization, relational design, and data queries.',
+    active: false,
+    chapters: ['Chapter 4'],
+    documents: 1,
+  },
+]
+
+export const indexingJobs = [
+  {
+    id: 'idx-001',
+    file: 'AI Foundations - Lecture 01.pdf',
+    owner: 'Nguyen Minh Anh',
+    step: 'Indexed',
+    status: 'Completed',
+    progress: 100,
+    error: '',
+  },
+  {
+    id: 'idx-002',
+    file: 'Search Algorithms.pptx',
+    owner: 'Tran Quoc Bao',
+    step: 'Embedding',
+    status: 'Running',
+    progress: 76,
+    error: '',
+  },
+  {
+    id: 'idx-003',
+    file: 'Normalization Notes.pdf',
+    owner: 'Pham Duc Huy',
+    step: 'Extracting text',
+    status: 'Failed',
+    progress: 34,
+    error: 'PDF parser returned empty text on page 9.',
+  },
+  {
+    id: 'idx-004',
+    file: 'Knowledge Representation.docx',
+    owner: 'Nguyen Minh Anh',
+    step: 'Chunking',
+    status: 'Pending',
+    progress: 18,
+    error: '',
+  },
+]
+
+export const defaultModelSettings = {
+  llm: 'gpt-4.1-mini',
+  embedding: 'text-embedding-3-small',
+  chunkSize: 850,
+  overlap: 120,
+  topK: 5,
+  temperature: 0.2,
+  strictSources: true,
+}
+
+const difficulties = ['Easy', 'Medium', 'Hard']
+const questionTypes = ['Definition', 'Comparison', 'Explanation', 'Application']
+
+export const testSet = Array.from({ length: 50 }, (_, index) => {
+  const number = index + 1
+  return {
+    id: `q-${String(number).padStart(2, '0')}`,
+    question: `Evaluation question ${number}: explain the AI concept from the source material.`,
+    groundTruth:
+      'A correct answer should follow the source material and include a definition, context, and a relevant example.',
+    chapter: `Chapter ${(index % 5) + 1}`,
+    difficulty: difficulties[index % difficulties.length],
+    type: questionTypes[index % questionTypes.length],
+  }
+})
+
+export const experiments = [
+  {
+    id: 'exp-001',
+    name: 'RAG baseline e5 fixed chunk',
+    method: 'RAG',
+    embedding: 'multilingual-e5-base',
+    chunking: 'Fixed-size',
+    status: 'Completed',
+    ragas: 0.79,
+    latency: 1.8,
+    accuracy: 0.74,
+    cost: 2.4,
+  },
+  {
+    id: 'exp-002',
+    name: 'RAG bge semantic chunk',
+    method: 'RAG',
+    embedding: 'bge-m3',
+    chunking: 'Semantic',
+    status: 'Running',
+    ragas: 0.84,
+    latency: 2.1,
+    accuracy: 0.81,
+    cost: 2.9,
+  },
+  {
+    id: 'exp-003',
+    name: 'Fine-tuning PhoBERT QA',
+    method: 'Fine-tuning',
+    embedding: 'PhoBERT-base',
+    chunking: 'Heading-based',
+    status: 'Failed',
+    ragas: 0.72,
+    latency: 1.4,
+    accuracy: 0.69,
+    cost: 4.8,
+  },
+]
+
+export const ragasMetrics = [
+  { label: 'Faithfulness', rag: 82, fineTune: 74 },
+  { label: 'Answer relevancy', rag: 86, fineTune: 78 },
+  { label: 'Context precision', rag: 79, fineTune: 68 },
+  { label: 'Context recall', rag: 76, fineTune: 72 },
+]
+
+export const tokenUsageByRange = {
+  '1h': {
+    label: '1h',
+    totalUsers: 428,
+    activeUsers: 64,
+    inputTokens: 184000,
+    outputTokens: 92000,
+    totalTokens: 276000,
+    estimatedCost: 18.4,
+    quality: 0.82,
+    series: [
+      { label: '00:00', input: 18000, output: 8600 },
+      { label: '00:10', input: 24000, output: 12100 },
+      { label: '00:20', input: 28000, output: 14200 },
+      { label: '00:30', input: 34000, output: 16800 },
+      { label: '00:40', input: 39000, output: 19600 },
+      { label: '00:50', input: 41000, output: 20700 },
+    ],
+  },
+  '24h': {
+    label: '24h',
+    totalUsers: 428,
+    activeUsers: 211,
+    inputTokens: 1380000,
+    outputTokens: 712000,
+    totalTokens: 2092000,
+    estimatedCost: 146.8,
+    quality: 0.84,
+    series: [
+      { label: '00h', input: 90000, output: 42000 },
+      { label: '04h', input: 72000, output: 39000 },
+      { label: '08h', input: 168000, output: 88000 },
+      { label: '12h', input: 242000, output: 120000 },
+      { label: '16h', input: 314000, output: 166000 },
+      { label: '20h', input: 494000, output: 257000 },
+    ],
+  },
+  '1 day': {
+    label: '1 day',
+    totalUsers: 428,
+    activeUsers: 219,
+    inputTokens: 1460000,
+    outputTokens: 760000,
+    totalTokens: 2220000,
+    estimatedCost: 155.5,
+    quality: 0.84,
+    series: [
+      { label: 'Morning', input: 310000, output: 148000 },
+      { label: 'Noon', input: 390000, output: 204000 },
+      { label: 'Afternoon', input: 474000, output: 249000 },
+      { label: 'Evening', input: 286000, output: 159000 },
+    ],
+  },
+  '7 days': {
+    label: '7 days',
+    totalUsers: 428,
+    activeUsers: 346,
+    inputTokens: 8420000,
+    outputTokens: 4210000,
+    totalTokens: 12630000,
+    estimatedCost: 884.1,
+    quality: 0.85,
+    series: [
+      { label: 'Mon', input: 920000, output: 450000 },
+      { label: 'Tue', input: 1040000, output: 520000 },
+      { label: 'Wed', input: 1130000, output: 560000 },
+      { label: 'Thu', input: 1210000, output: 610000 },
+      { label: 'Fri', input: 1380000, output: 690000 },
+      { label: 'Sat', input: 1290000, output: 650000 },
+      { label: 'Sun', input: 1450000, output: 730000 },
+    ],
+  },
+  '30 days': {
+    label: '30 days',
+    totalUsers: 428,
+    activeUsers: 392,
+    inputTokens: 32800000,
+    outputTokens: 17100000,
+    totalTokens: 49900000,
+    estimatedCost: 3493,
+    quality: 0.83,
+    series: [
+      { label: 'W1', input: 6840000, output: 3400000 },
+      { label: 'W2', input: 7420000, output: 3860000 },
+      { label: 'W3', input: 8600000, output: 4520000 },
+      { label: 'W4', input: 9940000, output: 5320000 },
+    ],
+  },
+}
+
+export const modelComparison = [
+  {
+    id: 'rag',
+    name: 'RAG',
+    totalTokens: 12630000,
+    quality: 0.85,
+    ragas: 0.84,
+    accuracy: 0.81,
+    latency: 2.1,
+    cost: 884.1,
+    recommendation: 'Best for source-grounded questions, clear citations, and controlled retrieval.',
+  },
+  {
+    id: 'fine-tuning',
+    name: 'Fine-tuning',
+    totalTokens: 15480000,
+    quality: 0.77,
+    ragas: 0.74,
+    accuracy: 0.78,
+    latency: 1.4,
+    cost: 1188.7,
+    recommendation: 'Faster, but requires guardrails to prevent unsupported answers.',
+  },
+]
+
+export const adminLogs = [
+  {
+    id: 'log-001',
+    type: 'Index',
+    level: 'Info',
+    user: 'system',
+    time: 'May 28, 2026 10:11',
+    message: 'Indexed AI Foundations - Lecture 01.pdf successfully.',
+    detail: '48 chunks stored in vector index.',
+  },
+  {
+    id: 'log-002',
+    type: 'Embedding',
+    level: 'Error',
+    user: 'system',
+    time: 'May 28, 2026 10:18',
+    message: 'Embedding API timeout while processing Normalization Notes.pdf.',
+    detail: 'Timeout after 30s. Retry recommended.',
+  },
+  {
+    id: 'log-003',
+    type: 'Chat',
+    level: 'Warn',
+    user: 'minhanh@student.edu.vn',
+    time: 'May 28, 2026 10:23',
+    message: 'Question outside document scope was blocked.',
+    detail: 'Strict source guard returned no relevant chunks.',
+  },
+  {
+    id: 'log-004',
+    type: 'Benchmark',
+    level: 'Info',
+    user: 'researcher',
+    time: 'May 28, 2026 10:30',
+    message: 'Experiment exp-002 started.',
+    detail: 'RAG + bge-m3 + semantic chunking on 50-question test set.',
+  },
+]
