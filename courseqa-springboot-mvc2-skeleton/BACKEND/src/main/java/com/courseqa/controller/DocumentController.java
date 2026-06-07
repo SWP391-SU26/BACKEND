@@ -12,6 +12,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -51,6 +52,11 @@ public class DocumentController {
         return ApiResponse.ok(documentService.getDocumentsByWorkspace(workspaceId));
     }
 
+    @GetMapping("/{documentId}")
+    public ApiResponse<DocumentDto.DocumentResponse> getDocument(@PathVariable UUID documentId) {
+        return ApiResponse.ok(documentService.getDocument(documentId));
+    }
+
     @GetMapping("/{documentId}/pages")
     public ApiResponse<List<DocumentDto.PageResponse>> getPages(@PathVariable UUID documentId) {
         return ApiResponse.ok(documentService.getPages(documentId));
@@ -61,6 +67,12 @@ public class DocumentController {
         return ApiResponse.ok(documentService.getChunks(documentId));
     }
 
+    @DeleteMapping("/{documentId}")
+    public ApiResponse<Void> deleteDocument(@PathVariable UUID documentId) {
+        documentService.deleteDocument(documentId);
+        return ApiResponse.ok(null);
+    }
+
     @GetMapping("/{documentId}/file")
     public ResponseEntity<Resource> getFile(@PathVariable UUID documentId) {
         DocumentService.StoredDocumentFile file = documentService.getStoredFile(documentId);
@@ -68,6 +80,20 @@ public class DocumentController {
 
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(file.mimeType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
+                        .filename(file.filename())
+                .build()
+                .toString())
+                .body(resource);
+    }
+
+    @GetMapping("/{documentId}/preview")
+    public ResponseEntity<Resource> getPreview(@PathVariable UUID documentId) {
+        DocumentService.StoredDocumentFile file = documentService.getPreviewFile(documentId);
+        Resource resource = new FileSystemResource(file.path());
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
                         .filename(file.filename())
                         .build()

@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -27,6 +28,7 @@ import org.apache.poi.xwpf.extractor.XWPFWordExtractor;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -41,18 +43,23 @@ public class DocumentService {
     private final CourseDocumentRepository courseDocumentRepository;
     private final DocumentPageRepository documentPageRepository;
     private final DocumentChunkRepository documentChunkRepository;
+    private final JdbcTemplate jdbcTemplate;
     private final Path uploadRoot;
+    private final Path previewRoot;
 
     public DocumentService(
             CourseDocumentRepository courseDocumentRepository,
             DocumentPageRepository documentPageRepository,
             DocumentChunkRepository documentChunkRepository,
+            JdbcTemplate jdbcTemplate,
             @Value("${app.upload-dir:uploads}") String uploadDir
     ) {
         this.courseDocumentRepository = courseDocumentRepository;
         this.documentPageRepository = documentPageRepository;
         this.documentChunkRepository = documentChunkRepository;
+        this.jdbcTemplate = jdbcTemplate;
         this.uploadRoot = Path.of(uploadDir).toAbsolutePath().normalize();
+        this.previewRoot = this.uploadRoot.resolve("previews").normalize();
     }
 
     @Transactional
@@ -97,6 +104,12 @@ public class DocumentService {
                 .toList();
     }
 
+    public DocumentDto.DocumentResponse getDocument(UUID documentId) {
+        CourseDocument document = courseDocumentRepository.findById(documentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
+        return DocumentDto.DocumentResponse.fromEntity(document);
+    }
+
     public List<DocumentDto.PageResponse> getPages(UUID documentId) {
         ensureDocumentExists(documentId);
         return documentPageRepository.findByDocumentIdOrderByPageNumberAsc(documentId).stream()
@@ -109,6 +122,30 @@ public class DocumentService {
         return documentChunkRepository.findByDocumentIdOrderByChunkIndexAsc(documentId).stream()
                 .map(DocumentDto.ChunkResponse::fromEntity)
                 .toList();
+    }
+
+    @Transactional
+    public void deleteDocument(UUID documentId) {
+        CourseDocument document = courseDocumentRepository.findById(documentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
+        Path originalPath = Path.of(document.getFilePath()).toAbsolutePath().normalize();
+        Path previewPath = previewRoot.resolve(documentId + ".pdf").normalize();
+
+        jdbcTemplate.update("""
+                DELETE FROM answer_citations
+                WHERE document_id = ?
+                   OR chunk_id IN (SELECT chunk_id FROM document_chunks WHERE document_id = ?)
+                   OR retrieval_result_id IN (SELECT retrieval_result_id FROM retrieval_results WHERE document_id = ?)
+                """, documentId, documentId, documentId);
+        jdbcTemplate.update("DELETE FROM retrieval_results WHERE document_id = ?", documentId);
+        jdbcTemplate.update("UPDATE saved_notes SET document_id = NULL WHERE document_id = ?", documentId);
+
+        documentPageRepository.deleteByDocumentId(documentId);
+        documentChunkRepository.deleteByDocumentId(documentId);
+        courseDocumentRepository.delete(document);
+
+        deleteStoredFile(originalPath, uploadRoot);
+        deleteStoredFile(previewPath, previewRoot);
     }
 
     public StoredDocumentFile getStoredFile(UUID documentId) {
@@ -134,6 +171,140 @@ public class DocumentService {
                 document.getOriginalFilename(),
                 mimeType == null || mimeType.isBlank() ? "application/octet-stream" : mimeType
         );
+    }
+
+    public StoredDocumentFile getPreviewFile(UUID documentId) {
+        CourseDocument document = courseDocumentRepository.findById(documentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
+        Path originalPath = resolveStoredPath(document);
+        String fileType = document.getFileType() == null ? "" : document.getFileType().toUpperCase(Locale.ROOT);
+
+        if ("PDF".equals(fileType)) {
+            return new StoredDocumentFile(originalPath, document.getOriginalFilename(), "application/pdf");
+        }
+
+        if (!List.of("DOCX", "PPTX").contains(fileType)) {
+            throw new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Inline preview is available for PDF, DOCX, and PPTX.");
+        }
+
+        try {
+            Files.createDirectories(previewRoot);
+            Path previewPath = previewRoot.resolve(documentId + ".pdf").normalize();
+            if (!previewPath.startsWith(previewRoot)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid preview path.");
+            }
+
+            if (!Files.exists(previewPath)) {
+                convertOfficeDocumentToPdf(originalPath, previewRoot, previewPath);
+            }
+
+            if (!Files.exists(previewPath)) {
+                throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Preview PDF was not created.");
+            }
+
+            return new StoredDocumentFile(previewPath, stripExtension(document.getOriginalFilename()) + ".pdf", "application/pdf");
+        } catch (IOException exception) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not create preview file.");
+        }
+    }
+
+    private Path resolveStoredPath(CourseDocument document) {
+        Path filePath = Path.of(document.getFilePath()).toAbsolutePath().normalize();
+        if (!filePath.startsWith(uploadRoot) || !Files.exists(filePath) || !Files.isRegularFile(filePath)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Stored file not found.");
+        }
+        return filePath;
+    }
+
+    private void deleteStoredFile(Path filePath, Path allowedRoot) {
+        try {
+            Path normalizedPath = filePath.toAbsolutePath().normalize();
+            if (normalizedPath.startsWith(allowedRoot) && Files.isRegularFile(normalizedPath)) {
+                Files.deleteIfExists(normalizedPath);
+            }
+        } catch (IOException ignored) {
+            // Database deletion should not be rolled back because a local preview/original file is locked.
+        }
+    }
+
+    private void convertOfficeDocumentToPdf(Path originalPath, Path outputDir, Path targetPdf) throws IOException {
+        Path soffice = findLibreOffice();
+        if (soffice == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_IMPLEMENTED,
+                    "DOCX/PPTX inline preview needs LibreOffice installed on the backend machine."
+            );
+        }
+
+        ProcessBuilder processBuilder = new ProcessBuilder(
+                soffice.toString(),
+                "--headless",
+                "--convert-to",
+                "pdf",
+                "--outdir",
+                outputDir.toString(),
+                originalPath.toString()
+        );
+        processBuilder.redirectErrorStream(true);
+        Process process = processBuilder.start();
+
+        try {
+            boolean finished = process.waitFor(60, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                throw new ResponseStatusException(HttpStatus.REQUEST_TIMEOUT, "Preview conversion timed out.");
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Preview conversion interrupted.");
+        }
+
+        if (process.exitValue() != 0) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Preview conversion failed.");
+        }
+
+        Path generatedPdf = outputDir.resolve(stripExtension(originalPath.getFileName().toString()) + ".pdf").normalize();
+        if (Files.exists(generatedPdf) && !generatedPdf.equals(targetPdf)) {
+            Files.move(generatedPdf, targetPdf, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private Path findLibreOffice() {
+        List<Path> absoluteCandidates = List.of(
+                Path.of("C:/Program Files/LibreOffice/program/soffice.exe"),
+                Path.of("C:/Program Files (x86)/LibreOffice/program/soffice.exe")
+        );
+
+        for (Path candidate : absoluteCandidates) {
+            if (Files.exists(candidate)) {
+                return candidate;
+            }
+        }
+
+        for (String command : List.of("soffice", "libreoffice")) {
+            if (isCommandAvailable(command)) {
+                return Path.of(command);
+            }
+        }
+
+        return null;
+    }
+
+    private boolean isCommandAvailable(String command) {
+        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        List<String> lookupCommand = osName.contains("win")
+                ? List.of("where", command)
+                : List.of("which", command);
+
+        try {
+            Process process = new ProcessBuilder(lookupCommand).redirectErrorStream(true).start();
+            return process.waitFor(3, TimeUnit.SECONDS) && process.exitValue() == 0;
+        } catch (IOException exception) {
+            return false;
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     private void processDocument(CourseDocument document, Path filePath, String fileType) {

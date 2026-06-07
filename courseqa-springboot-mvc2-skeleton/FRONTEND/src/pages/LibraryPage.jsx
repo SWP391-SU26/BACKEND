@@ -12,7 +12,7 @@ import {
   Table2,
   Trash2,
 } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Button,
@@ -24,17 +24,28 @@ import {
   SelectField,
   StatusBadge,
 } from '../components/ui.jsx'
-import { documents as seedDocuments, workspaces } from '../data/mockData.js'
+import { getSavedUser } from '../services/authService.js'
+import { getWorkspaces } from '../services/courseService.js'
+import {
+  deleteDocument,
+  getDocumentChunks,
+  getDocumentFileUrl,
+  getDocumentsByWorkspace,
+  uploadDocument,
+} from '../services/documentService.js'
 import { cn } from '../utils/cn.js'
 
 const allOption = 'All'
 const fileTypes = [allOption, 'PDF', 'DOCX', 'PPTX']
 const statuses = [allOption, 'Uploaded', 'Processing', 'Indexed', 'Failed']
-const chapters = [allOption, ...Array.from(new Set(seedDocuments.map((doc) => doc.chapter)))]
-const subjects = [allOption, ...workspaces.map((workspace) => workspace.name)]
 
 function LibraryPage() {
-  const [docs, setDocs] = useState(seedDocuments)
+  const [docs, setDocs] = useState([])
+  const [workspaceList, setWorkspaceList] = useState([])
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState('')
   const [query, setQuery] = useState('')
   const [subject, setSubject] = useState(allOption)
   const [chapter, setChapter] = useState(allOption)
@@ -43,9 +54,62 @@ function LibraryPage() {
   const [date, setDate] = useState(allOption)
   const [viewMode, setViewMode] = useState('bento')
   const [docToDelete, setDocToDelete] = useState(null)
+  const [deleting, setDeleting] = useState(false)
   const [renamingDoc, setRenamingDoc] = useState(null)
   const [renameValue, setRenameValue] = useState('')
   const fileInputRef = useRef(null)
+
+  const chapters = useMemo(() => [allOption, ...Array.from(new Set(docs.map((doc) => doc.chapter)))], [docs])
+  const subjects = useMemo(() => [allOption, ...workspaceList.map((workspace) => workspace.name)], [workspaceList])
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadLibrary() {
+      setLoading(true)
+      setError('')
+
+      try {
+        const workspaces = await getWorkspaces()
+        if (!isMounted) return
+
+        setWorkspaceList(workspaces)
+        const selectedWorkspaceId = activeWorkspaceId || workspaces[0]?.id || ''
+        setActiveWorkspaceId(selectedWorkspaceId)
+
+        if (!selectedWorkspaceId) {
+          setDocs([])
+          return
+        }
+
+        const documents = await getDocumentsByWorkspace(selectedWorkspaceId)
+        const documentsWithChunks = await Promise.all(
+          documents.map(async (doc) => {
+            const chunks = await getDocumentChunks(doc.id).catch(() => [])
+            const workspace = workspaces.find((item) => item.id === doc.workspaceId)
+            return {
+              ...doc,
+              subject: workspace?.name ?? doc.subject,
+              chunks: chunks.length,
+              embeddingModel: chunks.length > 0 ? doc.embeddingModel : 'Not embedded',
+            }
+          }),
+        )
+
+        if (isMounted) setDocs(documentsWithChunks)
+      } catch (loadError) {
+        if (isMounted) setError(loadError.message)
+      } finally {
+        if (isMounted) setLoading(false)
+      }
+    }
+
+    loadLibrary()
+
+    return () => {
+      isMounted = false
+    }
+  }, [activeWorkspaceId])
 
   const filteredDocs = useMemo(() => {
     return docs.filter((doc) => {
@@ -76,32 +140,55 @@ function LibraryPage() {
     setDate(allOption)
   }
 
-  function handleUpload(files) {
-    const nextDocs = Array.from(files)
-      .filter((file) => /\.(pdf|docx|pptx|txt)$/i.test(file.name))
-      .map((file) => {
-        const extension = file.name.split('.').pop()?.toUpperCase()
-        return {
-          id: `doc-${Date.now()}-${file.name}`,
-          name: file.name,
-          displayName: file.name.replace(/\.[^/.]+$/, ''),
-          type: extension === 'PPT' ? 'PPTX' : extension,
-          subject: 'Artificial Intelligence',
-          chapter: 'Chapter 1',
-          status: 'Uploaded',
-          chunks: 0,
-          embeddingModel: 'Not embedded',
-          uploadedAt: 'May 27, 2026 23:45',
-          size: `${Math.max(0.6, file.size / 1024 / 1024).toFixed(1)} MB`,
-          pages: 0,
-          relevance: 0,
-          workspaceId: 'ai',
-          preview:
-            'A new document is queued for text extraction, chunking, and embedding.',
-        }
-      })
+  async function handleUpload(files) {
+    const activeWorkspace = workspaceList.find((workspace) => workspace.id === activeWorkspaceId)
+    const acceptedFiles = Array.from(files ?? []).filter((file) => /\.(pdf|docx|pptx|txt)$/i.test(file.name))
 
-    setDocs((current) => [...nextDocs, ...current])
+    if (!activeWorkspace) {
+      setError('Bạn cần tạo course workspace trước khi upload tài liệu.')
+      return
+    }
+
+    if (acceptedFiles.length === 0) {
+      setError('Chỉ hỗ trợ PDF, DOCX, PPTX, TXT.')
+      return
+    }
+
+    setUploading(true)
+    setError('')
+
+    try {
+      const user = getSavedUser()
+      const uploadedDocuments = await Promise.all(
+        acceptedFiles.map((file) =>
+          uploadDocument({
+            file,
+            workspaceId: activeWorkspace.id,
+            courseId: activeWorkspace.courseId,
+            uploadedBy: user?.id,
+          }),
+        ),
+      )
+
+      const enrichedDocuments = await Promise.all(
+        uploadedDocuments.map(async (doc) => {
+          const chunks = await getDocumentChunks(doc.id).catch(() => [])
+          return {
+            ...doc,
+            subject: activeWorkspace.name,
+            chunks: chunks.length,
+            embeddingModel: chunks.length > 0 ? doc.embeddingModel : 'Not embedded',
+          }
+        }),
+      )
+
+      setDocs((current) => [...enrichedDocuments, ...current])
+    } catch (uploadError) {
+      setError(uploadError.message)
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
   }
 
   function startRename(doc) {
@@ -140,6 +227,23 @@ function LibraryPage() {
     }, 1000)
   }
 
+  async function confirmDeleteDocument() {
+    if (!docToDelete) return
+
+    setDeleting(true)
+    setError('')
+
+    try {
+      await deleteDocument(docToDelete.id)
+      setDocs((current) => current.filter((doc) => doc.id !== docToDelete.id))
+      setDocToDelete(null)
+    } catch (deleteError) {
+      setError(deleteError.message)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <Panel className="overflow-hidden p-5">
@@ -156,9 +260,12 @@ function LibraryPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => fileInputRef.current?.click()}>
+            <SelectField label="Workspace" onChange={(event) => setActiveWorkspaceId(event.target.value)} value={activeWorkspaceId}>
+              {workspaceList.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
+            </SelectField>
+            <Button disabled={uploading || !activeWorkspaceId} onClick={() => fileInputRef.current?.click()}>
               <FilePlus2 size={17} />
-              Upload document
+              {uploading ? 'Uploading...' : 'Upload document'}
             </Button>
             <Button onClick={resetFilters} variant="secondary">
               <RefreshCcw size={16} />
@@ -174,6 +281,16 @@ function LibraryPage() {
           ref={fileInputRef}
           type="file"
         />
+        {error ? (
+          <div className="relative mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
+            {error}
+          </div>
+        ) : null}
+        {loading ? (
+          <div className="relative mt-4 rounded-lg border border-teal-100 bg-teal-50 p-3 text-sm font-semibold text-teal-700">
+            Loading documents from backend...
+          </div>
+        ) : null}
         <div className="relative mt-5 grid gap-3 md:grid-cols-3">
           <StatCard icon={FileText} label="Documents" value={docs.length} />
           <StatCard icon={Database} label="Indexed" value={docs.filter((doc) => doc.status === 'Indexed').length} />
@@ -250,13 +367,11 @@ function LibraryPage() {
         <ConfirmModal
           actionLabel="Delete document"
           onCancel={() => setDocToDelete(null)}
-          onConfirm={() => {
-            setDocs((current) => current.filter((doc) => doc.id !== docToDelete.id))
-            setDocToDelete(null)
-          }}
+          onConfirm={confirmDeleteDocument}
           title="Delete document?"
         >
-          "{docToDelete.displayName}" will be removed from the local document list.
+          "{docToDelete.displayName}" will be removed from the database and local upload folder.
+          {deleting ? ' Deleting...' : ''}
         </ConfirmModal>
       ) : null}
 
@@ -361,6 +476,7 @@ function DocumentCards({ docs, onDelete, onReindex, onRename }) {
             <Link className="flex-1" to={`/library/documents/${doc.id}`}>
               <Button className="w-full" variant="secondary"><Eye size={16} />View</Button>
             </Link>
+            <IconButton label="Open original file" onClick={() => window.open(getDocumentFileUrl(doc.id), '_blank', 'noopener,noreferrer')}><FileText size={16} /></IconButton>
             <IconButton label="Rename" onClick={() => onRename(doc)}><PencilLine size={16} /></IconButton>
             <IconButton label="Re-index" onClick={() => onReindex(doc.id)}><RefreshCcw size={16} /></IconButton>
             <IconButton label="Delete" onClick={() => onDelete(doc)}><Trash2 size={16} /></IconButton>
@@ -419,6 +535,7 @@ function DocumentTable({ compact = false, docs, onDelete, onReindex, onRename })
                 <td className="px-4 py-4">
                   <div className="flex items-center gap-1">
                     <Link to={`/library/documents/${doc.id}`}><IconButton label="View details"><Eye size={15} /></IconButton></Link>
+                    <IconButton label="Open original file" onClick={() => window.open(getDocumentFileUrl(doc.id), '_blank', 'noopener,noreferrer')}><FileText size={15} /></IconButton>
                     <IconButton label="Rename" onClick={() => onRename(doc)}><PencilLine size={15} /></IconButton>
                     <IconButton label="Re-index" onClick={() => onReindex(doc.id)}><RefreshCcw size={15} /></IconButton>
                     <IconButton label="Delete" onClick={() => onDelete(doc)}><Trash2 size={15} /></IconButton>

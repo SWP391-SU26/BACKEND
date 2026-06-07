@@ -5,6 +5,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Database,
+  ExternalLink,
   FileText,
   HardDrive,
   Layers3,
@@ -12,18 +13,113 @@ import {
   Sparkles,
   Trash2,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { BentoCard, Button, ConfirmModal, EmptyState, Field, Panel, StatusBadge } from '../components/ui.jsx'
-import { chunks, documents } from '../data/mockData.js'
+import {
+  deleteDocument,
+  getDocument,
+  getDocumentChunks,
+  getDocumentFileUrl,
+  getDocumentPreviewUrl,
+} from '../services/documentService.js'
 
 function DocumentDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const [doc, setDoc] = useState(null)
+  const [chunks, setChunks] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const [previewState, setPreviewState] = useState({ loading: true, available: false, message: '' })
   const [query, setQuery] = useState('')
-  const [activeChunk, setActiveChunk] = useState('C-1024')
+  const [activeChunk, setActiveChunk] = useState(null)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const doc = documents.find((item) => item.id === id)
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadDocument() {
+      setLoading(true)
+      setError('')
+
+      try {
+        const [document, documentChunks] = await Promise.all([
+          getDocument(id),
+          getDocumentChunks(id),
+        ])
+
+        if (!isMounted) return
+
+        setDoc({
+          ...document,
+          chunks: documentChunks.length,
+          embeddingModel: documentChunks.length > 0 ? document.embeddingModel : 'Not embedded',
+        })
+        setChunks(documentChunks)
+        setActiveChunk(documentChunks[0]?.id ?? null)
+      } catch (loadError) {
+        if (isMounted) setError(loadError.message)
+      } finally {
+        if (isMounted) setLoading(false)
+      }
+    }
+
+    loadDocument()
+
+    return () => {
+      isMounted = false
+    }
+  }, [id])
+
+  useEffect(() => {
+    if (!doc) return
+
+    let isMounted = true
+
+    async function checkPreview() {
+      if (doc.type === 'PDF') {
+        setPreviewState({ loading: false, available: true, message: '' })
+        return
+      }
+
+      setPreviewState({ loading: true, available: false, message: '' })
+
+      try {
+        const response = await fetch(getDocumentPreviewUrl(doc.id), { method: 'HEAD' })
+        if (!isMounted) return
+
+        if (response.ok) {
+          setPreviewState({ loading: false, available: true, message: '' })
+          return
+        }
+
+        setPreviewState({
+          loading: false,
+          available: false,
+          message:
+            response.status === 501
+              ? 'DOCX/PPTX preview cần cài LibreOffice ở backend để convert sang PDF.'
+              : 'Không tạo được preview hoàn chỉnh cho file này.',
+        })
+      } catch {
+        if (isMounted) {
+          setPreviewState({
+            loading: false,
+            available: false,
+            message: 'Không kết nối được preview API.',
+          })
+        }
+      }
+    }
+
+    checkPreview()
+
+    return () => {
+      isMounted = false
+    }
+  }, [doc])
 
   const docChunks = useMemo(() => {
     return chunks
@@ -37,7 +133,15 @@ function DocumentDetailPage() {
           chunk.id.toLowerCase().includes(normalizedQuery)
         )
       })
-  }, [id, query])
+  }, [chunks, id, query])
+
+  if (loading) {
+    return (
+      <Panel className="p-5">
+        <p className="text-sm font-semibold text-slate-600">Loading document from backend...</p>
+      </Panel>
+    )
+  }
 
   if (!doc) {
     return (
@@ -50,13 +154,30 @@ function DocumentDetailPage() {
             </Button>
           </Link>
         }
-        description="This document does not exist in the frontend mock data or has been removed from the list."
+        description={error || 'This document does not exist in the backend database or the stored file was removed.'}
         title="Document not found"
       />
     )
   }
 
   const selectedChunk = docChunks.find((chunk) => chunk.id === activeChunk) ?? docChunks[0]
+  const fileUrl = getDocumentFileUrl(doc.id)
+  const previewUrl = doc.type === 'PDF' ? fileUrl : getDocumentPreviewUrl(doc.id)
+
+  async function confirmDeleteDocument() {
+    setDeleting(true)
+    setError('')
+
+    try {
+      await deleteDocument(doc.id)
+      navigate('/library', { replace: true })
+    } catch (deleteError) {
+      setError(deleteError.message)
+      setShowDeleteModal(false)
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -86,16 +207,66 @@ function DocumentDetailPage() {
               {doc.preview}
             </p>
           </div>
-          <Button onClick={() => setShowDeleteModal(true)} variant="danger">
-            <Trash2 size={16} />
-            Delete document
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => window.open(fileUrl, '_blank', 'noopener,noreferrer')} variant="secondary">
+              <ExternalLink size={16} />
+              Open original file
+            </Button>
+            <Button onClick={() => setShowDeleteModal(true)} variant="danger">
+              <Trash2 size={16} />
+              Delete document
+            </Button>
+          </div>
         </div>
         <div className="relative mt-5 grid gap-3 sm:grid-cols-3">
           <StatTile label="Pages" value={doc.pages} />
           <StatTile label="Chunks" value={doc.chunks} />
           <StatTile label="Relevance" value={doc.relevance ? `${doc.relevance}%` : 'sync'} />
         </div>
+      </Panel>
+
+      <Panel className="overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-5">
+          <div>
+            <h2 className="text-xl font-black tracking-tight">Original file</h2>
+            <p className="text-sm font-semibold text-slate-500">
+              Preview renders the uploaded layout, images, and pages inside this workspace.
+            </p>
+          </div>
+          <Button onClick={() => window.open(fileUrl, '_blank', 'noopener,noreferrer')} size="sm" type="button" variant="secondary">
+            <ExternalLink size={16} />
+            Open
+          </Button>
+        </div>
+        {previewState.loading ? (
+          <div className="grid min-h-[360px] place-items-center p-6 text-center">
+            <p className="text-sm font-semibold text-slate-600">Preparing document preview...</p>
+          </div>
+        ) : previewState.available ? (
+          <iframe
+            className="h-[72vh] min-h-[520px] w-full bg-slate-100"
+            src={previewUrl}
+            title={`Original file preview for ${doc.displayName}`}
+          />
+        ) : (
+          <div className="grid min-h-[260px] place-items-center p-6 text-center">
+            <div>
+              <div className="mx-auto grid size-14 place-items-center rounded-xl bg-teal-50 text-primary">
+                <FileText size={24} />
+              </div>
+              <h3 className="mt-4 text-lg font-black text-slate-950">{doc.name}</h3>
+              <p className="mt-2 max-w-xl text-sm font-semibold leading-6 text-slate-500">
+                {previewState.message}
+              </p>
+              <div className="mt-5 flex justify-center gap-2">
+                <Button onClick={() => window.open(fileUrl, '_blank', 'noopener,noreferrer')} type="button">
+                  <ExternalLink size={16} />
+                  Open original file
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </Panel>
 
       <section className="studio-grid">
@@ -234,10 +405,11 @@ function DocumentDetailPage() {
         <ConfirmModal
           actionLabel="Delete document"
           onCancel={() => setShowDeleteModal(false)}
-          onConfirm={() => navigate('/library')}
+          onConfirm={confirmDeleteDocument}
           title="Delete document?"
         >
-          This is a frontend simulation. After confirmation, you will be redirected to Library.
+          This will remove the document from the database and local upload folder.
+          {deleting ? ' Deleting...' : ''}
         </ConfirmModal>
       ) : null}
     </div>

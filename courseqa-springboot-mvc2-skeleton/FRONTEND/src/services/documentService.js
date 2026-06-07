@@ -6,6 +6,11 @@ export async function getDocumentsByWorkspace(workspaceId) {
   return Promise.all(documents.map((document) => toUiDocument(document)))
 }
 
+export async function getDocument(documentId) {
+  const document = await request(`/documents/${documentId}`)
+  return toUiDocument(document)
+}
+
 export async function getDocumentPages(documentId) {
   return request(`/documents/${documentId}/pages`)
 }
@@ -15,8 +20,18 @@ export async function getDocumentChunks(documentId) {
   return chunks.map(toUiChunk)
 }
 
+export function deleteDocument(documentId) {
+  return request(`/documents/${documentId}`, {
+    method: 'DELETE',
+  })
+}
+
 export function getDocumentFileUrl(documentId) {
   return `${env.apiBaseUrl}/documents/${documentId}/file`
+}
+
+export function getDocumentPreviewUrl(documentId) {
+  return `${env.apiBaseUrl}/documents/${documentId}/preview`
 }
 
 export async function uploadDocument({ file, workspaceId, courseId, chapterId, uploadedBy }) {
