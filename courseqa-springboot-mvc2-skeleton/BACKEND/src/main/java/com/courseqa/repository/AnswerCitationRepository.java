@@ -11,5 +11,7 @@ import java.util.UUID;
 public interface AnswerCitationRepository extends JpaRepository<AnswerCitation, UUID> {
     List<AnswerCitation> findAllByOrderByCreatedAtDesc();
 
+    List<AnswerCitation> findByAssistantMessageId(UUID assistantMessageId);
+
     List<AnswerCitation> findByAssistantMessageIdOrderByCitationOrderAsc(UUID assistantMessageId);
 }

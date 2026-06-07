@@ -9,6 +9,7 @@ import jakarta.persistence.*;
 
 import java.util.UUID;
 @Entity
+@Table(name = "answer_citations")
 public class AnswerCitation {
  @Id
     @GeneratedValue(strategy = GenerationType.UUID)
