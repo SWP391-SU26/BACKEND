@@ -1,9 +1,14 @@
 package com.courseqa.repository;
 
-// TODO: Extend JpaRepository after completing entity class.
-// Example:
-// public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, UUID> {}
+import com.courseqa.model.entity.DocumentChunk;
+import java.util.List;
+import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface DocumentChunkRepository {
+public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, UUID> {
+    List<DocumentChunk> findByDocumentIdOrderByChunkIndexAsc(UUID documentId);
 
+    List<DocumentChunk> findByWorkspaceIdOrderByCreatedAtAsc(UUID workspaceId);
+
+    void deleteByDocumentId(UUID documentId);
 }

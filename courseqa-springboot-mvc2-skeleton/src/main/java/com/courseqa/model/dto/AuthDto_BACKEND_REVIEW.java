@@ -4,11 +4,8 @@ import com.courseqa.model.entity.User;
 import java.util.List;
 import java.util.UUID;
 
-// DTOs for register, login, logout.
-// TODO: Add request/response DTO classes here.
-
-public class AuthDto {
-public static class RegisterRequest {
+public class AuthDto_BACKEND_REVIEW {
+    public static class RegisterRequest {
         public String fullName;
         public String email;
         public String password;

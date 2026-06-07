@@ -1,9 +1,12 @@
 package com.courseqa.repository;
 
-// TODO: Extend JpaRepository after completing entity class.
-// Example:
-// public interface EmbeddingModelRepository extends JpaRepository<EmbeddingModel, UUID> {}
+import com.courseqa.model.entity.EmbeddingModel;
+import java.util.List;
+import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface EmbeddingModelRepository {
+public interface EmbeddingModelRepository extends JpaRepository<EmbeddingModel, UUID> {
+    boolean existsByModelName(String modelName);
 
+    List<EmbeddingModel> findByIsActiveTrueOrderByCreatedAtDesc();
 }

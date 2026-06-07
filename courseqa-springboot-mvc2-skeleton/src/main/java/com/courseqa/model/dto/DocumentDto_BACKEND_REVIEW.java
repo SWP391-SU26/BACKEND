@@ -5,11 +5,8 @@ import com.courseqa.model.entity.DocumentChunk;
 import com.courseqa.model.entity.DocumentPage;
 import java.util.UUID;
 
-// DTOs for upload document and document processing responses.
-// TODO: Add request/response DTO classes here.
-
-public class DocumentDto {
- public static class UploadDocumentRequest {
+public class DocumentDto_BACKEND_REVIEW {
+    public static class UploadDocumentRequest {
         public UUID workspaceId;
         public UUID courseId;
         public UUID chapterId;

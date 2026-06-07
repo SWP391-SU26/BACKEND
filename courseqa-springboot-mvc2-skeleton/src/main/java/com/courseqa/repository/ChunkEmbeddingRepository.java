@@ -1,9 +1,10 @@
 package com.courseqa.repository;
 
-// TODO: Extend JpaRepository after completing entity class.
-// Example:
-// public interface ChunkEmbeddingRepository extends JpaRepository<ChunkEmbedding, UUID> {}
+import com.courseqa.model.entity.ChunkEmbedding;
+import java.util.Optional;
+import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface ChunkEmbeddingRepository {
-
+public interface ChunkEmbeddingRepository extends JpaRepository<ChunkEmbedding, UUID> {
+    Optional<ChunkEmbedding> findByChunkIdAndEmbeddingModelId(UUID chunkId, UUID embeddingModelId);
 }

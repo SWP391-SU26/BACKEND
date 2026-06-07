@@ -1,6 +1,13 @@
 package com.courseqa.controller;
 
+import com.courseqa.model.dto.ApiResponse;
+import com.courseqa.model.dto.CourseDto;
+import com.courseqa.service.CourseService;
+import java.util.List;
+import java.util.UUID;
 import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -8,6 +15,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/courses")
 @CrossOrigin
 public class CourseController {
-    // Course, chapter, workspace APIs.
-    // TODO: Add API endpoints here.
+    private final CourseService courseService;
+
+    public CourseController(CourseService courseService) {
+        this.courseService = courseService;
+    }
+
+    @GetMapping
+    public ApiResponse<List<CourseDto.CourseResponse>> getCourses() {
+        return ApiResponse.ok(courseService.getCourses());
+    }
+
+    @GetMapping("/workspaces")
+    public ApiResponse<List<CourseDto.WorkspaceResponse>> getAllWorkspaces() {
+        return ApiResponse.ok(courseService.getAllWorkspaces());
+    }
+
+    @GetMapping("/{courseId}/workspaces")
+    public ApiResponse<List<CourseDto.WorkspaceResponse>> getWorkspaces(@PathVariable UUID courseId) {
+        return ApiResponse.ok(courseService.getWorkspaces(courseId));
+    }
 }

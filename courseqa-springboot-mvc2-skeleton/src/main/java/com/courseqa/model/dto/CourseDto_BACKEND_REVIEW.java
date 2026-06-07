@@ -5,11 +5,8 @@ import com.courseqa.model.entity.CourseWorkspace;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-// DTOs for course, chapter, workspace requests/responses.
-// TODO: Add request/response DTO classes here.
-
-public class CourseDto {
- public static class CreateCourseRequest {
+public class CourseDto_BACKEND_REVIEW {
+    public static class CreateCourseRequest {
         public String courseCode;
         public String courseName;
         public String description;
