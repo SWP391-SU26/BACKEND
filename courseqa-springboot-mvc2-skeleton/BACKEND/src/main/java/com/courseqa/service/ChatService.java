@@ -3,11 +3,12 @@ package com.courseqa.service;
 import com.courseqa.exception.ResourceNotFoundException;
 import com.courseqa.model.entity.ChatMessage;
 import com.courseqa.model.entity.ChatSession;
+import com.courseqa.model.entity.CourseWorkspace;
 import com.courseqa.model.entity.SavedNote;
 import com.courseqa.repository.ChatMessageRepository;
 import com.courseqa.repository.ChatSessionRepository;
+import com.courseqa.repository.CourseWorkspaceRepository;
 import com.courseqa.repository.SavedNoteRepository;
-import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
@@ -31,11 +32,13 @@ public class ChatService {
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final SavedNoteRepository savedNoteRepository;
+    private final CourseWorkspaceRepository courseWorkspaceRepository;
 
-    public ChatService(ChatSessionRepository chatSessionRepository, ChatMessageRepository chatMessageRepository, SavedNoteRepository savedNoteRepository) {
+    public ChatService(ChatSessionRepository chatSessionRepository, ChatMessageRepository chatMessageRepository, SavedNoteRepository savedNoteRepository, CourseWorkspaceRepository courseWorkspaceRepository) {
         this.chatSessionRepository = chatSessionRepository;
         this.chatMessageRepository = chatMessageRepository;
         this.savedNoteRepository = savedNoteRepository;
+        this.courseWorkspaceRepository = courseWorkspaceRepository;
     }
 
     /**
@@ -50,12 +53,24 @@ public class ChatService {
     public ChatSession createOrGetSession(UUID userId, UUID workspaceId) {
         log.info("Creating or getting chat session for userId: {}, workspaceId: {}", userId, workspaceId);
 
+        ChatSession existingSession = chatSessionRepository.findByUserIdAndWorkspaceIdAndIsActiveTrue(userId, workspaceId)
+                .orElse(null);
+        if (existingSession != null) {
+            log.info("Found existing active chat session: {}", existingSession.getChatSessionId());
+            return existingSession;
+        }
+
+        CourseWorkspace workspace = courseWorkspaceRepository.findById(workspaceId)
+                .orElseThrow(() -> new ResourceNotFoundException("CourseWorkspace not found with id: " + workspaceId));
+
         // Tạo session mới
         ChatSession newSession = new ChatSession();
         newSession.setUserId(userId);
         newSession.setWorkspaceId(workspaceId);
+        newSession.setCourseId(workspace.getCourseId());
         newSession.setIsActive(true);
         newSession.setStartedAt(LocalDateTime.now());
+        newSession.setUpdatedAt(LocalDateTime.now());
 
         ChatSession savedSession = chatSessionRepository.save(newSession);
         log.info("Created new chat session: {}", savedSession.getChatSessionId());
@@ -103,7 +118,9 @@ public class ChatService {
         note.setWorkspaceId(workspaceId);
         note.setNoteTitle(noteTitle);
         note.setNoteContent(noteContent);
+        note.setNoteType("MANUAL");
         note.setCreatedAt(LocalDateTime.now());
+        note.setUpdatedAt(LocalDateTime.now());
 
         SavedNote savedNote = savedNoteRepository.save(note);
         log.info("Saved note with id: {}", savedNote.getNoteId());

@@ -123,8 +123,10 @@ public class EvaluationController {
         log.info("POST /api/evaluation/experiments - name: {}", request.getExperimentName());
 
         Experiment experiment = evaluationService.createExperiment(
+                request.getDatasetId(),
                 request.getExperimentName(),
                 request.getExperimentType(),
+                request.getLlmModel(),
                 request.getConfigJson(),
                 request.getCreatedBy()
         );
@@ -258,11 +260,17 @@ public class EvaluationController {
      * Request DTO cho createExperiment
      */
     public static class CreateExperimentRequest {
+        @NotNull(message = "datasetId is required")
+        private UUID datasetId;
+
         @NotBlank(message = "experimentName is required and cannot be empty")
         private String experimentName;
 
         @NotBlank(message = "experimentType is required and cannot be empty")
         private String experimentType;
+
+        @NotBlank(message = "llmModel is required and cannot be empty")
+        private String llmModel;
 
         @NotBlank(message = "configJson is required and cannot be empty")
         private String configJson;
@@ -272,18 +280,26 @@ public class EvaluationController {
 
         public CreateExperimentRequest() {}
 
-        public CreateExperimentRequest(String experimentName, String experimentType, String configJson, UUID createdBy) {
+        public CreateExperimentRequest(UUID datasetId, String experimentName, String experimentType, String llmModel, String configJson, UUID createdBy) {
+            this.datasetId = datasetId;
             this.experimentName = experimentName;
             this.experimentType = experimentType;
+            this.llmModel = llmModel;
             this.configJson = configJson;
             this.createdBy = createdBy;
         }
+
+        public UUID getDatasetId() { return datasetId; }
+        public void setDatasetId(UUID datasetId) { this.datasetId = datasetId; }
 
         public String getExperimentName() { return experimentName; }
         public void setExperimentName(String experimentName) { this.experimentName = experimentName; }
 
         public String getExperimentType() { return experimentType; }
         public void setExperimentType(String experimentType) { this.experimentType = experimentType; }
+
+        public String getLlmModel() { return llmModel; }
+        public void setLlmModel(String llmModel) { this.llmModel = llmModel; }
 
         public String getConfigJson() { return configJson; }
         public void setConfigJson(String configJson) { this.configJson = configJson; }

@@ -1,6 +1,7 @@
 package com.courseqa.service;
 
 import com.courseqa.exception.ResourceNotFoundException;
+import com.courseqa.model.entity.EvaluationDataset;
 import com.courseqa.model.entity.EvaluationQuestion;
 import com.courseqa.model.entity.Experiment;
 import com.courseqa.repository.EvaluationDatasetRepository;
@@ -60,15 +61,26 @@ public class FineTuningService {
      * @param configJson JSON config string
      * @return Experiment
      */
-    public Experiment createExperimentRecord(String name, UUID researcherId, String configJson) {
+    public Experiment createExperimentRecord(String name, UUID datasetId, UUID researcherId, String llmModel, String configJson) {
         log.info("Creating fine-tuning experiment record: name={}, researcherId={}", name, researcherId);
 
+        EvaluationDataset dataset = evaluationDatasetRepository.findById(datasetId)
+                .orElseThrow(() -> new ResourceNotFoundException("EvaluationDataset not found with id: " + datasetId));
+
         Experiment experiment = new Experiment();
+        experiment.setDatasetId(datasetId);
+        experiment.setCourseId(dataset.getCourseId());
+        experiment.setWorkspaceId(dataset.getWorkspaceId());
         experiment.setExperimentName(name);
+        experiment.setExperimentType("FINE_TUNING");
+        experiment.setLlmModel(llmModel);
+        experiment.setTopK(5);
+        experiment.setTemperature(0.2);
         experiment.setConfigJson(configJson);
         experiment.setCreatedBy(researcherId);
         experiment.setStatus("PENDING");
         experiment.setCreatedAt(LocalDateTime.now());
+        experiment.setUpdatedAt(LocalDateTime.now());
 
         Experiment savedExperiment = experimentRepository.save(experiment);
         log.info("Created fine-tuning experiment with id: {}, status: PENDING", savedExperiment.getExperimentId());

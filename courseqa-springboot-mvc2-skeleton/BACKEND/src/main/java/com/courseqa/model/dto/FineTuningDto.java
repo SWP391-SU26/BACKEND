@@ -19,7 +19,9 @@ public class FineTuningDto {
 @AllArgsConstructor
 public static class CreateFineTuningExperimentRequest {
         private String name;
+        private UUID datasetId;
         private UUID researcherId;
+        private String llmModel;
         private String configJson;
     }
 

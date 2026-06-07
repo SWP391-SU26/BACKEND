@@ -49,8 +49,10 @@ public class EvaluationDto {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class CreateExperimentRequest {
+        private UUID datasetId;
         private String experimentName;
         private String experimentType;
+        private String llmModel;
         private String configJson;
         private UUID createdBy;
     }

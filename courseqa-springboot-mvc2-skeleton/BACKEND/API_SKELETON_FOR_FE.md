@@ -229,8 +229,10 @@ Request:
 
 ```json
 {
+  "datasetId": "00000000-0000-0000-0000-000000000000",
   "experimentName": "RAG baseline",
   "experimentType": "RAG",
+  "llmModel": "gpt-4o-mini",
   "configJson": "{}",
   "createdBy": "00000000-0000-0000-0000-000000000000"
 }
@@ -318,7 +320,9 @@ Request:
 ```json
 {
   "name": "Fine tuning run",
+  "datasetId": "00000000-0000-0000-0000-000000000000",
   "researcherId": "00000000-0000-0000-0000-000000000000",
+  "llmModel": "gpt-4o-mini",
   "configJson": "{}"
 }
 ```

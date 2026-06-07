@@ -80,7 +80,9 @@ public class FineTuningController {
 
         Experiment experiment = fineTuningService.createExperimentRecord(
                 request.getName(),
+                request.getDatasetId(),
                 request.getResearcherId(),
+                request.getLlmModel(),
                 request.getConfigJson()
         );
 
@@ -96,17 +98,25 @@ public class FineTuningController {
         @NotBlank(message = "name is required and cannot be empty")
         private String name;
 
+        @NotNull(message = "datasetId is required")
+        private UUID datasetId;
+
         @NotNull(message = "researcherId is required")
         private UUID researcherId;
+
+        @NotBlank(message = "llmModel is required and cannot be empty")
+        private String llmModel;
 
         @NotBlank(message = "configJson is required and cannot be empty")
         private String configJson;
 
         public CreateExperimentRecordRequest() {}
 
-        public CreateExperimentRecordRequest(String name, UUID researcherId, String configJson) {
+        public CreateExperimentRecordRequest(String name, UUID datasetId, UUID researcherId, String llmModel, String configJson) {
             this.name = name;
+            this.datasetId = datasetId;
             this.researcherId = researcherId;
+            this.llmModel = llmModel;
             this.configJson = configJson;
         }
 
@@ -118,12 +128,28 @@ public class FineTuningController {
             this.name = name;
         }
 
+        public UUID getDatasetId() {
+            return datasetId;
+        }
+
+        public void setDatasetId(UUID datasetId) {
+            this.datasetId = datasetId;
+        }
+
         public UUID getResearcherId() {
             return researcherId;
         }
 
         public void setResearcherId(UUID researcherId) {
             this.researcherId = researcherId;
+        }
+
+        public String getLlmModel() {
+            return llmModel;
+        }
+
+        public void setLlmModel(String llmModel) {
+            this.llmModel = llmModel;
         }
 
         public String getConfigJson() {

@@ -56,10 +56,12 @@ public class EvaluationService {
 
         EvaluationDataset dataset = new EvaluationDataset();
         dataset.setDatasetName(datasetName);
+        dataset.setDatasetVersion("v1");
         dataset.setCourseId(courseId);
         dataset.setWorkspaceId(workspaceId);
         dataset.setCreatedBy(createdBy);
         dataset.setCreatedAt(LocalDateTime.now());
+        dataset.setUpdatedAt(LocalDateTime.now());
 
         EvaluationDataset savedDataset = evaluationDatasetRepository.save(dataset);
         log.info("Created evaluation dataset with id: {}", savedDataset.getDatasetId());
@@ -92,14 +94,19 @@ public class EvaluationService {
         log.info("Adding question to dataset: datasetId={}, question={}", datasetId, question);
 
         // Kiểm tra dataset tồn tại
-        evaluationDatasetRepository.findById(datasetId)
+        EvaluationDataset dataset = evaluationDatasetRepository.findById(datasetId)
                 .orElseThrow(() -> new ResourceNotFoundException("EvaluationDataset not found with id: " + datasetId));
 
         // Tạo question mới
         EvaluationQuestion evaluationQuestion = new EvaluationQuestion();
         evaluationQuestion.setDatasetId(datasetId);
+        evaluationQuestion.setCourseId(dataset.getCourseId());
+        evaluationQuestion.setQuestionNo(evaluationQuestionRepository.findByDatasetId(datasetId).size() + 1);
         evaluationQuestion.setQuestionText(question);
         evaluationQuestion.setGroundTruthAnswer(groundTruth);
+        evaluationQuestion.setQuestionType("FACTUAL");
+        evaluationQuestion.setDifficulty("MEDIUM");
+        evaluationQuestion.setCreatedAt(LocalDateTime.now());
 
         EvaluationQuestion savedQuestion = evaluationQuestionRepository.save(evaluationQuestion);
         log.info("Added question to dataset - questionId: {}", savedQuestion.getEvaluationQuestionId());
@@ -135,16 +142,26 @@ public class EvaluationService {
      * @param createdBy ID của researcher/creator
      * @return Experiment
      */
-    public Experiment createExperiment(String experimentName, String experimentType, String configJson, UUID createdBy) {
+    public Experiment createExperiment(UUID datasetId, String experimentName, String experimentType, String llmModel, String configJson, UUID createdBy) {
         log.info("Creating experiment: name={}, createdBy={}", experimentName, createdBy);
 
+        EvaluationDataset dataset = evaluationDatasetRepository.findById(datasetId)
+                .orElseThrow(() -> new ResourceNotFoundException("EvaluationDataset not found with id: " + datasetId));
+
         Experiment experiment = new Experiment();
+        experiment.setDatasetId(datasetId);
+        experiment.setCourseId(dataset.getCourseId());
+        experiment.setWorkspaceId(dataset.getWorkspaceId());
         experiment.setExperimentName(experimentName);
         experiment.setExperimentType(experimentType);
+        experiment.setLlmModel(llmModel);
+        experiment.setTopK(5);
+        experiment.setTemperature(0.2);
         experiment.setConfigJson(configJson);
         experiment.setCreatedBy(createdBy);
         experiment.setStatus("PENDING");
         experiment.setCreatedAt(LocalDateTime.now());
+        experiment.setUpdatedAt(LocalDateTime.now());
 
         Experiment savedExperiment = experimentRepository.save(experiment);
         log.info("Created experiment with id: {}, status: PENDING", savedExperiment.getExperimentId());
