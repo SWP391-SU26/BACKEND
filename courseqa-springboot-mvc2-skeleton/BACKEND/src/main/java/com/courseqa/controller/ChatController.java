@@ -5,10 +5,10 @@ import com.courseqa.model.entity.ChatMessage;
 import com.courseqa.model.entity.ChatSession;
 import com.courseqa.model.entity.SavedNote;
 import com.courseqa.service.ChatService;
+import com.courseqa.service.NoteService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -33,9 +33,11 @@ public class ChatController {
     private static final Logger log = LoggerFactory.getLogger(ChatController.class);
 
     private final ChatService chatService;
+    private final NoteService noteService;
 
-    public ChatController(ChatService chatService) {
+    public ChatController(ChatService chatService, NoteService noteService) {
         this.chatService = chatService;
+        this.noteService = noteService;
     }
 
     /**
@@ -103,7 +105,7 @@ public class ChatController {
     public ResponseEntity<ApiResponse<SavedNote>> saveNote(@Valid @RequestBody SaveNoteRequest request) {
         log.info("POST /api/chat/notes - userId: {}, workspaceId: {}", request.getUserId(), request.getWorkspaceId());
 
-        SavedNote note = chatService.saveNote(request.getUserId(), request.getWorkspaceId(), request.getNoteTitle(), request.getNoteContent());
+        SavedNote note = noteService.saveNote(request.getUserId(), request.getWorkspaceId(), request.getNoteTitle(), request.getNoteContent());
 
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(note));
     }
@@ -119,7 +121,7 @@ public class ChatController {
     public ResponseEntity<ApiResponse<List<SavedNote>>> getNotes(@PathVariable UUID workspaceId) {
         log.info("GET /api/chat/notes/workspace/{}", workspaceId);
 
-        List<SavedNote> notes = chatService.getNotes(workspaceId);
+        List<SavedNote> notes = noteService.getNotes(workspaceId);
 
         return ResponseEntity.ok(ApiResponse.ok(notes));
     }
