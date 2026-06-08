@@ -1,4 +1,12 @@
 package com.courseqa.model.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.UUID;
 // DTOs for dataset, question, experiment, benchmark results.
 // TODO: Add request/response DTO classes here.
@@ -26,6 +34,44 @@ public class EvaluationDto {
         public String difficulty;
     }
 
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class AddQuestionRequest {
+        private UUID datasetId;
+        private String questionText;
+        private String groundTruthAnswer;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CreateExperimentRequest {
+        private UUID datasetId;
+        private String experimentName;
+        private String experimentType;
+        private String llmModel;
+        private String configJson;
+        private UUID createdBy;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class DatasetResponse {
+        private UUID datasetId;
+        private UUID courseId;
+        private UUID workspaceId;
+        private String datasetName;
+        private String datasetVersion;
+        private String description;
+        private UUID createdBy;
+        private LocalDateTime createdAt;
+    }
+
     public static class QuestionResponse {
         public UUID evaluationQuestionId;
         public Integer questionNo;
@@ -33,6 +79,23 @@ public class EvaluationDto {
         public String groundTruthAnswer;
         public String questionType;
         public String difficulty;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ExperimentResponse {
+        private UUID experimentId;
+        private UUID datasetId;
+        private UUID courseId;
+        private UUID workspaceId;
+        private String experimentName;
+        private String experimentType;
+        private String configJson;
+        private String status;
+        private UUID createdBy;
+        private LocalDateTime createdAt;
     }
 
     public static class ExperimentResultResponse {
@@ -46,5 +109,7 @@ public class EvaluationDto {
         public Double contextRecall;
         public Double answerCorrectness;
         public Double semanticSimilarity;
+        public Integer latencyMs;
+        public BigDecimal cost;
     }
 }

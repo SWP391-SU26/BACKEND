@@ -1,9 +1,13 @@
 package com.courseqa.repository;
 
-// TODO: Extend JpaRepository after completing entity class.
-// Example:
-// public interface ExperimentRepository extends JpaRepository<Experiment, UUID> {}
+import com.courseqa.model.entity.Experiment;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
 
-public interface ExperimentRepository {
+import java.util.List;
+import java.util.UUID;
 
+@Repository
+public interface ExperimentRepository extends JpaRepository<Experiment, UUID> {
+    List<Experiment> findByCreatedByOrderByCreatedAtDesc(UUID createdBy);
 }
