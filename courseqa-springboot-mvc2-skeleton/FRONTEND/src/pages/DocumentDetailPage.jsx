@@ -84,6 +84,11 @@ function DocumentDetailPage() {
         return
       }
 
+      if (doc.cloudinaryPreviewUrl) {
+        setPreviewState({ loading: false, available: true, message: '' })
+        return
+      }
+
       setPreviewState({ loading: true, available: false, message: '' })
 
       try {
@@ -99,7 +104,9 @@ function DocumentDetailPage() {
           loading: false,
           available: false,
           message:
-            response.status === 501
+            (response.status === 401 || response.status === 500) && doc.type === 'PDF'
+              ? 'Cloudinary dang chan PDF delivery. Hay bat Allow delivery of PDF and ZIP files trong Cloudinary Security settings.'
+              : response.status === 501
               ? 'DOCX/PPTX preview cần cài LibreOffice ở backend để convert sang PDF.'
               : 'Không tạo được preview hoàn chỉnh cho file này.',
         })
@@ -162,7 +169,7 @@ function DocumentDetailPage() {
 
   const selectedChunk = docChunks.find((chunk) => chunk.id === activeChunk) ?? docChunks[0]
   const fileUrl = getDocumentFileUrl(doc.id)
-  const previewUrl = doc.type === 'PDF' ? fileUrl : getDocumentPreviewUrl(doc.id)
+  const previewUrl = doc.cloudinaryPreviewUrl ?? (doc.type === 'PDF' ? fileUrl : getDocumentPreviewUrl(doc.id))
 
   async function confirmDeleteDocument() {
     setDeleting(true)

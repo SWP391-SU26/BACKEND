@@ -3,6 +3,7 @@ package com.courseqa.controller;
 import com.courseqa.model.dto.ApiResponse;
 import com.courseqa.model.dto.DocumentDto;
 import com.courseqa.service.DocumentService;
+import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.core.io.FileSystemResource;
@@ -74,8 +75,14 @@ public class DocumentController {
     }
 
     @GetMapping("/{documentId}/file")
-    public ResponseEntity<Resource> getFile(@PathVariable UUID documentId) {
+    public ResponseEntity<?> getFile(@PathVariable UUID documentId) {
         DocumentService.StoredDocumentFile file = documentService.getStoredFile(documentId);
+        if (file.isRemote()) {
+            return ResponseEntity.status(302)
+                    .location(URI.create(file.url()))
+                    .build();
+        }
+
         Resource resource = new FileSystemResource(file.path());
 
         return ResponseEntity.ok()
@@ -88,8 +95,14 @@ public class DocumentController {
     }
 
     @GetMapping("/{documentId}/preview")
-    public ResponseEntity<Resource> getPreview(@PathVariable UUID documentId) {
+    public ResponseEntity<?> getPreview(@PathVariable UUID documentId) {
         DocumentService.StoredDocumentFile file = documentService.getPreviewFile(documentId);
+        if (file.isRemote()) {
+            return ResponseEntity.status(302)
+                    .location(URI.create(file.url()))
+                    .build();
+        }
+
         Resource resource = new FileSystemResource(file.path());
 
         return ResponseEntity.ok()

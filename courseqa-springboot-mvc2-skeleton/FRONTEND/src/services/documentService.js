@@ -70,6 +70,9 @@ export function toUiDocument(document, extra = {}) {
     relevance: status === 'Indexed' ? 80 : 0,
     workspaceId: document.workspaceId,
     courseId: document.courseId,
+    storageProvider: document.storageProvider,
+    cloudinarySecureUrl: document.cloudinarySecureUrl,
+    cloudinaryPreviewUrl: document.cloudinaryPreviewUrl,
     preview:
       document.errorMessage ??
       'Document processed by Spring Boot: file stored, text extracted, and chunks prepared.',

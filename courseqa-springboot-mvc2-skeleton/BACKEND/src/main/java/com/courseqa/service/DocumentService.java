@@ -1,5 +1,7 @@
 package com.courseqa.service;
 
+import com.cloudinary.Cloudinary;
+import com.cloudinary.utils.ObjectUtils;
 import com.courseqa.model.dto.DocumentDto;
 import com.courseqa.model.entity.CourseDocument;
 import com.courseqa.model.entity.DocumentChunk;
@@ -16,6 +18,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import org.apache.pdfbox.Loader;
@@ -46,13 +49,17 @@ public class DocumentService {
     private final JdbcTemplate jdbcTemplate;
     private final Path uploadRoot;
     private final Path previewRoot;
+    private final Cloudinary cloudinary;
 
     public DocumentService(
             CourseDocumentRepository courseDocumentRepository,
             DocumentPageRepository documentPageRepository,
             DocumentChunkRepository documentChunkRepository,
             JdbcTemplate jdbcTemplate,
-            @Value("${app.upload-dir:uploads}") String uploadDir
+            @Value("${app.upload-dir:uploads}") String uploadDir,
+            @Value("${cloudinary.cloud-name:}") String cloudinaryCloudName,
+            @Value("${cloudinary.api-key:}") String cloudinaryApiKey,
+            @Value("${cloudinary.api-secret:}") String cloudinaryApiSecret
     ) {
         this.courseDocumentRepository = courseDocumentRepository;
         this.documentPageRepository = documentPageRepository;
@@ -60,18 +67,110 @@ public class DocumentService {
         this.jdbcTemplate = jdbcTemplate;
         this.uploadRoot = Path.of(uploadDir).toAbsolutePath().normalize();
         this.previewRoot = this.uploadRoot.resolve("previews").normalize();
+        this.cloudinary = createCloudinary(cloudinaryCloudName, cloudinaryApiKey, cloudinaryApiSecret);
+    }
+
+    private Cloudinary createCloudinary(String cloudName, String apiKey, String apiSecret) {
+        if (isBlank(cloudName) || isBlank(apiKey) || isBlank(apiSecret)) {
+            return null;
+        }
+
+        return new Cloudinary(ObjectUtils.asMap(
+                "cloud_name", cloudName,
+                "api_key", apiKey,
+                "api_secret", apiSecret,
+                "secure", true
+        ));
+    }
+
+    private void ensureCloudinaryConfigured() {
+        if (cloudinary == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET."
+            );
+        }
+    }
+
+    private CloudinaryUpload uploadToCloudinary(Path filePath, String publicId) throws IOException {
+        ensureCloudinaryConfigured();
+        Map<?, ?> uploadResult = cloudinary.uploader().upload(filePath.toFile(), ObjectUtils.asMap(
+                "resource_type", "raw",
+                "public_id", publicId
+        ));
+        return new CloudinaryUpload(
+                String.valueOf(uploadResult.get("public_id")),
+                String.valueOf(uploadResult.get("secure_url"))
+        );
+    }
+
+    private CloudinaryUpload createAndUploadPreview(Path originalPath, String originalFilename, String fileType) throws IOException {
+        if (!List.of("DOCX", "PPTX").contains(fileType)) {
+            return null;
+        }
+
+        if (findLibreOffice() == null) {
+            return null;
+        }
+
+        Files.createDirectories(previewRoot);
+        Path previewPath = previewRoot.resolve(UUID.randomUUID() + "-" + stripExtension(originalFilename) + ".pdf").normalize();
+        try {
+            convertOfficeDocumentToPdf(originalPath, previewRoot, previewPath);
+
+            if (!Files.exists(previewPath)) {
+                return null;
+            }
+
+            return uploadToCloudinary(previewPath, "courseqa/previews/" + previewPath.getFileName());
+        } finally {
+            deleteStoredFile(previewPath, previewRoot);
+        }
+    }
+
+    private boolean isCloudStored(CourseDocument document) {
+        return "CLOUDINARY".equalsIgnoreCase(document.getStorageProvider())
+                && document.getCloudinarySecureUrl() != null
+                && !document.getCloudinarySecureUrl().isBlank();
+    }
+
+    private void destroyCloudinaryAsset(String publicId) {
+        if (cloudinary == null || publicId == null || publicId.isBlank()) {
+            return;
+        }
+
+        try {
+            cloudinary.uploader().destroy(publicId, ObjectUtils.asMap("resource_type", "raw"));
+        } catch (IOException ignored) {
+            // Keep document deletion usable even if Cloudinary cleanup is temporarily unavailable.
+        }
     }
 
     @Transactional
     public DocumentDto.DocumentResponse uploadDocument(MultipartFile file, DocumentDto.UploadDocumentRequest request) {
         validateUpload(file, request);
 
+        String uploadedPublicId = null;
+        String uploadedPreviewPublicId = null;
+        Path targetPath = null;
+
         try {
+            ensureCloudinaryConfigured();
             Files.createDirectories(uploadRoot);
             String originalFilename = sanitizeFilename(file.getOriginalFilename());
             String fileType = resolveFileType(originalFilename);
-            Path targetPath = uploadRoot.resolve(UUID.randomUUID() + "-" + originalFilename).normalize();
+            targetPath = uploadRoot.resolve(UUID.randomUUID() + "-" + originalFilename).normalize();
             file.transferTo(targetPath);
+            CloudinaryUpload originalUpload = uploadToCloudinary(
+                    targetPath,
+                    "courseqa/documents/" + UUID.randomUUID() + "-" + originalFilename
+            );
+            uploadedPublicId = originalUpload.publicId();
+
+            CloudinaryUpload previewUpload = createAndUploadPreview(targetPath, originalFilename, fileType);
+            if (previewUpload != null) {
+                uploadedPreviewPublicId = previewUpload.publicId();
+            }
 
             LocalDateTime now = LocalDateTime.now();
             CourseDocument document = new CourseDocument();
@@ -83,7 +182,14 @@ public class DocumentService {
             document.setOriginalFilename(originalFilename);
             document.setFileType(fileType);
             document.setMimeType(file.getContentType());
-            document.setFilePath(targetPath.toString());
+            document.setFilePath(originalUpload.secureUrl());
+            document.setStorageProvider("CLOUDINARY");
+            document.setCloudinaryPublicId(originalUpload.publicId());
+            document.setCloudinarySecureUrl(originalUpload.secureUrl());
+            if (previewUpload != null) {
+                document.setCloudinaryPreviewPublicId(previewUpload.publicId());
+                document.setCloudinaryPreviewUrl(previewUpload.secureUrl());
+            }
             document.setFileSizeBytes(file.getSize());
             document.setProcessingStatus("PROCESSING");
             document.setLanguage("vi");
@@ -94,7 +200,17 @@ public class DocumentService {
             processDocument(savedDocument, targetPath, fileType);
             return DocumentDto.DocumentResponse.fromEntity(savedDocument);
         } catch (IOException exception) {
+            destroyCloudinaryAsset(uploadedPublicId);
+            destroyCloudinaryAsset(uploadedPreviewPublicId);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not store or process file.");
+        } catch (RuntimeException exception) {
+            destroyCloudinaryAsset(uploadedPublicId);
+            destroyCloudinaryAsset(uploadedPreviewPublicId);
+            throw exception;
+        } finally {
+            if (targetPath != null) {
+                deleteStoredFile(targetPath, uploadRoot);
+            }
         }
     }
 
@@ -128,8 +244,11 @@ public class DocumentService {
     public void deleteDocument(UUID documentId) {
         CourseDocument document = courseDocumentRepository.findById(documentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
-        Path originalPath = Path.of(document.getFilePath()).toAbsolutePath().normalize();
         Path previewPath = previewRoot.resolve(documentId + ".pdf").normalize();
+        Path originalPath = null;
+        if (!isCloudStored(document)) {
+            originalPath = Path.of(document.getFilePath()).toAbsolutePath().normalize();
+        }
 
         jdbcTemplate.update("""
                 DELETE FROM answer_citations
@@ -144,13 +263,29 @@ public class DocumentService {
         documentChunkRepository.deleteByDocumentId(documentId);
         courseDocumentRepository.delete(document);
 
-        deleteStoredFile(originalPath, uploadRoot);
+        if (isCloudStored(document)) {
+            destroyCloudinaryAsset(document.getCloudinaryPublicId());
+            destroyCloudinaryAsset(document.getCloudinaryPreviewPublicId());
+        } else if (originalPath != null) {
+            deleteStoredFile(originalPath, uploadRoot);
+        }
         deleteStoredFile(previewPath, previewRoot);
     }
 
     public StoredDocumentFile getStoredFile(UUID documentId) {
         CourseDocument document = courseDocumentRepository.findById(documentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
+        if (isCloudStored(document)) {
+            return new StoredDocumentFile(
+                    null,
+                    document.getCloudinarySecureUrl(),
+                    document.getOriginalFilename(),
+                    document.getMimeType() == null || document.getMimeType().isBlank()
+                            ? "application/octet-stream"
+                            : document.getMimeType()
+            );
+        }
+
         Path filePath = Path.of(document.getFilePath()).toAbsolutePath().normalize();
 
         if (!filePath.startsWith(uploadRoot) || !Files.exists(filePath) || !Files.isRegularFile(filePath)) {
@@ -168,6 +303,7 @@ public class DocumentService {
 
         return new StoredDocumentFile(
                 filePath,
+                null,
                 document.getOriginalFilename(),
                 mimeType == null || mimeType.isBlank() ? "application/octet-stream" : mimeType
         );
@@ -176,11 +312,24 @@ public class DocumentService {
     public StoredDocumentFile getPreviewFile(UUID documentId) {
         CourseDocument document = courseDocumentRepository.findById(documentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
-        Path originalPath = resolveStoredPath(document);
         String fileType = document.getFileType() == null ? "" : document.getFileType().toUpperCase(Locale.ROOT);
 
+        if (isCloudStored(document)) {
+            String previewUrl = "PDF".equals(fileType)
+                    ? document.getCloudinarySecureUrl()
+                    : document.getCloudinaryPreviewUrl();
+            if (previewUrl == null || previewUrl.isBlank()) {
+                throw new ResponseStatusException(
+                        HttpStatus.NOT_IMPLEMENTED,
+                        "Document preview was not generated. Install LibreOffice before uploading DOCX/PPTX files."
+                );
+            }
+            return new StoredDocumentFile(null, previewUrl, stripExtension(document.getOriginalFilename()) + ".pdf", "application/pdf");
+        }
+
+        Path originalPath = resolveStoredPath(document);
         if ("PDF".equals(fileType)) {
-            return new StoredDocumentFile(originalPath, document.getOriginalFilename(), "application/pdf");
+            return new StoredDocumentFile(originalPath, null, document.getOriginalFilename(), "application/pdf");
         }
 
         if (!List.of("DOCX", "PPTX").contains(fileType)) {
@@ -202,7 +351,7 @@ public class DocumentService {
                 throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Preview PDF was not created.");
             }
 
-            return new StoredDocumentFile(previewPath, stripExtension(document.getOriginalFilename()) + ".pdf", "application/pdf");
+            return new StoredDocumentFile(previewPath, null, stripExtension(document.getOriginalFilename()) + ".pdf", "application/pdf");
         } catch (IOException exception) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not create preview file.");
         }
@@ -493,9 +642,19 @@ public class DocumentService {
         return text.trim().split("\\s+").length;
     }
 
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
     private record ExtractedPage(int pageNumber, String text) {
     }
 
-    public record StoredDocumentFile(Path path, String filename, String mimeType) {
+    private record CloudinaryUpload(String publicId, String secureUrl) {
+    }
+
+    public record StoredDocumentFile(Path path, String url, String filename, String mimeType) {
+        public boolean isRemote() {
+            return url != null && !url.isBlank();
+        }
     }
 }

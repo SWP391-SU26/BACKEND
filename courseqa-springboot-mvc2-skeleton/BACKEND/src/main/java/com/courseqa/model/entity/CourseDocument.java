@@ -43,6 +43,21 @@ public class CourseDocument {
     @Column(name = "file_path", columnDefinition = "NVARCHAR(MAX)")
     private String filePath;
 
+    @Column(name = "storage_provider")
+    private String storageProvider;
+
+    @Column(name = "cloudinary_public_id")
+    private String cloudinaryPublicId;
+
+    @Column(name = "cloudinary_secure_url", columnDefinition = "NVARCHAR(MAX)")
+    private String cloudinarySecureUrl;
+
+    @Column(name = "cloudinary_preview_public_id")
+    private String cloudinaryPreviewPublicId;
+
+    @Column(name = "cloudinary_preview_url", columnDefinition = "NVARCHAR(MAX)")
+    private String cloudinaryPreviewUrl;
+
     @Column(name = "file_size_bytes")
     private Long fileSizeBytes;
 
@@ -95,6 +110,21 @@ public class CourseDocument {
 
     public String getFilePath() { return filePath; }
     public void setFilePath(String filePath) { this.filePath = filePath; }
+
+    public String getStorageProvider() { return storageProvider; }
+    public void setStorageProvider(String storageProvider) { this.storageProvider = storageProvider; }
+
+    public String getCloudinaryPublicId() { return cloudinaryPublicId; }
+    public void setCloudinaryPublicId(String cloudinaryPublicId) { this.cloudinaryPublicId = cloudinaryPublicId; }
+
+    public String getCloudinarySecureUrl() { return cloudinarySecureUrl; }
+    public void setCloudinarySecureUrl(String cloudinarySecureUrl) { this.cloudinarySecureUrl = cloudinarySecureUrl; }
+
+    public String getCloudinaryPreviewPublicId() { return cloudinaryPreviewPublicId; }
+    public void setCloudinaryPreviewPublicId(String cloudinaryPreviewPublicId) { this.cloudinaryPreviewPublicId = cloudinaryPreviewPublicId; }
+
+    public String getCloudinaryPreviewUrl() { return cloudinaryPreviewUrl; }
+    public void setCloudinaryPreviewUrl(String cloudinaryPreviewUrl) { this.cloudinaryPreviewUrl = cloudinaryPreviewUrl; }
 
     public Long getFileSizeBytes() { return fileSizeBytes; }
     public void setFileSizeBytes(Long fileSizeBytes) { this.fileSizeBytes = fileSizeBytes; }

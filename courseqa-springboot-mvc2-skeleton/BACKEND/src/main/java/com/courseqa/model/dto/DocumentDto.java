@@ -24,6 +24,9 @@ public class DocumentDto {
         public String processingStatus;
         public Integer totalPages;
         public String errorMessage;
+        public String storageProvider;
+        public String cloudinarySecureUrl;
+        public String cloudinaryPreviewUrl;
 
         public static DocumentResponse fromEntity(CourseDocument document) {
             DocumentResponse response = new DocumentResponse();
@@ -37,6 +40,9 @@ public class DocumentDto {
             response.processingStatus = document.getProcessingStatus();
             response.totalPages = document.getTotalPages();
             response.errorMessage = document.getErrorMessage();
+            response.storageProvider = document.getStorageProvider();
+            response.cloudinarySecureUrl = document.getCloudinarySecureUrl();
+            response.cloudinaryPreviewUrl = document.getCloudinaryPreviewUrl();
             return response;
         }
     }
