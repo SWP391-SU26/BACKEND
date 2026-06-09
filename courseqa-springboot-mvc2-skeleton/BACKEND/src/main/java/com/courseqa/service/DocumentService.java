@@ -4,9 +4,14 @@ import com.cloudinary.Cloudinary;
 import com.cloudinary.utils.ObjectUtils;
 import com.courseqa.model.dto.DocumentDto;
 import com.courseqa.model.entity.CourseDocument;
+import com.courseqa.model.entity.Chapter;
+import com.courseqa.model.entity.CourseWorkspace;
 import com.courseqa.model.entity.DocumentChunk;
 import com.courseqa.model.entity.DocumentPage;
+import com.courseqa.repository.ChapterRepository;
 import com.courseqa.repository.CourseDocumentRepository;
+import com.courseqa.repository.CourseRepository;
+import com.courseqa.repository.CourseWorkspaceRepository;
 import com.courseqa.repository.DocumentChunkRepository;
 import com.courseqa.repository.DocumentPageRepository;
 import java.io.IOException;
@@ -44,6 +49,9 @@ public class DocumentService {
     private static final String CHUNK_STRATEGY = "fixed_1200_150";
 
     private final CourseDocumentRepository courseDocumentRepository;
+    private final CourseRepository courseRepository;
+    private final ChapterRepository chapterRepository;
+    private final CourseWorkspaceRepository courseWorkspaceRepository;
     private final DocumentPageRepository documentPageRepository;
     private final DocumentChunkRepository documentChunkRepository;
     private final JdbcTemplate jdbcTemplate;
@@ -53,6 +61,9 @@ public class DocumentService {
 
     public DocumentService(
             CourseDocumentRepository courseDocumentRepository,
+            CourseRepository courseRepository,
+            ChapterRepository chapterRepository,
+            CourseWorkspaceRepository courseWorkspaceRepository,
             DocumentPageRepository documentPageRepository,
             DocumentChunkRepository documentChunkRepository,
             JdbcTemplate jdbcTemplate,
@@ -62,6 +73,9 @@ public class DocumentService {
             @Value("${cloudinary.api-secret:}") String cloudinaryApiSecret
     ) {
         this.courseDocumentRepository = courseDocumentRepository;
+        this.courseRepository = courseRepository;
+        this.chapterRepository = chapterRepository;
+        this.courseWorkspaceRepository = courseWorkspaceRepository;
         this.documentPageRepository = documentPageRepository;
         this.documentChunkRepository = documentChunkRepository;
         this.jdbcTemplate = jdbcTemplate;
@@ -598,6 +612,23 @@ public class DocumentService {
         }
         if (request == null || request.workspaceId == null || request.courseId == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "workspaceId and courseId are required.");
+        }
+        if (!courseRepository.existsById(request.courseId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Course not found.");
+        }
+
+        CourseWorkspace workspace = courseWorkspaceRepository.findById(request.workspaceId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Workspace not found."));
+        if (!request.courseId.equals(workspace.getCourseId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Workspace does not belong to the selected course.");
+        }
+
+        if (request.chapterId != null) {
+            Chapter chapter = chapterRepository.findById(request.chapterId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chapter not found."));
+            if (!request.courseId.equals(chapter.getCourseId())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chapter does not belong to the selected course.");
+            }
         }
     }
 
