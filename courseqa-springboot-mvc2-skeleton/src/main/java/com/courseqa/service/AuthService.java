@@ -2,6 +2,7 @@ package com.courseqa.service;
 
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -76,7 +77,7 @@ public AuthDto.AuthResponse login(AuthDto.LoginRequest request) {
 }
 
 //Logout method
-public void logout(String userId){
+public void logout(UUID userId){
     User user = userRepository.findById(userId)
     .orElseThrow(() -> new RuntimeException("User not found"));
     user.setLastLogoutAt(LocalDateTime.now());
