@@ -53,6 +53,13 @@
             <artifactId>spring-security-crypto</artifactId>
         </dependency>
 
+        <!-- Spring Security -->
+       <dependency>
+         <groupId>org.springframework.boot</groupId>
+         <artifactId>spring-boot-starter-security</artifactId>
+       </dependency>
+
+
         <!-- PDF/DOCX/PPTX extraction libraries if you implement document processing -->
         <dependency>
             <groupId>org.apache.pdfbox</groupId>

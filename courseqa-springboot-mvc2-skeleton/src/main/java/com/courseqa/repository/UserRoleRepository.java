@@ -13,5 +13,8 @@ import com.courseqa.model.entity.UserRole;
 
 public interface UserRoleRepository extends JpaRepository<UserRole,UUID> {
 List<UserRole> findByUserId(UUID userId);
-boolean existsByUserIdAndRoleId(UUID userId, UUID roleId);
+//boolean existsByUserIdAndRoleId(UUID userId, UUID roleId);
+
+boolean existsByUserIdAndRoleName(UUID userId, String roleName);
+
 }

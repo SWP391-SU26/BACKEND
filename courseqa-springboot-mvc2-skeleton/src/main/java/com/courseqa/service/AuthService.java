@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import com.courseqa.model.dto.AuthDto;
@@ -22,12 +23,15 @@ public class AuthService {
 
     @Autowired
     private UserRepository userRepository;
-    @Deprecated
+    @Autowired
     private UserRoleRepository userRoleRepository;
     @Autowired
     private JwtUtil jwtUtil;
     
-    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+   
 
     //Register method
     public AuthDto.AuthResponse register(AuthDto.RegisterRequest request) {
