@@ -54,6 +54,7 @@ public class AuthService {
      role.setUserId(user.getUserId());
      role.setRoleName(request.roleName);
      role.setIsActive(true);
+     role.setAssignedAt(LocalDateTime.now());
      userRoleRepository.save(role);
 
 

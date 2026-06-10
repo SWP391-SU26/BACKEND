@@ -13,6 +13,8 @@ public static class RegisterRequest {
         public String roleName = "STUDENT";
 
 
+        public RegisterRequest() {
+        }
         public String getFullName() {
             return fullName;
         }
@@ -39,6 +41,8 @@ public static class RegisterRequest {
         public String email;
         public String password;
         
+        public LoginRequest() {
+        }
         public String getEmail() {
             return email;
         }
