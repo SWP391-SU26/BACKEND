@@ -11,11 +11,42 @@ public static class RegisterRequest {
         public String email;
         public String password;
         public String roleName = "STUDENT";
+
+
+        public String getFullName() {
+            return fullName;
+        }
+        public String getEmail() {
+            return email;
+        }
+        public String getPassword() {
+            return password;
+        }
+        public String getRoleName() {
+            return roleName;
+        }
+
+
+        
+
+
+
+
+
     }
 
     public static class LoginRequest {
         public String email;
         public String password;
+        
+        public String getEmail() {
+            return email;
+        }
+        public String getPassword() {
+            return password;
+        }
+
+        
     }
 
     public static class AuthResponse {
