@@ -74,7 +74,7 @@ public Chapter createChapter(UUID courseId, CourseDto.CreateChapterRequest reque
 }
 
 //------------------Course workspace methods------------------
-public List<CourseWorkspace> getCourseWorkspacesByCourse(UUID courseId){
+public List<CourseWorkspace> getWorkspacesByCourse(UUID courseId){
     return courseWorkspaceRepository.findByCourseId(courseId);
 }
 
@@ -84,7 +84,7 @@ public CourseWorkspace createWorkspace(UUID courseId, CourseDto.CreateWorkspaceR
     }
    CourseWorkspace workspace = new CourseWorkspace();
    workspace.setCourseId(courseId);
-   workspace.setOwnerUserId(courseId);
+   workspace.setOwnerUserId(request.ownerUserId);
    workspace.setWorkspaceTitle(request.workspaceTitle);
    workspace.setDescription(request.description);
    workspace.setIsActive(true);
