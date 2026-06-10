@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.courseqa.service.AuthServiceTest
+-------------------------------------------------------------------------------
+Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.418 s -- in com.courseqa.service.AuthServiceTest
