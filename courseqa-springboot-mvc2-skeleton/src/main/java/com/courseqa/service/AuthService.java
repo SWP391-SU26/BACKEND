@@ -78,8 +78,14 @@ public AuthDto.AuthResponse login(AuthDto.LoginRequest request) {
 
 //Logout method
 public void logout(UUID userId){
+
+    if(userId == null){
+        throw new RuntimeException("User ID is required");
+    }
+
     User user = userRepository.findById(userId)
     .orElseThrow(() -> new RuntimeException("User not found"));
+
     user.setLastLogoutAt(LocalDateTime.now());
     userRepository.save(user);
 }
