@@ -35,12 +35,14 @@ public class AuthDto {
         public UUID userId;
         public String fullName;
         public String email;
+        public Boolean isActive;
         public List<String> roles;
 
         public UserResponse(User user, List<String> roles) {
             this.userId = user.getUserId();
             this.fullName = user.getFullName();
             this.email = user.getEmail();
+            this.isActive = user.getIsActive();
             this.roles = roles;
         }
     }

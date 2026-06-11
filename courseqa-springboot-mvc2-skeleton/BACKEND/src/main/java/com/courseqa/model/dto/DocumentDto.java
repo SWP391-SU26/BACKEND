@@ -18,6 +18,7 @@ public class DocumentDto {
         public UUID workspaceId;
         public UUID courseId;
         public UUID chapterId;
+        public UUID uploadedBy;
         public String documentTitle;
         public String originalFilename;
         public String fileType;
@@ -34,6 +35,7 @@ public class DocumentDto {
             response.workspaceId = document.getWorkspaceId();
             response.courseId = document.getCourseId();
             response.chapterId = document.getChapterId();
+            response.uploadedBy = document.getUploadedBy();
             response.documentTitle = document.getDocumentTitle();
             response.originalFilename = document.getOriginalFilename();
             response.fileType = document.getFileType();

@@ -48,35 +48,58 @@ public class DocumentController {
         return ApiResponse.ok(documentService.uploadDocument(file, request));
     }
 
+    @GetMapping
+    public ApiResponse<List<DocumentDto.DocumentResponse>> getDocuments(@RequestParam UUID requesterId) {
+        return ApiResponse.ok(documentService.getDocuments(requesterId));
+    }
+
     @GetMapping("/workspace/{workspaceId}")
-    public ApiResponse<List<DocumentDto.DocumentResponse>> getDocumentsByWorkspace(@PathVariable UUID workspaceId) {
-        return ApiResponse.ok(documentService.getDocumentsByWorkspace(workspaceId));
+    public ApiResponse<List<DocumentDto.DocumentResponse>> getDocumentsByWorkspace(
+            @PathVariable UUID workspaceId,
+            @RequestParam UUID requesterId
+    ) {
+        return ApiResponse.ok(documentService.getDocumentsByWorkspace(workspaceId, requesterId));
     }
 
     @GetMapping("/{documentId}")
-    public ApiResponse<DocumentDto.DocumentResponse> getDocument(@PathVariable UUID documentId) {
-        return ApiResponse.ok(documentService.getDocument(documentId));
+    public ApiResponse<DocumentDto.DocumentResponse> getDocument(
+            @PathVariable UUID documentId,
+            @RequestParam UUID requesterId
+    ) {
+        return ApiResponse.ok(documentService.getDocument(documentId, requesterId));
     }
 
     @GetMapping("/{documentId}/pages")
-    public ApiResponse<List<DocumentDto.PageResponse>> getPages(@PathVariable UUID documentId) {
-        return ApiResponse.ok(documentService.getPages(documentId));
+    public ApiResponse<List<DocumentDto.PageResponse>> getPages(
+            @PathVariable UUID documentId,
+            @RequestParam UUID requesterId
+    ) {
+        return ApiResponse.ok(documentService.getPages(documentId, requesterId));
     }
 
     @GetMapping("/{documentId}/chunks")
-    public ApiResponse<List<DocumentDto.ChunkResponse>> getChunks(@PathVariable UUID documentId) {
-        return ApiResponse.ok(documentService.getChunks(documentId));
+    public ApiResponse<List<DocumentDto.ChunkResponse>> getChunks(
+            @PathVariable UUID documentId,
+            @RequestParam UUID requesterId
+    ) {
+        return ApiResponse.ok(documentService.getChunks(documentId, requesterId));
     }
 
     @DeleteMapping("/{documentId}")
-    public ApiResponse<Void> deleteDocument(@PathVariable UUID documentId) {
-        documentService.deleteDocument(documentId);
+    public ApiResponse<Void> deleteDocument(
+            @PathVariable UUID documentId,
+            @RequestParam UUID requesterId
+    ) {
+        documentService.deleteDocument(documentId, requesterId);
         return ApiResponse.ok(null);
     }
 
     @GetMapping("/{documentId}/file")
-    public ResponseEntity<?> getFile(@PathVariable UUID documentId) {
-        DocumentService.StoredDocumentFile file = documentService.getStoredFile(documentId);
+    public ResponseEntity<?> getFile(
+            @PathVariable UUID documentId,
+            @RequestParam UUID requesterId
+    ) {
+        DocumentService.StoredDocumentFile file = documentService.getStoredFile(documentId, requesterId);
         if (file.isRemote()) {
             return ResponseEntity.status(302)
                     .location(URI.create(file.url()))
@@ -95,8 +118,11 @@ public class DocumentController {
     }
 
     @GetMapping("/{documentId}/preview")
-    public ResponseEntity<?> getPreview(@PathVariable UUID documentId) {
-        DocumentService.StoredDocumentFile file = documentService.getPreviewFile(documentId);
+    public ResponseEntity<?> getPreview(
+            @PathVariable UUID documentId,
+            @RequestParam UUID requesterId
+    ) {
+        DocumentService.StoredDocumentFile file = documentService.getPreviewFile(documentId, requesterId);
         if (file.isRemote()) {
             return ResponseEntity.status(302)
                     .location(URI.create(file.url()))

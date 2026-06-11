@@ -144,6 +144,23 @@ public class AuthService {
         return new AuthDto.UserResponse(user, getRoleNames(userId));
     }
 
+    @Transactional
+    public void deleteUser(UUID userId, UUID requesterId) {
+        if (userId == null || requesterId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "userId and requesterId are required.");
+        }
+        if (userId.equals(requesterId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Admin cannot delete their own account.");
+        }
+        if (!isAdmin(requesterId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only admin can delete users.");
+        }
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found."));
+        userRepository.delete(user);
+    }
+
     private AuthDto.AuthResponse buildAuthResponse(User user) {
         return new AuthDto.AuthResponse(UUID.randomUUID().toString(), user, getRoleNames(user.getUserId()));
     }
@@ -152,6 +169,14 @@ public class AuthService {
         return userRoleRepository.findByUserIdAndIsActiveTrue(userId).stream()
                 .map(UserRole::getRoleName)
                 .toList();
+    }
+
+    private boolean isAdmin(UUID userId) {
+        if (!userRepository.existsById(userId)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Requester user not found.");
+        }
+        return getRoleNames(userId).stream()
+                .anyMatch(role -> "ADMIN".equalsIgnoreCase(role));
     }
 
     private String normalizeEmail(String email) {

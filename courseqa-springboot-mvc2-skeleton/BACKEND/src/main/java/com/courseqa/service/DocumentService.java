@@ -8,12 +8,15 @@ import com.courseqa.model.entity.Chapter;
 import com.courseqa.model.entity.CourseWorkspace;
 import com.courseqa.model.entity.DocumentChunk;
 import com.courseqa.model.entity.DocumentPage;
+import com.courseqa.model.entity.UserRole;
 import com.courseqa.repository.ChapterRepository;
 import com.courseqa.repository.CourseDocumentRepository;
 import com.courseqa.repository.CourseRepository;
 import com.courseqa.repository.CourseWorkspaceRepository;
 import com.courseqa.repository.DocumentChunkRepository;
 import com.courseqa.repository.DocumentPageRepository;
+import com.courseqa.repository.UserRepository;
+import com.courseqa.repository.UserRoleRepository;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -54,6 +57,8 @@ public class DocumentService {
     private final CourseWorkspaceRepository courseWorkspaceRepository;
     private final DocumentPageRepository documentPageRepository;
     private final DocumentChunkRepository documentChunkRepository;
+    private final UserRepository userRepository;
+    private final UserRoleRepository userRoleRepository;
     private final JdbcTemplate jdbcTemplate;
     private final Path uploadRoot;
     private final Path previewRoot;
@@ -66,6 +71,8 @@ public class DocumentService {
             CourseWorkspaceRepository courseWorkspaceRepository,
             DocumentPageRepository documentPageRepository,
             DocumentChunkRepository documentChunkRepository,
+            UserRepository userRepository,
+            UserRoleRepository userRoleRepository,
             JdbcTemplate jdbcTemplate,
             @Value("${app.upload-dir:uploads}") String uploadDir,
             @Value("${cloudinary.cloud-name:}") String cloudinaryCloudName,
@@ -78,6 +85,8 @@ public class DocumentService {
         this.courseWorkspaceRepository = courseWorkspaceRepository;
         this.documentPageRepository = documentPageRepository;
         this.documentChunkRepository = documentChunkRepository;
+        this.userRepository = userRepository;
+        this.userRoleRepository = userRoleRepository;
         this.jdbcTemplate = jdbcTemplate;
         this.uploadRoot = Path.of(uploadDir).toAbsolutePath().normalize();
         this.previewRoot = this.uploadRoot.resolve("previews").normalize();
@@ -228,36 +237,50 @@ public class DocumentService {
         }
     }
 
-    public List<DocumentDto.DocumentResponse> getDocumentsByWorkspace(UUID workspaceId) {
-        return courseDocumentRepository.findByWorkspaceIdOrderByUploadedAtDesc(workspaceId).stream()
+    public List<DocumentDto.DocumentResponse> getDocuments(UUID requesterId) {
+        requireRequester(requesterId);
+        List<CourseDocument> documents = isAdmin(requesterId)
+                ? courseDocumentRepository.findAllByOrderByUploadedAtDesc()
+                : courseDocumentRepository.findByUploadedByOrderByUploadedAtDesc(requesterId);
+
+        return documents.stream()
                 .map(DocumentDto.DocumentResponse::fromEntity)
                 .toList();
     }
 
-    public DocumentDto.DocumentResponse getDocument(UUID documentId) {
-        CourseDocument document = courseDocumentRepository.findById(documentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
+    public List<DocumentDto.DocumentResponse> getDocumentsByWorkspace(UUID workspaceId, UUID requesterId) {
+        requireRequester(requesterId);
+        List<CourseDocument> documents = isAdmin(requesterId)
+                ? courseDocumentRepository.findByWorkspaceIdOrderByUploadedAtDesc(workspaceId)
+                : courseDocumentRepository.findByWorkspaceIdAndUploadedByOrderByUploadedAtDesc(workspaceId, requesterId);
+
+        return documents.stream()
+                .map(DocumentDto.DocumentResponse::fromEntity)
+                .toList();
+    }
+
+    public DocumentDto.DocumentResponse getDocument(UUID documentId, UUID requesterId) {
+        CourseDocument document = getAccessibleDocument(documentId, requesterId);
         return DocumentDto.DocumentResponse.fromEntity(document);
     }
 
-    public List<DocumentDto.PageResponse> getPages(UUID documentId) {
-        ensureDocumentExists(documentId);
+    public List<DocumentDto.PageResponse> getPages(UUID documentId, UUID requesterId) {
+        getAccessibleDocument(documentId, requesterId);
         return documentPageRepository.findByDocumentIdOrderByPageNumberAsc(documentId).stream()
                 .map(DocumentDto.PageResponse::fromEntity)
                 .toList();
     }
 
-    public List<DocumentDto.ChunkResponse> getChunks(UUID documentId) {
-        ensureDocumentExists(documentId);
+    public List<DocumentDto.ChunkResponse> getChunks(UUID documentId, UUID requesterId) {
+        getAccessibleDocument(documentId, requesterId);
         return documentChunkRepository.findByDocumentIdOrderByChunkIndexAsc(documentId).stream()
                 .map(DocumentDto.ChunkResponse::fromEntity)
                 .toList();
     }
 
     @Transactional
-    public void deleteDocument(UUID documentId) {
-        CourseDocument document = courseDocumentRepository.findById(documentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
+    public void deleteDocument(UUID documentId, UUID requesterId) {
+        CourseDocument document = getAccessibleDocument(documentId, requesterId);
         Path previewPath = previewRoot.resolve(documentId + ".pdf").normalize();
         Path originalPath = null;
         if (!isCloudStored(document)) {
@@ -286,9 +309,8 @@ public class DocumentService {
         deleteStoredFile(previewPath, previewRoot);
     }
 
-    public StoredDocumentFile getStoredFile(UUID documentId) {
-        CourseDocument document = courseDocumentRepository.findById(documentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
+    public StoredDocumentFile getStoredFile(UUID documentId, UUID requesterId) {
+        CourseDocument document = getAccessibleDocument(documentId, requesterId);
         if (isCloudStored(document)) {
             return new StoredDocumentFile(
                     null,
@@ -323,9 +345,8 @@ public class DocumentService {
         );
     }
 
-    public StoredDocumentFile getPreviewFile(UUID documentId) {
-        CourseDocument document = courseDocumentRepository.findById(documentId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
+    public StoredDocumentFile getPreviewFile(UUID documentId, UUID requesterId) {
+        CourseDocument document = getAccessibleDocument(documentId, requesterId);
         String fileType = document.getFileType() == null ? "" : document.getFileType().toUpperCase(Locale.ROOT);
 
         if (isCloudStored(document)) {
@@ -613,6 +634,12 @@ public class DocumentService {
         if (request == null || request.workspaceId == null || request.courseId == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "workspaceId and courseId are required.");
         }
+        if (request.uploadedBy == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "uploadedBy is required.");
+        }
+        if (!userRepository.existsById(request.uploadedBy)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "uploadedBy user not found.");
+        }
         if (!courseRepository.existsById(request.courseId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Course not found.");
         }
@@ -630,6 +657,33 @@ public class DocumentService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chapter does not belong to the selected course.");
             }
         }
+    }
+
+    private CourseDocument getAccessibleDocument(UUID documentId, UUID requesterId) {
+        requireRequester(requesterId);
+        CourseDocument document = courseDocumentRepository.findById(documentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
+
+        if (isAdmin(requesterId) || requesterId.equals(document.getUploadedBy())) {
+            return document;
+        }
+
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can only access documents uploaded by your account.");
+    }
+
+    private void requireRequester(UUID requesterId) {
+        if (requesterId == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "requesterId is required.");
+        }
+        if (!userRepository.existsById(requesterId)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Requester user not found.");
+        }
+    }
+
+    private boolean isAdmin(UUID userId) {
+        return userRoleRepository.findByUserIdAndIsActiveTrue(userId).stream()
+                .map(UserRole::getRoleName)
+                .anyMatch(role -> "ADMIN".equalsIgnoreCase(role));
     }
 
     private void ensureDocumentExists(UUID documentId) {

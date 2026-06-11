@@ -107,6 +107,7 @@ POST /api/auth/logout/{userId}
 GET /api/auth/users
 GET /api/auth/users/{userId}/roles
 PUT /api/auth/users/{userId}/role
+DELETE /api/auth/users/{userId}?requesterId={adminUserId}
 ```
 
 Change role request:
@@ -325,20 +326,44 @@ const response = await fetch(`${apiBaseUrl}/documents/upload`, {
 
 ### Get Documents By Workspace
 
+### Get Documents
+
+Use this for admin document management and fine-tuning dataset screens.
+
 ```http
-GET /api/documents/workspace/{workspaceId}
+GET /api/documents?requesterId={userId}
+```
+
+Access rule:
+
+```text
+ADMIN sees all documents from all users and all workspaces.
+Non-admin users only see documents where uploadedBy equals requesterId.
+```
+
+### Get Documents By Workspace
+
+```http
+GET /api/documents/workspace/{workspaceId}?requesterId={userId}
+```
+
+Access rule:
+
+```text
+ADMIN sees every document in the workspace.
+Non-admin users only see documents where uploadedBy equals requesterId.
 ```
 
 ### Get Document Detail
 
 ```http
-GET /api/documents/{documentId}
+GET /api/documents/{documentId}?requesterId={userId}
 ```
 
 ### Get Document Pages
 
 ```http
-GET /api/documents/{documentId}/pages
+GET /api/documents/{documentId}/pages?requesterId={userId}
 ```
 
 Response `data[]`:
@@ -357,7 +382,7 @@ Response `data[]`:
 ### Get Document Chunks
 
 ```http
-GET /api/documents/{documentId}/chunks
+GET /api/documents/{documentId}/chunks?requesterId={userId}
 ```
 
 Response `data[]`:
@@ -380,7 +405,7 @@ Response `data[]`:
 Use this URL directly in an iframe:
 
 ```http
-GET /api/documents/{documentId}/preview
+GET /api/documents/{documentId}/preview?requesterId={userId}
 ```
 
 For Cloudinary documents, backend returns `302` redirect to a PDF preview URL.
@@ -389,13 +414,13 @@ Recommended frontend logic:
 
 ```js
 const previewUrl = document.cloudinaryPreviewUrl
-  ?? `${apiBaseUrl}/documents/${document.documentId}/preview`
+  ?? `${apiBaseUrl}/documents/${document.documentId}/preview?requesterId=${userId}`
 ```
 
 PDF files can also use:
 
 ```http
-GET /api/documents/{documentId}/file
+GET /api/documents/{documentId}/file?requesterId={userId}
 ```
 
 For DOCX/PPTX, the backend converts to PDF preview when uploading. The browser does not need Word, WPS, or LibreOffice.
@@ -403,10 +428,17 @@ For DOCX/PPTX, the backend converts to PDF preview when uploading. The browser d
 ### Delete Document
 
 ```http
-DELETE /api/documents/{documentId}
+DELETE /api/documents/{documentId}?requesterId={userId}
 ```
 
 Backend deletes database rows and Cloudinary assets when available.
+
+Access rule:
+
+```text
+ADMIN can open/delete every document.
+Non-admin users can open/delete only their own uploaded documents.
+```
 
 ## RAG
 
