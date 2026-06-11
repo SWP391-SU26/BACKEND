@@ -44,6 +44,14 @@ export function updateUserRole(userId, roleName) {
   })
 }
 
+export function deleteUser(userId) {
+  const requesterId = getSavedUser()?.id
+  const query = requesterId ? `?requesterId=${encodeURIComponent(requesterId)}` : ''
+  return request(`/auth/users/${userId}${query}`, {
+    method: 'DELETE',
+  })
+}
+
 export function saveSession(session) {
   localStorage.setItem('fstu_access_token', session.accessToken)
   localStorage.setItem('fstu_user', JSON.stringify(session.user))

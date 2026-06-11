@@ -1,37 +1,43 @@
 import { request } from './httpClient.js'
 import { env } from '../config/env.js'
+import { getSavedUser } from './authService.js'
 
 export async function getDocumentsByWorkspace(workspaceId) {
-  const documents = await request(`/documents/workspace/${workspaceId}`)
+  const documents = await request(`/documents/workspace/${workspaceId}${requesterQuery()}`)
+  return Promise.all(documents.map((document) => toUiDocument(document)))
+}
+
+export async function getDocuments() {
+  const documents = await request(`/documents${requesterQuery()}`)
   return Promise.all(documents.map((document) => toUiDocument(document)))
 }
 
 export async function getDocument(documentId) {
-  const document = await request(`/documents/${documentId}`)
+  const document = await request(`/documents/${documentId}${requesterQuery()}`)
   return toUiDocument(document)
 }
 
 export async function getDocumentPages(documentId) {
-  return request(`/documents/${documentId}/pages`)
+  return request(`/documents/${documentId}/pages${requesterQuery()}`)
 }
 
 export async function getDocumentChunks(documentId) {
-  const chunks = await request(`/documents/${documentId}/chunks`)
+  const chunks = await request(`/documents/${documentId}/chunks${requesterQuery()}`)
   return chunks.map(toUiChunk)
 }
 
 export function deleteDocument(documentId) {
-  return request(`/documents/${documentId}`, {
+  return request(`/documents/${documentId}${requesterQuery()}`, {
     method: 'DELETE',
   })
 }
 
 export function getDocumentFileUrl(documentId) {
-  return `${env.apiBaseUrl}/documents/${documentId}/file`
+  return `${env.apiBaseUrl}/documents/${documentId}/file${requesterQuery()}`
 }
 
 export function getDocumentPreviewUrl(documentId) {
-  return `${env.apiBaseUrl}/documents/${documentId}/preview`
+  return `${env.apiBaseUrl}/documents/${documentId}/preview${requesterQuery()}`
 }
 
 export async function uploadDocument({ file, workspaceId, courseId, chapterId, uploadedBy }) {
@@ -70,6 +76,8 @@ export function toUiDocument(document, extra = {}) {
     relevance: status === 'Indexed' ? 80 : 0,
     workspaceId: document.workspaceId,
     courseId: document.courseId,
+    chapterId: document.chapterId,
+    uploadedBy: document.uploadedBy,
     storageProvider: document.storageProvider,
     cloudinarySecureUrl: document.cloudinarySecureUrl,
     cloudinaryPreviewUrl: document.cloudinaryPreviewUrl,
@@ -77,6 +85,11 @@ export function toUiDocument(document, extra = {}) {
       document.errorMessage ??
       'Document processed by Spring Boot: file stored, text extracted, and chunks prepared.',
   }
+}
+
+function requesterQuery() {
+  const userId = getSavedUser()?.id
+  return userId ? `?requesterId=${encodeURIComponent(userId)}` : ''
 }
 
 export function toUiChunk(chunk) {

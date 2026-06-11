@@ -47,7 +47,6 @@ import {
   adminUsers,
   defaultModelSettings,
   experiments as seedExperiments,
-  indexingJobs,
   modelComparison,
   ragasMetrics,
   testSet,
@@ -55,7 +54,8 @@ import {
 } from '../../data/adminMockData.js'
 import { documents as seedDocuments } from '../../data/mockData.js'
 import { AdminPageHeader } from '../../layouts/AdminLayout.jsx'
-import { getUsers, updateUserRole } from '../../services/authService.js'
+import { deleteUser as deleteUserRequest, getUsers, updateUserRole } from '../../services/authService.js'
+import { deleteDocument, getDocumentChunks, getDocuments } from '../../services/documentService.js'
 import { cn } from '../../utils/cn.js'
 
 const allOption = 'All'
@@ -80,6 +80,43 @@ function toAdminUser(user) {
     documents: 0,
     chats: 0,
     lastActive: user.lastLoginAt ?? 'Never',
+  }
+}
+
+function toAdminDocument(doc, users = [], chunks = []) {
+  const owner = users.find((user) => user.id === doc.uploadedBy)
+
+  return {
+    ...doc,
+    owner: owner?.name ?? (doc.uploadedBy ? 'Unknown user' : 'Deleted user'),
+    moderation: doc.status === 'Failed' ? 'Pending' : 'Approved',
+    chunks: chunks.length || doc.chunks || 0,
+    chunkItems: chunks,
+  }
+}
+
+function toIndexingJob(doc) {
+  const progressByStatus = {
+    Uploaded: 25,
+    Processing: 62,
+    Indexed: 100,
+    Failed: 100,
+  }
+  const stepByStatus = {
+    Uploaded: 'Extracting',
+    Processing: 'Embedding',
+    Indexed: 'Storing',
+    Failed: 'Storing',
+  }
+
+  return {
+    id: doc.id,
+    file: doc.displayName,
+    owner: doc.owner,
+    status: doc.status === 'Indexed' ? 'Completed' : doc.status,
+    step: stepByStatus[doc.status] ?? 'Extracting',
+    progress: progressByStatus[doc.status] ?? 25,
+    error: doc.status === 'Failed' ? doc.preview : '',
   }
 }
 
@@ -219,6 +256,7 @@ export function AdminUsersPage() {
   const [status, setStatus] = useState(allOption)
   const [selectedUser, setSelectedUser] = useState(null)
   const [deleteUser, setDeleteUser] = useState(null)
+  const [deletingUser, setDeletingUser] = useState(false)
   const [apiError, setApiError] = useState('')
 
   useEffect(() => {
@@ -262,6 +300,23 @@ export function AdminUsersPage() {
         user.id === userId ? { ...user, status: user.status === 'Locked' ? 'Active' : 'Locked' } : user,
       ),
     )
+  }
+
+  async function confirmDeleteUser() {
+    if (!deleteUser) return
+
+    setDeletingUser(true)
+    setApiError('')
+
+    try {
+      await deleteUserRequest(deleteUser.id)
+      setUsers((current) => current.filter((user) => user.id !== deleteUser.id))
+      setDeleteUser(null)
+    } catch (error) {
+      setApiError(error.message)
+    } finally {
+      setDeletingUser(false)
+    }
   }
 
   return (
@@ -318,8 +373,8 @@ export function AdminUsersPage() {
         </DrawerModal>
       ) : null}
       {deleteUser ? (
-        <ConfirmModal actionLabel="Delete user" onCancel={() => setDeleteUser(null)} onConfirm={() => { setUsers((current) => current.filter((user) => user.id !== deleteUser.id)); setDeleteUser(null) }} title="Delete user?">
-          The account "{deleteUser.name}" will be removed from the mock data.
+        <ConfirmModal actionLabel={deletingUser ? 'Deleting...' : 'Delete user'} onCancel={() => setDeleteUser(null)} onConfirm={confirmDeleteUser} title="Delete user?">
+          The account "{deleteUser.name}" will be removed from the database. Uploaded documents are kept for admin training datasets.
         </ConfirmModal>
       ) : null}
     </CrudPage>
@@ -327,15 +382,49 @@ export function AdminUsersPage() {
 }
 
 export function AdminDocumentsPage() {
-  const [docs, setDocs] = useState(seedDocuments.map((doc, index) => ({
-    ...doc,
-    owner: adminUsers[index % adminUsers.length].name,
-    moderation: index % 2 === 0 ? 'Approved' : 'Pending',
-  })))
+  const [docs, setDocs] = useState([])
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState(allOption)
   const [chunkDoc, setChunkDoc] = useState(null)
   const [deleteDoc, setDeleteDoc] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [deletingDoc, setDeletingDoc] = useState(false)
+  const [apiError, setApiError] = useState('')
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadDocuments() {
+      setLoading(true)
+      setApiError('')
+
+      try {
+        const [backendDocs, backendUsers] = await Promise.all([
+          getDocuments(),
+          getUsers(),
+        ])
+        const userRows = backendUsers.map(toAdminUser)
+        const adminDocs = await Promise.all(
+          backendDocs.map(async (doc) => {
+            const chunks = await getDocumentChunks(doc.id).catch(() => [])
+            return toAdminDocument(doc, userRows, chunks)
+          }),
+        )
+
+        if (isMounted) setDocs(adminDocs)
+      } catch (error) {
+        if (isMounted) setApiError(error.message)
+      } finally {
+        if (isMounted) setLoading(false)
+      }
+    }
+
+    loadDocuments()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   const filtered = docs.filter((doc) => {
     const q = query.toLowerCase().trim()
@@ -356,6 +445,23 @@ export function AdminDocumentsPage() {
     setDocs((current) => current.map((doc) => doc.id === id ? { ...doc, moderation: 'Approved' } : doc))
   }
 
+  async function confirmDeleteDocument() {
+    if (!deleteDoc) return
+
+    setDeletingDoc(true)
+    setApiError('')
+
+    try {
+      await deleteDocument(deleteDoc.id)
+      setDocs((current) => current.filter((doc) => doc.id !== deleteDoc.id))
+      setDeleteDoc(null)
+    } catch (error) {
+      setApiError(error.message)
+    } finally {
+      setDeletingDoc(false)
+    }
+  }
+
   return (
     <CrudPage description="Manage system-wide documents, review sources, re-index files, and inspect chunks." icon={FileText} title="Document Management">
       <Toolbar>
@@ -365,6 +471,15 @@ export function AdminDocumentsPage() {
         </SelectField>
       </Toolbar>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {loading ? (
+          <Panel className="p-4 text-sm font-bold text-slate-600">Loading backend documents...</Panel>
+        ) : null}
+        {apiError ? (
+          <Panel className="border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">{apiError}</Panel>
+        ) : null}
+        {!loading && !apiError && filtered.length === 0 ? (
+          <Panel className="p-4 text-sm font-bold text-slate-600">No backend documents match the current filters.</Panel>
+        ) : null}
         {filtered.map((doc) => (
           <BentoCard className="p-4" key={doc.id}>
             <div className="flex items-start gap-3">
@@ -394,18 +509,21 @@ export function AdminDocumentsPage() {
         <DrawerModal onClose={() => setChunkDoc(null)} title={`Chunks / ${chunkDoc.displayName}`}>
           <p className="text-sm font-semibold leading-6 text-slate-600">Preview chunk quality, source pages, token length, and metadata.</p>
           <div className="mt-4 space-y-3">
-            {[1, 2, 3].map((item) => (
-              <div className="rounded-lg border border-white/80 bg-white/72 p-3" key={item}>
-                <p className="text-xs font-black text-slate-500">Chunk {item} / Page {item * 4} / {180 + item * 22} tokens</p>
-                <p className="mt-2 text-sm leading-6 text-slate-700">{chunkDoc.preview}</p>
+            {(chunkDoc.chunkItems?.length ? chunkDoc.chunkItems : []).map((chunk, index) => (
+              <div className="rounded-lg border border-white/80 bg-white/72 p-3" key={chunk.id}>
+                <p className="text-xs font-black text-slate-500">Chunk {index + 1} / Page {chunk.page} / {chunk.tokenLength} tokens</p>
+                <p className="mt-2 text-sm leading-6 text-slate-700">{chunk.content}</p>
               </div>
             ))}
+            {!chunkDoc.chunkItems?.length ? (
+              <p className="rounded-lg border border-white/80 bg-white/72 p-3 text-sm font-semibold text-slate-600">No chunks found for this document.</p>
+            ) : null}
           </div>
         </DrawerModal>
       ) : null}
       {deleteDoc ? (
-        <ConfirmModal actionLabel="Delete document" onCancel={() => setDeleteDoc(null)} onConfirm={() => { setDocs((current) => current.filter((doc) => doc.id !== deleteDoc.id)); setDeleteDoc(null) }} title="Delete document?">
-          "{deleteDoc.displayName}" will be removed from the mock data.
+        <ConfirmModal actionLabel={deletingDoc ? 'Deleting...' : 'Delete document'} onCancel={() => setDeleteDoc(null)} onConfirm={confirmDeleteDocument} title="Delete document?">
+          "{deleteDoc.displayName}" will be removed from the database and Cloudinary when available.
         </ConfirmModal>
       ) : null}
     </CrudPage>
@@ -469,8 +587,39 @@ function ListIcon(props) {
 }
 
 export function AdminIndexingPage() {
-  const [jobs, setJobs] = useState(indexingJobs)
+  const [jobs, setJobs] = useState([])
   const [selectedError, setSelectedError] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [apiError, setApiError] = useState('')
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadIndexingJobs() {
+      setLoading(true)
+      setApiError('')
+
+      try {
+        const [backendDocs, backendUsers] = await Promise.all([
+          getDocuments(),
+          getUsers(),
+        ])
+        const userRows = backendUsers.map(toAdminUser)
+        const adminDocs = backendDocs.map((doc) => toAdminDocument(doc, userRows))
+        if (isMounted) setJobs(adminDocs.map(toIndexingJob))
+      } catch (error) {
+        if (isMounted) setApiError(error.message)
+      } finally {
+        if (isMounted) setLoading(false)
+      }
+    }
+
+    loadIndexingJobs()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   function retryJob(id) {
     setJobs((current) => current.map((job) => job.id === id ? { ...job, status: 'Running', step: 'Embedding', progress: 62, error: '' } : job))
@@ -486,6 +635,15 @@ export function AdminIndexingPage() {
   return (
     <CrudPage actions={<Button onClick={bulkReindex}><RefreshCcw size={16} />Bulk re-index</Button>} description="Monitor the processing queue, retry failures, and inspect each pipeline step." icon={Database} title="Indexing Pipeline">
       <div className="grid gap-4 xl:grid-cols-2">
+        {loading ? (
+          <Panel className="p-4 text-sm font-bold text-slate-600">Loading backend indexing jobs...</Panel>
+        ) : null}
+        {apiError ? (
+          <Panel className="border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">{apiError}</Panel>
+        ) : null}
+        {!loading && !apiError && jobs.length === 0 ? (
+          <Panel className="p-4 text-sm font-bold text-slate-600">No uploaded documents are waiting in the indexing view.</Panel>
+        ) : null}
         {jobs.map((job) => (
           <BentoCard className="p-4" key={job.id}>
             <div className="flex items-start justify-between gap-3">
