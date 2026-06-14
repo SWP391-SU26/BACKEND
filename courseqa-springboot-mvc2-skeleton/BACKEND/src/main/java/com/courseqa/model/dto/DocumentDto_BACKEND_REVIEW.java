@@ -5,11 +5,8 @@ import com.courseqa.model.entity.DocumentChunk;
 import com.courseqa.model.entity.DocumentPage;
 import java.util.UUID;
 
-// DTOs for upload document and document processing responses.
-// TODO: Add request/response DTO classes here.
-
-public class DocumentDto {
- public static class UploadDocumentRequest {
+public class DocumentDto_BACKEND_REVIEW {
+    public static class UploadDocumentRequest {
         public UUID workspaceId;
         public UUID courseId;
         public UUID chapterId;
@@ -21,16 +18,12 @@ public class DocumentDto {
         public UUID workspaceId;
         public UUID courseId;
         public UUID chapterId;
-        public UUID uploadedBy;
         public String documentTitle;
         public String originalFilename;
         public String fileType;
         public String processingStatus;
         public Integer totalPages;
         public String errorMessage;
-        public String storageProvider;
-        public String cloudinarySecureUrl;
-        public String cloudinaryPreviewUrl;
 
         public static DocumentResponse fromEntity(CourseDocument document) {
             DocumentResponse response = new DocumentResponse();
@@ -38,16 +31,12 @@ public class DocumentDto {
             response.workspaceId = document.getWorkspaceId();
             response.courseId = document.getCourseId();
             response.chapterId = document.getChapterId();
-            response.uploadedBy = document.getUploadedBy();
             response.documentTitle = document.getDocumentTitle();
             response.originalFilename = document.getOriginalFilename();
             response.fileType = document.getFileType();
             response.processingStatus = document.getProcessingStatus();
             response.totalPages = document.getTotalPages();
             response.errorMessage = document.getErrorMessage();
-            response.storageProvider = document.getStorageProvider();
-            response.cloudinarySecureUrl = document.getCloudinarySecureUrl();
-            response.cloudinaryPreviewUrl = document.getCloudinaryPreviewUrl();
             return response;
         }
     }

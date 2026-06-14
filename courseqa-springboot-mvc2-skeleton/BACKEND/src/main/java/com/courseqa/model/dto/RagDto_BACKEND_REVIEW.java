@@ -7,11 +7,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
-// DTOs for retrieval, embedding, citation responses.
-// TODO: Add request/response DTO classes here.
-
-public class RagDto {
-public static class CreateEmbeddingModelRequest {
+public class RagDto_BACKEND_REVIEW {
+    public static class CreateEmbeddingModelRequest {
         public String modelName;
         public String provider;
         public Integer dimension;
