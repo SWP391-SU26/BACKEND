@@ -1,0 +1,166 @@
+﻿benchmark_mode,question,category,expected_answer,actual_answer,expected_source,expected_page,subject,is_out_of_scope,refused,refusal_correct,answer_token_f1,source_hit,page_hit,top_retrieval_score,faithfulness_proxy,answer_relevancy_proxy,context_precision_proxy,context_recall_proxy,latency_ms
+finetuned_only,Quy trình phát triển kiểm thử gồm những hoạt động nào?,process,"Quy trình gồm phân tích kiểm thử để xác định điều kiện kiểm thử, thiết kế kiểm thử để đặc tả test case, và triển khai kiểm thử để đặc tả thủ tục hoặc script kiểm thử.","Quy trình phát triển kiểm thử bao gồm các bước sau:
+
+1. **Tạo dự án kiểm thử**: Xác định mục tiêu, yêu cầu và quy trình kiểm thử.
+
+2. **Tạo bản kiểm thử**: Tạo các bản kiểm thử dựa trên dự án kiểm thử.
+
+3. **Tạo bản kiểm thử thực nghiệm**: Thực hiện kiểm thử thực tế để đánh giá hiệu quả của bản kiểm thử.
+
+4. **Tạo bản kiểm thử chuẩn**: Tạo bản kiểm thử chuẩn để đánh giá hiệu quả của bản kiểm thử thực nghiệm.
+
+5. **Tạo bản kiểm thử cuối**: Tạo bản kiểm thử cuối để đánh giá hiệu quả của bản kiểm thử chuẩn.
+
+6. **Tạo bản kiểm thử cuối cùng**: Tạo bản kiểm thử cuối cùng để đánh giá hiệu quả của bản kiểm thử cuối.
+
+7. **Tạo bản kiểm thử",SWT4.pdf,3,Software Testing,False,False,True,0.2299,False,False,0.0,0.0,0.2299,0.0,0.0,26282.35
+finetuned_only,Ba loại kỹ thuật kiểm thử có hệ thống là gì?,listing,"Ba loại là kiểm thử tĩnh không thực thi, kiểm thử chức năng hộp đen dựa trên hành vi/chức năng, và kiểm thử cấu trúc hộp trắng dựa trên cấu trúc phần mềm.","Ba loại kỹ thuật kiểm thử có hệ thống là: kiểm thử tự động, kiểm thử tự động và kiểm thử tự động.",SWT4.pdf,5,Software Testing,False,False,True,0.3509,False,False,0.0,0.0,0.3509,0.0,0.0,3548.56
+finetuned_only,Black-box và white-box thường được sử dụng ở các mức kiểm thử nào?,comparison,Black-box phù hợp ở mọi mức nhưng chiếm ưu thế ở các mức cao; white-box chủ yếu dùng ở các mức thấp để bổ sung cho black-box.,"Black-box và white-box thường được sử dụng ở các mức kiểm thử sau:
+
+1. White-box testing: Đây là loại kiểm thử đầu tiên, thường được sử dụng để tìm hiểu cấu trúc và cách thức hoạt động của hệ thống. Nó thường được thực hiện dựa trên mã nguồn và không bao gồm thông tin bên ngoài.
+
+2. Black-box testing: Đây là loại kiểm thử cuối cùng, thường được sử dụng để kiểm tra khả năng hoạt động của hệ thống. Nó không bao gồm thông tin bên ngoài và thường được thực hiện dựa trên mã nguồn.
+
+3. White-box testing: Đây là loại kiểm thử giữa các cấp độ, thường được sử dụng để kiểm tra cấu trúc và cách thức hoạt động của hệ thống. Nó bao gồm thông tin bên ngoài và thường được thực hiện dựa trên mã nguồn.
+
+4. Black-box testing: Đây là loại kiểm",SWT4.pdf,7,Software Testing,False,False,True,0.1183,False,False,0.0,0.0,0.1183,0.0,0.0,18764.32
+finetuned_only,Equivalence partitioning là gì?,definition,"Equivalence partitioning chia đầu vào, đầu ra hoặc dữ liệu thành các vùng tương đương; giả định rằng nếu một giá trị hoạt động thì các giá trị trong cùng phân vùng cũng hoạt động.",Equivalence partitioning là một thuật ngữ trong toán học dùng để mô tả các partitioning (điều kiện) có thể equivalient với một partitioning cụ thể.,SWT4.pdf,10,Software Testing,False,False,True,0.1667,False,False,0.0,0.0,0.1667,0.0,0.0,4298.2
+finetuned_only,Boundary value analysis tập trung kiểm thử ở đâu?,definition,Boundary value analysis tập trung vào các giá trị ở hai phía của biên vì lỗi thường xuất hiện gần biên.,Boundary value analysis tập trung kiểm thử ở các điểm cực hạn và cực đại của một hàm hoặc hệ thống.,SWT4.pdf,11,Software Testing,False,False,True,0.381,False,False,0.0,0.0,0.381,0.0,0.0,3115.39
+finetuned_only,Số tài khoản hợp lệ trong ví dụ hồ sơ vay phải thỏa điều kiện gì?,application,Số tài khoản phải có đúng 6 chữ số và chữ số đầu tiên phải khác 0.,"Điều kiện số tài khoản hợp lệ trong ví dụ hồ sơ vay bao gồm:
+
+1. Số tài khoản phải là số nguyên dương.
+2. Số tài khoản không được trùng nhau với số tài khoản đã sử dụng trước đó.
+3. Số tài khoản phải lớn hơn 0.
+4. Số tài khoản phải nhỏ hơn 10^9.
+
+Ví dụ: Số tài khoản 123456789, 123456788, 123456787 đều không hợp lệ.",SWT4.pdf,14,Software Testing,False,False,True,0.1839,False,False,0.0,0.0,0.1839,0.0,0.0,12023.14
+finetuned_only,Khoản vay hợp lệ trong ví dụ loan application nằm trong khoảng nào?,application,Khoản vay hợp lệ nằm trong khoảng từ 500 đến 9000.,"Khoản vay hợp lệ trong ví dụ loan application nằm trong khoảng từ 100,000 đến 500,000 USD.",SWT4.pdf,15,Software Testing,False,False,True,0.6667,False,False,0.0,0.0,0.6667,0.0,0.0,5048.77
+finetuned_only,Tại sao nên thực hiện cả equivalence partitioning và boundary value analysis?,reasoning,"Chỉ kiểm thử biên có thể không cho biết lỗi thuộc toàn phân vùng hay do biên đặt sai, không tạo đủ tin cậy cho tình huống sử dụng điển hình và biên có thể tốn chi phí thiết lập.","equivalence partitioning và boundary value analysis là hai kỹ thuật quan trọng trong quá trình lập trình và phát triển ứng dụng. Tuy nhiên, việc sử dụng cả hai kỹ thuật này có thể giúp cải thiện hiệu suất và độ tin cậy của ứng dụng. equivalence partitioning giúp phân loại các trạng thái hoặc trạng thái tương tự để giảm thiểu sự thay đổi trong quá trình xử lý dữ liệu. Boundary value analysis giúp kiểm tra các giá trị ngoại lệ hoặc không hợp lệ trong quá trình xử lý dữ liệu, đảm bảo rằng ứng dụng hoạt động đúng theo yêu cầu.",SWT4.pdf,18,Software Testing,False,False,True,0.1517,False,False,0.0,0.0,0.1517,0.0,0.0,12956.6
+finetuned_only,Decision table được dùng để làm gì?,definition,"Decision table dùng để khám phá các tổ hợp đầu vào, tình huống hoặc sự kiện nhằm tránh bỏ sót các tổ hợp cụ thể.",Decision table là một loại bảng tính được sử dụng trong lập trình và quản lý dự án để tạo ra các quyết định hoặc hành động dựa trên các thông tin đã được đánh giá.,SWT4.pdf,20,Software Testing,False,False,True,0.1967,False,False,0.0,0.0,0.1967,0.0,0.0,4752.54
+finetuned_only,Các điều kiện đầu vào trong ví dụ student access là gì?,listing,"Các điều kiện đầu vào là username hợp lệ, password hợp lệ và account in credit.","Điều kiện đầu vào trong ví dụ ""student access"" thường được sử dụng để xác định các trường hợp nào có thể truy cập vào một tài khoản hoặc quyền riêng tư.",SWT4.pdf,22,Software Testing,False,False,True,0.25,False,False,0.0,0.0,0.25,0.0,0.0,4972.65
+finetuned_only,"Trong decision table, dấu gạch ngang biểu thị điều gì?",definition,"Dấu gạch ngang biểu thị điều kiện don't care, tức giá trị của điều kiện đó không ảnh hưởng trong tổ hợp đang xét.",Dấu gạch ngang trong decision table biểu thị các lựa chọn hoặc quyết định mà người dùng đã chọn.,SWT4.pdf,24,Software Testing,False,False,True,0.2727,False,False,0.0,0.0,0.2727,0.0,0.0,3762.13
+finetuned_only,Mỗi cột trong decision table tương ứng với bao nhiêu test case?,definition,Mỗi cột là ít nhất một test case; thông thường một test case cho mỗi cột nhưng có thể không có hoặc có nhiều test case.,Cột trong decision table chỉ tương ứng với một test case duy nhất.,SWT4.pdf,26,Software Testing,False,False,True,0.2564,False,False,0.0,0.0,0.2564,0.0,0.0,2932.3
+finetuned_only,Rủi ro của việc rationalise decision table là gì?,reasoning,"Rationalising dựa trên giả định; giả định có thể sai hoặc thay đổi, và rationalise quá mức có thể làm bỏ sót lỗi.",Rủi ro của việc rationalise decision table là việc tạo ra một quyết định dựa trên các thông tin đã được đánh giá và phân tích kỹ lưỡng.,SWT4.pdf,29,Software Testing,False,False,True,0.1961,False,False,0.0,0.0,0.1961,0.0,0.0,4624.12
+finetuned_only,Statement coverage được tính như thế nào?,definition,Statement coverage là tỷ lệ số câu lệnh thực thi đã được test suite thực hiện trên tổng số câu lệnh thực thi.,Statement coverage là một công cụ đánh giá kiểm soát các câu lệnh trong mã nguồn. Nó đo lường số lượng câu lệnh được thực hiện đúng trong quá trình mã nguồn.,SWT4.pdf,36,Software Testing,False,False,True,0.4,False,False,0.0,0.0,0.4,0.0,0.0,4577.92
+finetuned_only,Decision coverage được tính như thế nào?,definition,Decision coverage là tỷ lệ số kết quả của quyết định đã được test suite thực hiện trên tổng số kết quả quyết định.,Decision coverage là một thuật ngữ trong đánh giá hệ thống để xác định số lượng phần tử nào được kiểm tra trong quá trình thực hiện quyết định.,SWT4.pdf,38,Software Testing,False,False,True,0.3774,False,False,0.0,0.0,0.3774,0.0,0.0,4039.76
+finetuned_only,Tại sao đạt 100% coverage chưa có nghĩa là phần mềm đã được kiểm thử hoàn toàn?,reasoning,Coverage chỉ cho biết cấu trúc đã được thực thi; nó không đồng nghĩa với mức độ kiểm thử toàn diện hoặc bảo đảm mọi chức năng đã được kiểm thử đầy đủ.,"Tất nhiên, bạn đang nói đúng. Tên gọi ""100% coverage"" chỉ là một cách đơn giản để mô tả rằng phần mềm không có lỗi nào. Tuy nhiên, việc kiểm thử hoàn toàn không chỉ dừng lại ở việc không có lỗi mà còn bao gồm việc kiểm tra các yếu tố khác như tính chính xác, hiệu suất, độ tin cậy và độ an toàn.",SWT4.pdf,35,Software Testing,False,False,True,0.1616,False,False,0.0,0.0,0.1616,0.0,0.0,9812.99
+finetuned_only,Hai kỹ thuật kiểm thử dựa trên kinh nghiệm được nêu trong tài liệu là gì?,listing,Hai kỹ thuật là error guessing/fault attacks và exploratory testing.,"Kỹ thuật kiểm thử dựa trên kinh nghiệm thường được gọi là ""kỹ thuật kiểm thử tự động"" hoặc ""kỹ thuật kiểm thử tự động hóa"".",SWT4.pdf,48,Software Testing,False,False,True,0.1622,False,False,0.0,0.0,0.1622,0.0,0.0,5178.83
+finetuned_only,Những yếu tố nội bộ nào ảnh hưởng đến việc chọn kỹ thuật kiểm thử?,listing,"Các yếu tố nội bộ gồm model sử dụng, kiến thức và kinh nghiệm tester, lỗi có khả năng xảy ra, mục tiêu kiểm thử, tài liệu và mô hình vòng đời.","Hệ thống, quy trình, nhân viên, môi trường làm việc, và kỹ năng của người dùng đều có thể ảnh hưởng đến việc chọn kỹ thuật kiểm thử.",SWT4.pdf,50,Software Testing,False,False,True,0.1667,False,False,0.0,0.0,0.1667,0.0,0.0,4715.96
+finetuned_only,Những yếu tố bên ngoài nào ảnh hưởng đến việc chọn kỹ thuật kiểm thử?,listing,"Các yếu tố bên ngoài gồm rủi ro, yêu cầu khách hàng hoặc hợp đồng, loại hệ thống, yêu cầu pháp lý, thời gian và ngân sách.","Các yếu tố bên ngoài có thể ảnh hưởng đến việc chọn kỹ thuật kiểm thử bao gồm:
+
+1. Tính năng của hệ thống: Hệ thống cần phải đáp ứng yêu cầu của khách hàng và có khả năng kiểm soát tốt.
+
+2. Tính năng của khách hàng: Khách hàng cần được kiểm tra một cách chính xác và hiệu quả.
+
+3. Tính năng của nguồn cung cấp: Cung cấp phải đảm bảo chất lượng và độ tin cậy.
+
+4. Tính năng của môi trường: Môi trường cần phải an toàn, ổn định và phù hợp với mục tiêu kiểm thử.
+
+5. Tính năng của người dùng: Người dùng cần được kiểm tra một cách chính xác và hiệu quả.
+
+6. Tính năng của cơ sở dữ liệu: Cơ sở dữ liệu cần phải được kiểm tra một cách chính xác và hiệu quả.
+
+7. Tính",SWT4.pdf,51,Software Testing,False,False,True,0.1618,False,False,0.0,0.0,0.1618,0.0,0.0,20963.51
+finetuned_only,Điểm khác biệt chính giữa Style 1 và Style 2 của use-case detailed specification là gì?,comparison,"Style 1 không sử dụng subflow, còn Style 2 tách các hoạt động như Create Schedule và Modify Schedule thành các subflow.",Điểm chính khác biệt giữa Style 1 và Style 2 là việc sử dụng các tiêu chuẩn cụ thể hơn để xác định các yếu tố và giá trị.,UseCaseDetailedSpecification.pdf,4,Software Testing,False,False,True,0.3529,False,False,0.0,0.0,0.3529,0.0,0.0,7736.81
+finetuned_only,Chữ 日 có nghĩa và cách đọc chính nào?,definition,"日 có nghĩa là ngày hoặc mặt trời; các cách đọc được nêu gồm にち, か, じつ, ひ và び.",日 (jiān) - 读 (dòu),chu han.pdf,12,Chữ Hán,False,False,True,0.0833,False,False,0.0,0.0,0.0833,0.0,0.0,3341.67
+finetuned_only,日本 đọc như thế nào và có nghĩa là gì?,reading,日本 đọc là にほん hoặc にっぽん và có nghĩa là Nhật Bản.,"日本 (pronounced as ""Jap"" in English) được viết tắt của Nhật Bản, là một quốc gia nằm ở phía tây nam châu Á. Nó được biết đến với nhiều đặc điểm nổi bật như:
+
+1. Quốc gia: Nhật Bản là một quốc gia thuộc Liên minh châu Âu (EU).
+
+2. Tỉnh: Nhật Bản có 43 tỉnh và thành phố.
+
+3. Cổ điển: Nhật Bản nổi tiếng với các biểu tượng như kẹo, bánh mì, và nhạc pop.
+
+4. Văn hóa: Nhật Bản có văn hóa truyền thống sâu sắc, đặc biệt là văn hóa truyền thống Nhật Bản.
+
+5. Kinh tế: Nhật Bản là một trong những quốc gia đầu tiên vào thế giới kinh tế số.
+
+6. Thể thao: Nhật Bản nổi tiếng với thể thao, đặc biệt là bóng đá và thể thao ô",chu han.pdf,13,Chữ Hán,False,False,True,0.0946,False,False,0.0,0.0,0.0946,0.0,0.0,19651.85
+finetuned_only,Chữ 月 có nghĩa và cách đọc nào?,definition,"月 có nghĩa là mặt trăng hoặc tháng; cách đọc gồm げつ, がつ và つき.","Chữ 月 (yue) có nghĩa là ""tổng hợp"" hoặc ""tổng hợp"".",chu han.pdf,14,Chữ Hán,False,False,True,0.3846,False,False,0.0,0.0,0.3846,0.0,0.0,4055.83
+finetuned_only,月曜日 đọc như thế nào và là thứ mấy?,reading,月曜日 đọc là げつようび và có nghĩa là thứ Hai.,"月曜日 đọc là ""Mondays"" trong tiếng Việt.",chu han.pdf,15,Chữ Hán,False,False,True,0.3529,False,False,0.0,0.0,0.3529,0.0,0.0,2618.16
+finetuned_only,火曜日 đọc như thế nào và là thứ mấy?,reading,火曜日 đọc là かようび và có nghĩa là thứ Ba.,"火曜日 (Núi lửa thứ hai) đọc là ""Fuku"".",chu han.pdf,16,Chữ Hán,False,False,True,0.4444,False,False,0.0,0.0,0.4444,0.0,0.0,2825.05
+finetuned_only,花火 đọc như thế nào và nghĩa là gì?,reading,花火 đọc là はなび và nghĩa là pháo hoa.,"花火 là một loại nhạc cụ truyền thống ở Việt Nam, được sử dụng để nghe nhạc. Nó có thể được nghe qua các thiết bị như máy tính hoặc điện thoại di động.花火 nghĩa là ""hành trang"" trong tiếng Việt.",chu han.pdf,16,Chữ Hán,False,False,True,0.1569,False,False,0.0,0.0,0.1569,0.0,0.0,6799.89
+finetuned_only,水曜日 đọc như thế nào và là thứ mấy?,reading,水曜日 đọc là すいようび và có nghĩa là thứ Tư.,"水曜日 đọc là Sunday, và là thứ 6.",chu han.pdf,17,Chữ Hán,False,False,True,0.6667,False,False,0.0,0.0,0.6667,0.0,0.0,2635.67
+finetuned_only,Chữ 木 đọc thế nào và nghĩa là gì?,definition,"木 đọc là き, có nghĩa là cây hoặc gỗ; âm Hán được nêu là もく.","木 (mù) - Chữ viết của chữ ""木"" trong tiếng Việt. 
+
+- Chữ viết: 木 (mù)
+- nghĩa: 木 (mù) - Chữ viết của chữ ""木"" trong tiếng Việt. 
+
+- Chữ viết: 木 (mù) - Chữ viết của chữ ""木"" trong tiếng Việt.",chu han.pdf,18,Chữ Hán,False,False,True,0.0755,False,False,0.0,0.0,0.0755,0.0,0.0,10082.27
+finetuned_only,お金 đọc như thế nào và nghĩa là gì?,reading,お金 đọc là おかね và có nghĩa là tiền.,"Money được viết tắt là ""money"" hoặc thường được dịch là ""dân"" trong tiếng Việt.",chu han.pdf,19,Chữ Hán,False,False,True,0.1667,False,False,0.0,0.0,0.1667,0.0,0.0,4008.91
+finetuned_only,土曜日 đọc như thế nào và là thứ mấy?,reading,土曜日 đọc là どようび và có nghĩa là thứ Bảy.,"土曜日 đọc là Sunday, và là thứ 6.",chu han.pdf,20,Chữ Hán,False,False,True,0.6667,False,False,0.0,0.0,0.6667,0.0,0.0,3101.56
+finetuned_only,Chữ 年 có những cách đọc và nghĩa nào?,definition,"年 có cách đọc ねん nghĩa là năm, và とし nghĩa là năm hoặc tuổi.","年 có hai cách đọc chính xác: yīn (yīn) và yīng (yīng). Đây là hai chữ viết tắt của năm, thường được sử dụng trong ngữ cảnh văn bản.",chu han.pdf,60,Chữ Hán,False,False,True,0.3182,False,False,0.0,0.0,0.3182,0.0,0.0,6317.15
+finetuned_only,何年 đọc như thế nào và có nghĩa là gì?,reading,何年 đọc là なんねん và có nghĩa là năm bao nhiêu.,"Đây là câu hỏi không rõ ràng. ""何年"" có thể có nhiều nghĩa khác nhau, bao gồm: 
+1. Năm sinh
+2. Năm ra trường
+3. Năm học
+4. Năm bắt đầu công việc
+5. Năm bắt đầu học
+6. Năm bắt đầu làm việc
+7. Năm bắt đầu làm việc
+8. Năm bắt đầu làm việc
+9. Năm bắt đầu làm việc
+10. Năm bắt đầu làm việc
+11. Năm bắt đầu làm việc
+12. Năm bắt đầu làm việc
+13. Năm bắt đầu làm việc
+14. Năm bắt đầu làm việc
+15. Năm bắt đầu làm việc
+16. Năm bắt đầu làm việc
+17. Năm bắt đầu làm việc
+18. Năm bắt đầu làm việc
+19. Năm bắt đầu làm việc",chu han.pdf,60,Chữ Hán,False,False,True,0.0902,False,False,0.0,0.0,0.0902,0.0,0.0,19907.73
+finetuned_only,四時 và 九時 đọc như thế nào?,reading,"四時 đọc là よじ, còn 九時 đọc là くじ.","四時 đọc là ""tiếng four"" hoặc ""tiếng ba"".",chu han.pdf,61,Chữ Hán,False,False,True,0.3529,False,False,0.0,0.0,0.3529,0.0,0.0,2968.59
+finetuned_only,時間 và 三時間 có nghĩa là gì?,definition,"時間 đọc là じかん, nghĩa là thời gian; 三時間 đọc là さんじかん, nghĩa là ba tiếng.","""時間"" (jiāo) và ""三時間"" (sān jiāo) đều có nghĩa là ""lúc"" hoặc ""thời gian"".",chu han.pdf,62,Chữ Hán,False,False,True,0.4,False,False,0.0,0.0,0.4,0.0,0.0,4668.41
+finetuned_only,"一分, 六分 và 五分 đọc như thế nào?",reading,"一分 đọc là いっぷん, 六分 đọc là ろっぷん và 五分 đọc là ごふん.","一分 đọc作 ""yī"" (yī), 三分讀作 ""sān"" (sān) và 五分讀作 ""wǔ"" (wǔ).",chu han.pdf,64,Chữ Hán,False,False,True,0.1667,False,False,0.0,0.0,0.1667,0.0,0.0,5153.44
+finetuned_only,何曜日 đọc như thế nào và hỏi về điều gì?,definition,何曜日 đọc là なんようび và dùng để hỏi thứ mấy.,"何曜日 là một ngữ cảnh đặc biệt trong tiếng Việt, thường được sử dụng để mô tả thời gian hoặc sự kiện cụ thể. Bạn có thể đọc như thế nào tùy thuộc vào ngữ cảnh cụ thể.",chu han.pdf,66,Chữ Hán,False,False,True,0.1667,False,False,0.0,0.0,0.1667,0.0,0.0,5822.85
+finetuned_only,"Trong đoạn đọc về sinh nhật, người kể bao nhiêu tuổi và sinh nhật khi nào?",comprehension,Người kể 20 tuổi; sinh nhật là ngày 25 tháng 7 và rơi vào Chủ nhật.,"Trong đoạn đọc về sinh nhật, người kể bao nhiêu tuổi và sinh nhật khi nào?",chu han.pdf,79,Chữ Hán,False,False,True,0.4375,False,False,0.0,0.0,0.4375,0.0,0.0,3581.5
+finetuned_only,"Theo lịch trường học, kỳ nghỉ hè kéo dài từ khi nào đến khi nào?",comprehension,Kỳ nghỉ hè kéo dài từ ngày 1 tháng 7 đến ngày 30 tháng 8.,"Theo lịch trường học, kỳ nghỉ hè kéo dài từ ngày 1 tháng 7 đến ngày 30 tháng 7.",chu han.pdf,80,Chữ Hán,False,False,True,0.8235,False,False,0.0,0.0,0.8235,0.0,0.0,4409.52
+finetuned_only,"Theo lịch trường học, lễ hội pháo hoa bắt đầu lúc mấy giờ?",comprehension,Lễ hội pháo hoa bắt đầu lúc 7 giờ tối ngày 15 tháng 8.,Lễ hội pháo hoa bắt đầu lúc 06 giờ sáng ngày 15 tháng 4.,chu han.pdf,80,Chữ Hán,False,False,True,0.7857,False,False,0.0,0.0,0.7857,0.0,0.0,4258.39
+finetuned_only,"Theo đoạn văn về Mary, cô ấy đi làm và về nhà lúc mấy giờ?",comprehension,Mary đi đến công ty lúc 8 giờ và về nhà khoảng 9 giờ tối.,Mary đi làm lúc 8 giờ sáng và về nhà lúc 6 giờ chiều.,speaking test bai 6+7.pdf,7,Chữ Hán,False,False,True,0.6207,False,False,0.0,0.0,0.6207,0.0,0.0,3538.93
+finetuned_only,Thuật toán Dijkstra hoạt động như thế nào?,out_of_scope,,"Thuật toán Dijkstra hoạt động như sau:
+
+1. Tạo một bảng điểm đến (distance) và một bảng điểm đến đầu tiên (shortest path) cho tất cả các node.
+
+2. Tính tổng distance từ node đầu vào đến tất cả các node khác bằng cách sử dụng thuật toán Dijkstra.
+
+3. Tính tổng distance từ node đầu vào đến tất cả các node khác bằng cách sử dụng thuật toán Dijkstra.
+
+4. Nếu tổng distance từ node đầu vào đến tất cả các node khác lớn hơn tổng distance từ node đầu vào đến node đó, thì node đó sẽ được thêm vào bảng điểm đến đầu tiên.
+
+5. Tiếp tục bước 3 và 4 cho tất cả các node khác.
+
+6. Khi tìm được node cuối cùng, nó sẽ là điểm đến cuối cùng của chuỗi di chuyển.
+
+7. Nếu không tìm được điểm đến cuối cùng,",,,Ngoài tài liệu,True,False,False,0.0,False,False,0.0,0.0,0.0,0.0,0.0,21468.88
+finetuned_only,Định luật Ohm phát biểu điều gì?,out_of_scope,,"Định luật Ohm là định nghĩa về công thức tính toán điện áp, điện lực và thời gian mà một vật được tiếp xúc với một nguồn điện có thể đạt được.",,,Ngoài tài liệu,True,False,False,0.0,False,False,0.0,0.0,0.0,0.0,0.0,5512.0
+finetuned_only,Quang hợp ở thực vật diễn ra như thế nào?,out_of_scope,,"Quang hợp ở thực vật là một dạng hình học phức tạp, thường được hình thành bởi các hạt nhỏ và các hạt lớn. Nó có thể được phân loại thành hai loại chính: quang hợp hạt nhỏ và quang hợp hạt lớn. Quang hợp hạt nhỏ thường được gọi là quang hợp hạt nhỏ, còn quang hợp hạt lớn thường được gọi là quang hợp hạt lớn.",,,Ngoài tài liệu,True,False,False,0.0,False,False,0.0,0.0,0.0,0.0,0.0,9444.27
+finetuned_only,Chiến thắng Điện Biên Phủ diễn ra năm nào?,out_of_scope,,Chiến thắng Điện Biên Phủ diễn ra vào ngày 25 tháng 10 năm 1954.,,,Ngoài tài liệu,True,False,False,0.0,False,False,0.0,0.0,0.0,0.0,0.0,3777.72
+finetuned_only,Công thức tính diện tích hình tròn là gì?,out_of_scope,,"Điểm chính xác là: diện tích hình tròn là 2πr², với r là bán kính của hình tròn.",,,Ngoài tài liệu,True,False,False,0.0,False,False,0.0,0.0,0.0,0.0,0.0,4000.83
+finetuned_only,Ngôn ngữ lập trình Rust có cơ chế ownership như thế nào?,out_of_scope,,"Rust sử dụng cơ chế ownership để quản lý các đối tượng. Mỗi đối tượng Rust đều có một owner, tức là người duy nhất có quyền sử dụng nó. Điều này giúp đảm bảo rằng các đối tượng không bị độc quyền hoặc bị truy cập không đúng.",,,Ngoài tài liệu,True,False,False,0.0,False,False,0.0,0.0,0.0,0.0,0.0,6912.65
+finetuned_only,Blockchain đạt đồng thuận bằng cách nào?,out_of_scope,,Blockchain đạt đồng thuận thông qua việc sử dụng thuật toán mã hóa để xác nhận thông tin.,,,Ngoài tài liệu,True,False,False,0.0,False,False,0.0,0.0,0.0,0.0,0.0,3069.27
+finetuned_only,Hệ điều hành quản lý bộ nhớ ảo như thế nào?,out_of_scope,,"Hệ điều hành quản lý bộ nhớ ảo (Memory Management System) thường được gọi là ""MBMS"" hoặc ""Memory Manager"". Nó giúp quản lý bộ nhớ của hệ thống, đảm bảo rằng bộ nhớ không bị sử dụng quá mức và không bị mất.",,,Ngoài tài liệu,True,False,False,0.0,False,False,0.0,0.0,0.0,0.0,0.0,7815.03
+finetuned_only,Các tầng của mô hình OSI là gì?,out_of_scope,,"Mô hình OSI (Open Systems Interconnection) gồm 7 tầng, được phân chia theo các cấp độ như sau:
+
+1. Physical Layer: Tầng đầu tiên, liên quan đến vật lý.
+2. Data Link Layer: Tầng giữa Physical Layer và Network Layer.
+3. Network Layer: Tầng giữa Data Link Layer và Transport Layer.
+4. Transport Layer: Tầng giữa Network Layer và Application Layer.
+5. Application Layer: Tầng cuối cùng, liên quan đến các ứng dụng.
+6. Presentation Layer: Tầng giữa Application Layer và Session Layer.
+7. Session Layer: Tầng giữa Presentation Layer và Transport Layer.
+
+Tất cả các tầng này đều liên quan đến việc truyền dữ liệu từ một máy tính đến máy khác.",,,Ngoài tài liệu,True,False,False,0.0,False,False,0.0,0.0,0.0,0.0,0.0,19567.59
+finetuned_only,Hãy giải thích thuật toán backpropagation trong mạng nơ-ron.,out_of_scope,,"Backpropagation là thuật toán học máy được sử dụng để tối ưu hóa các mô hình neural. Nó hoạt động như sau:
+
+1. Đầu tiên, chúng ta tạo một mô hình neural với các lớp input, hidden và output.
+
+2. Sau đó, chúng ta tạo một hàm loss (điểm đánh giá) dựa trên dữ liệu kiểm tra.
+
+3. Tiếp theo, chúng ta tạo một hàm backpropagation để cập nhật các giá trị của các biến trong mô hình.
+
+4. Sau đó, chúng ta thực hiện backpropagation từ đầu đến cuối, cập nhật các giá trị của các biến trong mô hình theo giá trị loss.
+
+5. Kết quả, mô hình sẽ được tối ưu hóa để đạt được điểm đánh giá thấp nhất.
+
+6. Cuối cùng, chúng ta có thể sử dụng kết quả tối ưu để dự đoán giá trị mới dự",,,Ngoài tài liệu,True,False,False,0.0,False,False,0.0,0.0,0.0,0.0,0.0,21686.67

@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.streamlit/
+tests/_tmp/
+data/raw/*
+data/processed/*
+data/db/*
+data/finetuning/*
+data/models_cache/*
+models/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/db/.gitkeep
+!data/finetuning/.gitkeep
+!data/models_cache/.gitkeep
