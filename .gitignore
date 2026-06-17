@@ -1,0 +1,64 @@
+# ===== JAVA / MAVEN =====
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.log
+.mvn/
+mvnw
+mvnw.cmd
+
+# ===== SPRING BOOT =====
+application-local.properties
+application-local.yml
+
+# ===== PYTHON =====
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+.venv-win/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.Python
+
+# ===== PYTHON DATA / MODELS =====
+data/raw/
+data/processed/
+data/db/
+data/models_cache/
+models/
+reports/
+*.sqlite3
+*.sqlite
+
+# ===== LOGS =====
+logs/
+*.log
+maven_output.log
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.classpath
+.project
+.settings/
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== ENV / SECRETS =====
+.env
+.env.*
+*.key
+*.pem
+secrets/

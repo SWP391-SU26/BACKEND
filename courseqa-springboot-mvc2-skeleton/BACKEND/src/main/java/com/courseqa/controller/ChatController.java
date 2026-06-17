@@ -1,22 +1,31 @@
 package com.courseqa.controller;
 
+import java.util.List;
+import java.util.UUID;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
 import com.courseqa.model.dto.ApiResponse;
+import com.courseqa.model.dto.ChatDto;
 import com.courseqa.model.entity.ChatMessage;
 import com.courseqa.model.entity.ChatSession;
 import com.courseqa.model.entity.SavedNote;
 import com.courseqa.service.ChatService;
 import com.courseqa.service.NoteService;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-import java.util.UUID;
 
 /**
  * ChatController - API endpoints cho chat functionality
@@ -66,7 +75,7 @@ public class ChatController {
      * @return ResponseEntity<ApiResponse<ChatMessage>>
      */
     @PostMapping("/sessions/{sessionId}/ask")
-    public ResponseEntity<ApiResponse<ChatMessage>> askQuestion(
+    public ResponseEntity<ApiResponse<ChatDto.AskResponse>> askQuestion(
             @PathVariable UUID sessionId,
             @Valid @RequestBody AskQuestionRequest request) {
         log.info("POST /api/chat/sessions/{}/ask - question: {}", sessionId, request.getQuestion());
@@ -74,8 +83,9 @@ public class ChatController {
         // TODO: Implement askQuestion logic:
         // 1. Gọi chatService.askQuestion(sessionId, question)
         // 2. TODO sẽ implement khi TV6 confirm API contract
+    ChatDto.AskResponse response = chatService.askQuestion(sessionId, request.getQuestion());
 
-        throw new UnsupportedOperationException("askQuestion not implemented yet - waiting for TV6 API contract");
+    return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
     /**

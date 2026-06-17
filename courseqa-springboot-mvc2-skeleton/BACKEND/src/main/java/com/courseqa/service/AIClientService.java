@@ -10,13 +10,6 @@ import reactor.util.retry.Retry;
 
 import java.time.Duration;
 
-/**
- * AIClientService - Bridge service để gọi Python AI Engine
- * Python AI Engine chạy tại port 8001
- * 
- * Timeout: 30s cho chat endpoints, 120s cho benchmark
- * Retry: 3 lần nếu connection error
- */
 @Service
 public class AIClientService {
 
@@ -35,43 +28,31 @@ public class AIClientService {
         this.webClient = webClient;
     }
 
-    /**
-     * POST /ai/chat - Gọi RAG pipeline
-     * 
-     * @param request ChatRequest: {question, collection_name, embedding_model, top_k, similarity_threshold, conversation_history}
-     * @return ChatResponse: {rag_answer, citations, rag_score, is_out_of_scope, tokens_used, latency_ms}
-     */
     public <T> T callChat(Object request, Class<T> responseType) {
-        log.info("Calling Python AI Engine /ai/chat");
-        
+        log.info("Calling Python AI Engine /api/chat");
+
         return webClient.post()
-                .uri(pythonAiServiceUrl + "/ai/chat")
+                .uri(pythonAiServiceUrl + "/api/chat")  // ✅ fixed
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(responseType)
                 .timeout(Duration.ofSeconds(CHAT_TIMEOUT_SECONDS))
                 .retryWhen(Retry.backoff(MAX_RETRIES, Duration.ofMillis(200))
                         .filter(throwable -> isRetryableError(throwable))
-                        .doBeforeRetry(retrySignal -> 
-                            log.warn("Retry {} /ai/chat - Error: {}", 
-                                retrySignal.totalRetries() + 1, 
+                        .doBeforeRetry(retrySignal ->
+                            log.warn("Retry {} /api/chat - Error: {}",
+                                retrySignal.totalRetries() + 1,
                                 retrySignal.failure().getMessage())
                         ))
                 .onErrorMap(this::handleError)
                 .block();
     }
 
-    /**
-     * POST /ai/chat-finetuned - Gọi Fine-tuned pipeline
-     * 
-     * @param request ChatRequest: {question, conversation_history}
-     * @return ChatFinetuneResponse: {finetuned_answer, finetuned_score, latency_ms}
-     */
     public <T> T callChatFinetuned(Object request, Class<T> responseType) {
         log.info("Calling Python AI Engine /ai/chat-finetuned");
-        
+
         return webClient.post()
-                .uri(pythonAiServiceUrl + "/ai/chat-finetuned")
+                .uri(pythonAiServiceUrl + "/ai/chat-finetuned")  // ⚠️ not implemented in Python yet
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(responseType)
@@ -87,17 +68,11 @@ public class AIClientService {
                 .block();
     }
 
-    /**
-     * POST /ai/evaluate - Gọi Evaluator (LLM-as-judge)
-     * 
-     * @param request EvaluateRequest: {question, rag_answer, finetuned_answer, rag_score, finetuned_score}
-     * @return EvaluateResponse: {winner, scores, reason}
-     */
     public <T> T callEvaluate(Object request, Class<T> responseType) {
         log.info("Calling Python AI Engine /ai/evaluate");
-        
+
         return webClient.post()
-                .uri(pythonAiServiceUrl + "/ai/evaluate")
+                .uri(pythonAiServiceUrl + "/ai/evaluate")  // ⚠️ not implemented in Python yet
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(responseType)
@@ -113,17 +88,11 @@ public class AIClientService {
                 .block();
     }
 
-    /**
-     * POST /ai/benchmark - Gọi RAGAS benchmark runner
-     * 
-     * @param request BenchmarkRequest: {experiment_id, config, questions}
-     * @return BenchmarkResponse: {experiment_id, results, summary}
-     */
     public <T> T callBenchmark(Object request, Class<T> responseType) {
-        log.info("Calling Python AI Engine /ai/benchmark");
-        
+        log.info("Calling Python AI Engine /api/benchmarks/run");
+
         return webClient.post()
-                .uri(pythonAiServiceUrl + "/ai/benchmark")
+                .uri(pythonAiServiceUrl + "/api/benchmarks/run")  // ✅ fixed
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(responseType)
@@ -131,7 +100,7 @@ public class AIClientService {
                 .retryWhen(Retry.backoff(MAX_RETRIES, Duration.ofMillis(200))
                         .filter(throwable -> isRetryableError(throwable))
                         .doBeforeRetry(retrySignal ->
-                            log.warn("Retry {} /ai/benchmark - Error: {}",
+                            log.warn("Retry {} /api/benchmarks/run - Error: {}",
                                 retrySignal.totalRetries() + 1,
                                 retrySignal.failure().getMessage())
                         ))
@@ -139,26 +108,15 @@ public class AIClientService {
                 .block();
     }
 
-    /**
-     * Kiểm tra xem error có thể retry được không
-     * Retry nếu: connection error, timeout, server error (5xx)
-     * Không retry nếu: client error (4xx)
-     */
     private boolean isRetryableError(Throwable throwable) {
         if (throwable instanceof WebClientResponseException) {
             WebClientResponseException ex = (WebClientResponseException) throwable;
-            // Retry cho 5xx server errors
             return ex.getStatusCode().is5xxServerError();
         }
-        
-        // Retry cho connection/timeout errors
         return throwable instanceof java.net.ConnectException ||
                throwable instanceof java.net.SocketTimeoutException;
     }
 
-    /**
-     * Xử lý error và convert thành meaningful exception
-     */
     private Throwable handleError(Throwable throwable) {
         if (throwable instanceof WebClientResponseException) {
             WebClientResponseException ex = (WebClientResponseException) throwable;
