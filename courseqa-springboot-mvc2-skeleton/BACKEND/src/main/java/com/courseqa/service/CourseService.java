@@ -8,6 +8,8 @@ import com.courseqa.repository.ChapterRepository;
 import com.courseqa.repository.CourseRepository;
 import com.courseqa.repository.CourseWorkspaceRepository;
 import com.courseqa.repository.UserRepository;
+import com.courseqa.repository.UserRoleRepository;
+
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -17,22 +19,45 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class CourseService {
+
+    private final UserRoleRepository userRoleRepository;
+
     private final CourseRepository courseRepository;
     private final ChapterRepository chapterRepository;
     private final CourseWorkspaceRepository courseWorkspaceRepository;
     private final UserRepository userRepository;
 
     public CourseService(
-            CourseRepository courseRepository,
-            ChapterRepository chapterRepository,
-            CourseWorkspaceRepository courseWorkspaceRepository,
-            UserRepository userRepository
-    ) {
-        this.courseRepository = courseRepository;
-        this.chapterRepository = chapterRepository;
-        this.courseWorkspaceRepository = courseWorkspaceRepository;
-        this.userRepository = userRepository;
+        CourseRepository courseRepository,
+        ChapterRepository chapterRepository,
+        CourseWorkspaceRepository courseWorkspaceRepository,
+        UserRepository userRepository,
+        UserRoleRepository userRoleRepository
+) {
+    this.courseRepository = courseRepository;
+    this.chapterRepository = chapterRepository;
+    this.courseWorkspaceRepository = courseWorkspaceRepository;
+    this.userRepository = userRepository;
+    this.userRoleRepository = userRoleRepository;
+}
+
+
+private void requireTeacherOrAdmin(UUID requesterId) {
+    if (requesterId == null) {
+        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required.");
     }
+    if (!userRepository.existsById(requesterId)) {
+        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Requester user not found.");
+    }
+    boolean allowed = userRoleRepository.findByUserIdAndIsActiveTrue(requesterId).stream()
+            .anyMatch(r -> "ADMIN".equalsIgnoreCase(r.getRoleName())
+                        || "TEACHER".equalsIgnoreCase(r.getRoleName()));
+    if (!allowed) {
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only Teacher or Admin can perform this action.");
+    }
+}
+
+
 
     public List<CourseDto.CourseResponse> getCourses() {
         return courseRepository.findByIsActiveTrueOrderByCreatedAtDesc().stream()
@@ -40,10 +65,20 @@ public class CourseService {
                 .toList();
     }
 
-    public CourseDto.CourseResponse createCourse(CourseDto.CreateCourseRequest request) {
+    public CourseDto.CourseResponse createCourse(UUID requesterId, CourseDto.CreateCourseRequest request) {
+        //added new !!!
+        requireTeacherOrAdmin(requesterId);
+
+
         if (request == null || isBlank(request.courseCode) || isBlank(request.courseName)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "courseCode and courseName are required.");
         }
+       // I added this . ps: Khang
+       if (courseRepository.existsByCourseCode(request.courseCode.trim())) {
+        throw new ResponseStatusException(HttpStatus.CONFLICT, "Course code already exists.");
+    }
+
+
         if (request.createdBy != null && !userRepository.existsById(request.createdBy)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "createdBy user not found.");
         }
@@ -68,7 +103,8 @@ public class CourseService {
                 .toList();
     }
 
-    public CourseDto.ChapterResponse createChapter(UUID courseId, CourseDto.CreateChapterRequest request) {
+    public CourseDto.ChapterResponse createChapter(UUID requesterId, UUID courseId, CourseDto.CreateChapterRequest request) {
+        requireTeacherOrAdmin(requesterId);
         ensureCourseExists(courseId);
         if (request == null || isBlank(request.chapterTitle)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "chapterTitle is required.");
@@ -102,7 +138,10 @@ public class CourseService {
                 .toList();
     }
 
-    public CourseDto.WorkspaceResponse createWorkspace(UUID courseId, CourseDto.CreateWorkspaceRequest request) {
+    public CourseDto.WorkspaceResponse createWorkspace(UUID requesterId, UUID courseId, CourseDto.CreateWorkspaceRequest request) {
+
+        requireTeacherOrAdmin(requesterId);
+
         ensureCourseExists(courseId);
         if (request == null || isBlank(request.workspaceTitle)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "workspaceTitle is required.");

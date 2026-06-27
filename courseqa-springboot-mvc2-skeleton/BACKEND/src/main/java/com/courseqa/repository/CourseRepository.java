@@ -7,4 +7,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface CourseRepository extends JpaRepository<Course, UUID> {
     List<Course> findByIsActiveTrueOrderByCreatedAtDesc();
+    boolean existsByCourseCode(String courseCode);
 }

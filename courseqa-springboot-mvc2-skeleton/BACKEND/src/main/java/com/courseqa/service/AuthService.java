@@ -162,7 +162,7 @@ public class AuthService {
     }
 
     private AuthDto.AuthResponse buildAuthResponse(User user) {
-        return new AuthDto.AuthResponse(UUID.randomUUID().toString(), user, getRoleNames(user.getUserId()));
+        return new AuthDto.AuthResponse(user.getUserId().toString(), user, getRoleNames(user.getUserId()));
     }
 
     private List<String> getRoleNames(UUID userId) {
