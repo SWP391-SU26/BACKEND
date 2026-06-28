@@ -27,14 +27,12 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/**
- * FineTuningService - Export training data, manage fine-tuning experiments
- * 100% SQL implementation - không cần Python
- */
 @Service
 public class FineTuningService {
 
     private static final Logger log = LoggerFactory.getLogger(FineTuningService.class);
+    private static final String SYSTEM_PROMPT =
+            "Bạn là trợ lý học tập. Hãy trả lời câu hỏi bằng tiếng Việt rõ ràng, chính xác và không bịa thông tin.";
 
     private final EvaluationDatasetRepository evaluationDatasetRepository;
     private final EvaluationQuestionRepository evaluationQuestionRepository;
@@ -52,15 +50,6 @@ public class FineTuningService {
         this.objectMapper = objectMapper;
     }
 
-    /**
-     * Tạo experiment record mới
-     * - status mặc định = "PENDING"
-     *
-     * @param name Tên experiment
-     * @param researcherId ID của researcher (UUID)
-     * @param configJson JSON config string
-     * @return Experiment
-     */
     public Experiment createExperimentRecord(String name, UUID datasetId, UUID researcherId, String llmModel, String configJson) {
         log.info("Creating fine-tuning experiment record: name={}, researcherId={}", name, researcherId);
 
@@ -87,34 +76,31 @@ public class FineTuningService {
         return savedExperiment;
     }
 
-    /**
-     * Export EvaluationQuestion thành JSONL file download
-     * Format: {"prompt": "question_text", "completion": "ground_truth_answer"}
-     *
-     * @param datasetId ID của dataset
-     * @return ResponseEntity<Resource> - file download
-     */
     public ResponseEntity<Resource> exportJsonl(UUID datasetId) {
         log.info("Exporting JSONL for datasetId: {}", datasetId);
 
-        // Kiểm tra dataset tồn tại
         evaluationDatasetRepository.findById(datasetId)
                 .orElseThrow(() -> new ResourceNotFoundException("EvaluationDataset not found with id: " + datasetId));
 
-        // Load tất cả questions
         List<EvaluationQuestion> questions = evaluationQuestionRepository.findByDatasetId(datasetId);
         log.debug("Found {} questions in dataset {}", questions.size(), datasetId);
 
-        // Format thành JSONL
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try {
             for (EvaluationQuestion question : questions) {
-                // Tạo JSON object: {"prompt": "...", "completion": "..."}
-                Map<String, String> jsonLine = new HashMap<>();
-                jsonLine.put("prompt", question.getQuestionText());
-                jsonLine.put("completion", question.getGroundTruthAnswer());
+                Map<String, Object> jsonLine = new HashMap<>();
+                jsonLine.put("messages", List.of(
+                        Map.of("role", "system", "content", SYSTEM_PROMPT),
+                        Map.of("role", "user", "content", question.getQuestionText()),
+                        Map.of("role", "assistant", "content", question.getGroundTruthAnswer())
+                ));
+                jsonLine.put("metadata", Map.of(
+                        "evaluation_question_id", question.getEvaluationQuestionId().toString(),
+                        "dataset_id", datasetId.toString(),
+                        "question_type", question.getQuestionType() == null ? "" : question.getQuestionType(),
+                        "difficulty", question.getDifficulty() == null ? "" : question.getDifficulty()
+                ));
 
-                // Write JSON line + newline
                 String jsonString = objectMapper.writeValueAsString(jsonLine);
                 baos.write(jsonString.getBytes(StandardCharsets.UTF_8));
                 baos.write("\n".getBytes(StandardCharsets.UTF_8));
@@ -124,7 +110,6 @@ public class FineTuningService {
             throw new RuntimeException("Failed to export JSONL: " + e.getMessage(), e);
         }
 
-        // Tạo Resource từ ByteArray
         Resource resource = new ByteArrayResource(baos.toByteArray());
         String filename = String.format("dataset_%s_train.jsonl", datasetId);
 
@@ -136,12 +121,6 @@ public class FineTuningService {
                 .body(resource);
     }
 
-    /**
-     * Lấy danh sách tên file của tất cả experiments
-     * Format: experiment_{id}_{name}.jsonl
-     *
-     * @return List<String> - danh sách tên file
-     */
     public List<String> listExperimentFiles() {
         log.info("Listing all experiment files");
 

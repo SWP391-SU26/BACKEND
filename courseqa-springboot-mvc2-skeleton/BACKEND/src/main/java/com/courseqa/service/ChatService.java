@@ -1,23 +1,9 @@
 package com.courseqa.service;
-//----------------------------------
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-//----------------------------------
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
-import org.springframework.stereotype.Service;
-//-----------------------------------
 import com.courseqa.exception.ResourceNotFoundException;
 import com.courseqa.model.dto.ChatDto;
 import com.courseqa.model.dto.PythonAiDto;
+import com.courseqa.model.dto.RagDto;
 import com.courseqa.model.entity.AnswerCitation;
 import com.courseqa.model.entity.ChatMessage;
 import com.courseqa.model.entity.ChatSession;
@@ -26,30 +12,46 @@ import com.courseqa.repository.AnswerCitationRepository;
 import com.courseqa.repository.ChatMessageRepository;
 import com.courseqa.repository.ChatSessionRepository;
 import com.courseqa.repository.CourseWorkspaceRepository;
-//-------------------------------------
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Service;
+
 @Service
 public class ChatService {
 
-private static final Logger log = LoggerFactory.getLogger(ChatService.class);
+    private static final Logger log = LoggerFactory.getLogger(ChatService.class);
+    private static final String OUT_OF_SCOPE_MESSAGE =
+            "Xin lỗi, mình không tìm thấy nội dung liên quan trong tài liệu của workspace này.";
 
-private final ChatSessionRepository chatSessionRepository;
-private final ChatMessageRepository chatMessageRepository;
-private final CourseWorkspaceRepository courseWorkspaceRepository;
-private final AIClientService aiClientService;
-private final AnswerCitationRepository answerCitationRepository;
+    private final ChatSessionRepository chatSessionRepository;
+    private final ChatMessageRepository chatMessageRepository;
+    private final CourseWorkspaceRepository courseWorkspaceRepository;
+    private final AIClientService aiClientService;
+    private final AnswerCitationRepository answerCitationRepository;
+    private final RetrievalService retrievalService;
 
-public ChatService(
-        ChatSessionRepository chatSessionRepository,
-        ChatMessageRepository chatMessageRepository,
-        CourseWorkspaceRepository courseWorkspaceRepository,
-        AIClientService aiClientService,
-        AnswerCitationRepository answerCitationRepository) {
-    this.chatSessionRepository = chatSessionRepository;
-    this.chatMessageRepository = chatMessageRepository;
-    this.courseWorkspaceRepository = courseWorkspaceRepository;
-    this.aiClientService = aiClientService;
-    this.answerCitationRepository = answerCitationRepository;
-}
+    public ChatService(
+            ChatSessionRepository chatSessionRepository,
+            ChatMessageRepository chatMessageRepository,
+            CourseWorkspaceRepository courseWorkspaceRepository,
+            AIClientService aiClientService,
+            AnswerCitationRepository answerCitationRepository,
+            RetrievalService retrievalService) {
+        this.chatSessionRepository = chatSessionRepository;
+        this.chatMessageRepository = chatMessageRepository;
+        this.courseWorkspaceRepository = courseWorkspaceRepository;
+        this.aiClientService = aiClientService;
+        this.answerCitationRepository = answerCitationRepository;
+        this.retrievalService = retrievalService;
+    }
 
     public ChatSession createOrGetSession(UUID userId, UUID workspaceId) {
         log.info("Creating or getting chat session for userId: {}, workspaceId: {}", userId, workspaceId);
@@ -85,135 +87,178 @@ public ChatService(
                 .orElseThrow(() -> new ResourceNotFoundException("ChatSession not found with id: " + sessionId));
 
         Pageable pageable = PageRequest.of(0, 50, Sort.by(Sort.Direction.ASC, "createdAt"));
-        List<ChatMessage> messages = chatMessageRepository.findByChatSessionIdOrderByCreatedAtAsc(sessionId, pageable)
+        return chatMessageRepository.findByChatSessionIdOrderByCreatedAtAsc(sessionId, pageable)
                 .getContent();
-
-        log.debug("Found {} messages in history for sessionId: {}", messages.size(), sessionId);
-        return messages;
     }
-
-/*    public void askQuestion(UUID sessionId, String question) {
-        log.info("TODO: Implement askQuestion for sessionId: {}, question: {}", sessionId, question);
-        throw new UnsupportedOperationException("askQuestion not implemented yet - waiting for Python API contract from TV6");
-    }*/
-
-// ── new implementation ─────────────────────────────────────────────────────
 
     public ChatDto.AskResponse askQuestion(UUID sessionId, String question) {
         log.info("askQuestion - sessionId: {}, question: {}", sessionId, question);
 
-        // 1. Validate session exists
-        chatSessionRepository.findById(sessionId)
+        ChatSession session = chatSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("ChatSession not found: " + sessionId));
 
-        // 2. Save user message
-        ChatMessage userMessage = new ChatMessage();
-        userMessage.setChatSessionId(sessionId);
-        userMessage.setSenderRole("user");
-        userMessage.setMessageContent(question);
-        userMessage.setCreatedAt(LocalDateTime.now());
-        ChatMessage savedUserMessage = chatMessageRepository.save(userMessage);
+        ChatMessage savedUserMessage = saveMessage(sessionId, "user", question);
 
-       
-       // 3. Call Python — guarded so a failure doesn't strand the user message
-PythonAiDto.ChatResponse pyResponse;
-try {
-    PythonAiDto.ChatRequest pyRequest = new PythonAiDto.ChatRequest();
-    pyRequest.question = question;
-    pyRequest.session_id = null;  // let Python manage its own session
-    pyRequest.subject = null;     // no subject filter for now
+        RagDto.RetrievalResponse retrieval = retrieveFromJavaSql(session, savedUserMessage, question);
+        if (retrieval.results == null || retrieval.results.isEmpty()) {
+            ChatMessage assistantMessage = saveMessage(sessionId, "assistant", OUT_OF_SCOPE_MESSAGE);
+            return new ChatDto.AskResponse(
+                    sessionId,
+                    savedUserMessage.getMessageId(),
+                    assistantMessage.getMessageId(),
+                    OUT_OF_SCOPE_MESSAGE,
+                    new ArrayList<>()
+            );
+        }
 
-    pyResponse = aiClientService.callChat(
-            pyRequest, PythonAiDto.ChatResponse.class);
-} catch (Exception e) {
-    log.error("Python AI call failed for sessionId {}: {}", sessionId, e.getMessage());
+        PythonAiDto.GenerateResponse generated;
+        try {
+            generated = aiClientService.callGenerate(
+                    toGenerateRequest(question, retrieval.results),
+                    PythonAiDto.GenerateResponse.class
+            );
+        } catch (Exception exception) {
+            log.error("Python /api/generate failed for sessionId {}: {}", sessionId, exception.getMessage());
+            String message = "Xin lỗi, hệ thống AI hiện không phản hồi. Vui lòng thử lại sau.";
+            ChatMessage assistantMessage = saveMessage(sessionId, "assistant", message);
+            return new ChatDto.AskResponse(
+                    sessionId,
+                    savedUserMessage.getMessageId(),
+                    assistantMessage.getMessageId(),
+                    message,
+                    new ArrayList<>()
+            );
+        }
 
-    // Save a fallback assistant message so the conversation isn't left lopsided
-    ChatMessage errorMessage = new ChatMessage();
-    errorMessage.setChatSessionId(sessionId);
-    errorMessage.setSenderRole("assistant");
-    errorMessage.setMessageContent("Xin lỗi, hệ thống AI hiện không phản hồi. Vui lòng thử lại sau.");
-    errorMessage.setCreatedAt(LocalDateTime.now());
-    ChatMessage savedErrorMessage = chatMessageRepository.save(errorMessage);
+        String answer = Boolean.TRUE.equals(generated.is_out_of_scope)
+                ? OUT_OF_SCOPE_MESSAGE
+                : (generated.answer == null || generated.answer.isBlank() ? OUT_OF_SCOPE_MESSAGE : generated.answer);
 
-    return new ChatDto.AskResponse(
-            sessionId,
-            savedUserMessage.getMessageId(),
-            savedErrorMessage.getMessageId(),
-            errorMessage.getMessageContent(),
-            new ArrayList<>()   // no citations
-    );
-}
-        // 4. Save assistant message
-        ChatMessage assistantMessage = new ChatMessage();
-        assistantMessage.setChatSessionId(sessionId);
-        assistantMessage.setSenderRole("assistant");
-        assistantMessage.setMessageContent(pyResponse.answer);
-        assistantMessage.setCreatedAt(LocalDateTime.now());
-        ChatMessage savedAssistantMessage = chatMessageRepository.save(assistantMessage);
+        ChatMessage savedAssistantMessage = saveMessage(sessionId, "assistant", answer);
+        List<ChatDto.CitationItem> citations = saveCitations(savedAssistantMessage, retrieval.results, generated.sources);
 
-       
-     // 5. Save citations from sources
-List<ChatDto.CitationItem> citationItems = new ArrayList<>();
-if (pyResponse.sources != null) {
-    for (int i = 0; i < pyResponse.sources.size(); i++) {
-        Map<String, Object> source = pyResponse.sources.get(i);
-
-        Integer page = source.get("page") != null ? (Integer) source.get("page") : null;
-
-        AnswerCitation citation = new AnswerCitation();
-        citation.setAssistantMessageId(savedAssistantMessage.getMessageId());
-        citation.setCitationOrder(i + 1);
-
-        // ── link IDs returned by Python (best-effort) ──
-        citation.setDocumentId(parseUuid(source.get("document_id")));
-        citation.setChunkId(parseUuid(source.get("chunk_id")));
-
-        // ── descriptive fields ──
-        citation.setDocumentTitle((String) source.get("filename"));
-        citation.setPageStart(page);
-        citation.setPageEnd(page);   // Python returns a single page number
-        citation.setQuoteText((String) source.get("preview"));
-        citation.setCreatedAt(LocalDateTime.now());
-        answerCitationRepository.save(citation);
-
-        citationItems.add(new ChatDto.CitationItem(
-                (String) source.get("filename"),
-                page,
-                page,
-                (String) source.get("preview")
-        ));
-    }
-}
-
-        // 6. Return response
         return new ChatDto.AskResponse(
                 sessionId,
                 savedUserMessage.getMessageId(),
                 savedAssistantMessage.getMessageId(),
-                pyResponse.answer,
-                citationItems
+                answer,
+                citations
         );
     }
 
-//helper method 
-/**
- * Safely parse a value into a UUID. Python may send IDs as strings that
- * are not valid Java UUIDs (its SQLite uses its own ID format), so we
- * return null rather than crash when the value can't be parsed.
- */
-private UUID parseUuid(Object value) {
-    if (value == null) {
-        return null;
+    private RagDto.RetrievalResponse retrieveFromJavaSql(ChatSession session, ChatMessage userMessage, String question) {
+        RagDto.RetrievalRequest request = new RagDto.RetrievalRequest();
+        request.chatSessionId = session.getChatSessionId();
+        request.userMessageId = userMessage.getMessageId();
+        request.workspaceId = session.getWorkspaceId();
+        request.queryText = question;
+        request.embeddingModelId = session.getSelectedEmbeddingModelId();
+        request.topK = 5;
+        request.similarityThreshold = 0.05;
+        return retrievalService.retrieve(request);
     }
-    try {
-        return UUID.fromString(value.toString());
-    } catch (IllegalArgumentException e) {
-        log.debug("Could not parse '{}' as UUID for citation link", value);
-        return null;
+
+    private PythonAiDto.GenerateRequest toGenerateRequest(String question, List<RagDto.RetrievedChunk> chunks) {
+        PythonAiDto.GenerateRequest request = new PythonAiDto.GenerateRequest();
+        request.question = question;
+        request.contexts = chunks.stream()
+                .map(this::toGenerateContext)
+                .toList();
+        return request;
     }
-}
 
+    private PythonAiDto.GenerateContext toGenerateContext(RagDto.RetrievedChunk chunk) {
+        PythonAiDto.GenerateContext context = new PythonAiDto.GenerateContext();
+        context.chunk_id = chunk.chunkId == null ? null : chunk.chunkId.toString();
+        context.document_id = chunk.documentId == null ? null : chunk.documentId.toString();
+        context.filename = firstNonBlank(chunk.filename, chunk.documentTitle);
+        context.page = chunk.pageStart;
+        context.content = chunk.content;
+        return context;
+    }
 
+    private List<ChatDto.CitationItem> saveCitations(
+            ChatMessage assistantMessage,
+            List<RagDto.RetrievedChunk> retrievedChunks,
+            List<Map<String, Object>> pythonSources) {
+        List<RagDto.RetrievedChunk> citedChunks = selectCitedChunks(retrievedChunks, pythonSources);
+        List<ChatDto.CitationItem> citationItems = new ArrayList<>();
 
+        for (int i = 0; i < citedChunks.size(); i++) {
+            RagDto.RetrievedChunk chunk = citedChunks.get(i);
+            AnswerCitation citation = new AnswerCitation();
+            citation.setAssistantMessageId(assistantMessage.getMessageId());
+            citation.setDocumentId(chunk.documentId);
+            citation.setChunkId(chunk.chunkId);
+            citation.setCitationOrder(i + 1);
+            citation.setDocumentTitle(firstNonBlank(chunk.documentTitle, chunk.filename));
+            citation.setPageStart(chunk.pageStart);
+            citation.setPageEnd(chunk.pageEnd == null ? chunk.pageStart : chunk.pageEnd);
+            citation.setQuoteText(preview(chunk.content));
+            citation.setCreatedAt(LocalDateTime.now());
+            answerCitationRepository.save(citation);
+
+            citationItems.add(new ChatDto.CitationItem(
+                    citation.getDocumentTitle(),
+                    citation.getPageStart(),
+                    citation.getPageEnd(),
+                    citation.getQuoteText()
+            ));
+        }
+
+        return citationItems;
+    }
+
+    private List<RagDto.RetrievedChunk> selectCitedChunks(
+            List<RagDto.RetrievedChunk> retrievedChunks,
+            List<Map<String, Object>> pythonSources) {
+        if (pythonSources == null || pythonSources.isEmpty()) {
+            return retrievedChunks.stream().limit(3).toList();
+        }
+
+        List<UUID> sourceChunkIds = pythonSources.stream()
+                .map(source -> parseUuid(source.get("chunk_id")))
+                .filter(java.util.Objects::nonNull)
+                .toList();
+
+        if (sourceChunkIds.isEmpty()) {
+            return retrievedChunks.stream().limit(3).toList();
+        }
+
+        return retrievedChunks.stream()
+                .filter(chunk -> sourceChunkIds.contains(chunk.chunkId))
+                .limit(3)
+                .toList();
+    }
+
+    private ChatMessage saveMessage(UUID sessionId, String role, String content) {
+        ChatMessage message = new ChatMessage();
+        message.setChatSessionId(sessionId);
+        message.setSenderRole(role);
+        message.setMessageContent(content);
+        message.setCreatedAt(LocalDateTime.now());
+        return chatMessageRepository.save(message);
+    }
+
+    private UUID parseUuid(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return UUID.fromString(value.toString());
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private String firstNonBlank(String first, String second) {
+        return first != null && !first.isBlank() ? first : second;
+    }
+
+    private String preview(String content) {
+        if (content == null) {
+            return null;
+        }
+        return content.length() <= 280 ? content : content.substring(0, 280);
+    }
 }

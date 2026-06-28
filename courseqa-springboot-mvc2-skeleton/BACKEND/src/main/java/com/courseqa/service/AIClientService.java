@@ -48,6 +48,26 @@ public class AIClientService {
                 .block();
     }
 
+    public <T> T callGenerate(Object request, Class<T> responseType) {
+        log.info("Calling Python AI Engine /api/generate");
+
+        return webClient.post()
+                .uri(pythonAiServiceUrl + "/api/generate")
+                .bodyValue(request)
+                .retrieve()
+                .bodyToMono(responseType)
+                .timeout(Duration.ofSeconds(CHAT_TIMEOUT_SECONDS))
+                .retryWhen(Retry.backoff(MAX_RETRIES, Duration.ofMillis(200))
+                        .filter(throwable -> isRetryableError(throwable))
+                        .doBeforeRetry(retrySignal ->
+                            log.warn("Retry {} /api/generate - Error: {}",
+                                retrySignal.totalRetries() + 1,
+                                retrySignal.failure().getMessage())
+                        ))
+                .onErrorMap(this::handleError)
+                .block();
+    }
+
     public <T> T callChatFinetuned(Object request, Class<T> responseType) {
         log.info("Calling Python AI Engine /ai/chat-finetuned");
 

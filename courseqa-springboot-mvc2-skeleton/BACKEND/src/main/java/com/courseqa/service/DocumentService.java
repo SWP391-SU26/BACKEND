@@ -47,9 +47,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class DocumentService {
-    private static final int CHUNK_SIZE = 1200;
-    private static final int CHUNK_OVERLAP = 150;
-    private static final String CHUNK_STRATEGY = "fixed_1200_150";
+    private static final int CHUNK_SIZE = 700;
+    private static final int CHUNK_OVERLAP = 120;
+    private static final String CHUNK_STRATEGY = "paragraph_700_120";
 
     private final CourseDocumentRepository courseDocumentRepository;
     private final CourseRepository courseRepository;
@@ -538,44 +538,119 @@ public class DocumentService {
         LocalDateTime now = LocalDateTime.now();
 
         for (DocumentPage page : pages) {
-            String text = page.getCleanedText();
-            if (text == null || text.isBlank()) {
+            List<String> paragraphs = splitParagraphs(page.getRawText());
+            if (paragraphs.isEmpty()) {
                 continue;
             }
 
-            String[] words = text.split("\\s+");
-            int start = 0;
-            while (start < words.length) {
-                int end = Math.min(start + CHUNK_SIZE, words.length);
-                String content = String.join(" ", java.util.Arrays.copyOfRange(words, start, end)).trim();
-                if (!content.isBlank()) {
-                    DocumentChunk chunk = new DocumentChunk();
-                    chunk.setDocumentId(document.getDocumentId());
-                    chunk.setWorkspaceId(document.getWorkspaceId());
-                    chunk.setCourseId(document.getCourseId());
-                    chunk.setChapterId(document.getChapterId());
-                    chunk.setChunkIndex(chunkIndex++);
-                    chunk.setChunkStrategy(CHUNK_STRATEGY);
-                    chunk.setChunkSize(CHUNK_SIZE);
-                    chunk.setChunkOverlap(CHUNK_OVERLAP);
-                    chunk.setContent(content);
-                    chunk.setPageStart(page.getPageNumber());
-                    chunk.setPageEnd(page.getPageNumber());
-                    chunk.setTokenCount(countWords(content));
-                    chunk.setWordCount(countWords(content));
-                    chunk.setCharCount(content.length());
-                    chunk.setCreatedAt(now);
-                    chunks.add(chunk);
+            List<String> currentParagraphs = new ArrayList<>();
+            int currentWordCount = 0;
+            for (String paragraph : paragraphs) {
+                List<String> paragraphParts = splitLongParagraph(paragraph);
+                for (String part : paragraphParts) {
+                    int partWordCount = countWords(part);
+                    if (!currentParagraphs.isEmpty() && currentWordCount + partWordCount > CHUNK_SIZE) {
+                        chunks.add(newChunk(document, page, chunkIndex++, currentParagraphs, now));
+                        currentParagraphs = overlapParagraphs(currentParagraphs);
+                        currentWordCount = currentParagraphs.stream().mapToInt(this::countWords).sum();
+                    }
+                    currentParagraphs.add(part);
+                    currentWordCount += partWordCount;
                 }
+            }
 
-                if (end == words.length) {
-                    break;
-                }
-                start = Math.max(end - CHUNK_OVERLAP, start + 1);
+            if (!currentParagraphs.isEmpty()) {
+                chunks.add(newChunk(document, page, chunkIndex++, currentParagraphs, now));
             }
         }
 
         return documentChunkRepository.saveAll(chunks);
+    }
+
+    private DocumentChunk newChunk(
+            CourseDocument document,
+            DocumentPage page,
+            int chunkIndex,
+            List<String> paragraphs,
+            LocalDateTime createdAt) {
+        String content = String.join("\n\n", paragraphs).trim();
+        DocumentChunk chunk = new DocumentChunk();
+        chunk.setDocumentId(document.getDocumentId());
+        chunk.setWorkspaceId(document.getWorkspaceId());
+        chunk.setCourseId(document.getCourseId());
+        chunk.setChapterId(document.getChapterId());
+        chunk.setChunkIndex(chunkIndex);
+        chunk.setChunkStrategy(CHUNK_STRATEGY);
+        chunk.setChunkSize(CHUNK_SIZE);
+        chunk.setChunkOverlap(CHUNK_OVERLAP);
+        chunk.setContent(content);
+        chunk.setPageStart(page.getPageNumber());
+        chunk.setPageEnd(page.getPageNumber());
+        chunk.setTokenCount(countWords(content));
+        chunk.setWordCount(countWords(content));
+        chunk.setCharCount(content.length());
+        chunk.setCreatedAt(createdAt);
+        return chunk;
+    }
+
+    private List<String> splitParagraphs(String rawText) {
+        if (rawText == null || rawText.isBlank()) {
+            return List.of();
+        }
+        String normalized = rawText
+                .replace("\r\n", "\n")
+                .replace("\r", "\n")
+                .replaceAll("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]", " ");
+        String[] blocks = normalized.split("\\n\\s*\\n|(?m)^\\s*$");
+        List<String> paragraphs = new ArrayList<>();
+        for (String block : blocks) {
+            String paragraph = block.replaceAll("[ \\t\\x0B\\f\\r]+", " ")
+                    .replaceAll("\\n+", " ")
+                    .trim();
+            if (!paragraph.isBlank()) {
+                paragraphs.add(paragraph);
+            }
+        }
+        if (paragraphs.isEmpty()) {
+            String fallback = cleanText(rawText);
+            if (!fallback.isBlank()) {
+                paragraphs.add(fallback);
+            }
+        }
+        return paragraphs;
+    }
+
+    private List<String> splitLongParagraph(String paragraph) {
+        if (countWords(paragraph) <= CHUNK_SIZE) {
+            return List.of(paragraph);
+        }
+        String[] words = paragraph.split("\\s+");
+        List<String> parts = new ArrayList<>();
+        int start = 0;
+        while (start < words.length) {
+            int end = Math.min(start + CHUNK_SIZE, words.length);
+            parts.add(String.join(" ", java.util.Arrays.copyOfRange(words, start, end)).trim());
+            if (end == words.length) {
+                break;
+            }
+            start = end;
+        }
+        return parts;
+    }
+
+    private List<String> overlapParagraphs(List<String> paragraphs) {
+        List<String> overlap = new ArrayList<>();
+        int words = 0;
+        for (int i = paragraphs.size() - 1; i >= 0; i--) {
+            String paragraph = paragraphs.get(i);
+            int paragraphWords = countWords(paragraph);
+            if (!overlap.isEmpty() && words + paragraphWords > CHUNK_OVERLAP) {
+                break;
+            }
+            overlap.add(0, paragraph);
+            words += paragraphWords;
+        }
+        return overlap;
     }
 
     private List<ExtractedPage> extractPages(Path filePath, String fileType) throws IOException {

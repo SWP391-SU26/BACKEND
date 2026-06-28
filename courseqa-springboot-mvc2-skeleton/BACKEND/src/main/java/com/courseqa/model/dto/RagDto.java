@@ -73,6 +73,10 @@ public static class CreateEmbeddingModelRequest {
     public static class RetrievedChunk {
         public UUID chunkId;
         public UUID documentId;
+        public String documentTitle;
+        public String filename;
+        public Integer pageStart;
+        public Integer pageEnd;
         public Integer rank;
         public Double similarityScore;
         public String content;

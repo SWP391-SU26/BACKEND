@@ -2,11 +2,13 @@ package com.courseqa.service;
 
 import com.courseqa.model.dto.RagDto;
 import com.courseqa.model.entity.AnswerCitation;
+import com.courseqa.model.entity.CourseDocument;
 import com.courseqa.model.entity.DocumentChunk;
 import com.courseqa.model.entity.EmbeddingModel;
 import com.courseqa.model.entity.RetrievalQuery;
 import com.courseqa.model.entity.RetrievalResult;
 import com.courseqa.repository.AnswerCitationRepository;
+import com.courseqa.repository.CourseDocumentRepository;
 import com.courseqa.repository.DocumentChunkRepository;
 import com.courseqa.repository.RetrievalQueryRepository;
 import com.courseqa.repository.RetrievalResultRepository;
@@ -15,7 +17,10 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,19 +33,22 @@ public class RetrievalService {
     private final RetrievalResultRepository retrievalResultRepository;
     private final AnswerCitationRepository answerCitationRepository;
     private final EmbeddingService embeddingService;
+    private final CourseDocumentRepository courseDocumentRepository;
 
     public RetrievalService(
             DocumentChunkRepository documentChunkRepository,
             RetrievalQueryRepository retrievalQueryRepository,
             RetrievalResultRepository retrievalResultRepository,
             AnswerCitationRepository answerCitationRepository,
-            EmbeddingService embeddingService
+            EmbeddingService embeddingService,
+            CourseDocumentRepository courseDocumentRepository
     ) {
         this.documentChunkRepository = documentChunkRepository;
         this.retrievalQueryRepository = retrievalQueryRepository;
         this.retrievalResultRepository = retrievalResultRepository;
         this.answerCitationRepository = answerCitationRepository;
         this.embeddingService = embeddingService;
+        this.courseDocumentRepository = courseDocumentRepository;
     }
 
     @Transactional
@@ -129,11 +137,19 @@ public class RetrievalService {
     private List<RagDto.RetrievedChunk> toRetrievedChunks(List<ScoredChunk> scoredChunks, RetrievalQuery query) {
         UUID retrievalQueryId = query == null ? null : query.getRetrievalQueryId();
         LocalDateTime now = LocalDateTime.now();
+        Map<UUID, CourseDocument> documentsById = courseDocumentRepository.findAllById(
+                        scoredChunks.stream()
+                                .map(scoredChunk -> scoredChunk.chunk().getDocumentId())
+                                .filter(java.util.Objects::nonNull)
+                                .collect(Collectors.toSet())
+                ).stream()
+                .collect(Collectors.toMap(CourseDocument::getDocumentId, Function.identity()));
 
         return java.util.stream.IntStream.range(0, scoredChunks.size())
                 .mapToObj(index -> {
                     ScoredChunk scoredChunk = scoredChunks.get(index);
                     DocumentChunk chunk = scoredChunk.chunk();
+                    CourseDocument document = documentsById.get(chunk.getDocumentId());
                     int rank = index + 1;
 
                     if (retrievalQueryId != null) {
@@ -151,6 +167,10 @@ public class RetrievalService {
                     RagDto.RetrievedChunk response = new RagDto.RetrievedChunk();
                     response.chunkId = chunk.getChunkId();
                     response.documentId = chunk.getDocumentId();
+                    response.documentTitle = document == null ? null : document.getDocumentTitle();
+                    response.filename = document == null ? null : document.getOriginalFilename();
+                    response.pageStart = chunk.getPageStart();
+                    response.pageEnd = chunk.getPageEnd();
                     response.rank = rank;
                     response.similarityScore = scoredChunk.score();
                     response.content = chunk.getContent();

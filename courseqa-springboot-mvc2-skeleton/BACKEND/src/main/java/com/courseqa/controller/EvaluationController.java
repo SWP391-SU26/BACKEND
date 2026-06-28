@@ -13,15 +13,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.UUID;
 
-/**
- * EvaluationController - API endpoints cho evaluation functionality
- * - Quản lý datasets, questions, experiments, results
- */
 @RestController
 @RequestMapping("/api/evaluation")
 @CrossOrigin
@@ -35,28 +37,12 @@ public class EvaluationController {
         this.evaluationService = evaluationService;
     }
 
-    /**
-     * GET /api/evaluation/datasets
-     * Lấy danh sách tất cả datasets
-     *
-     * @return ResponseEntity<ApiResponse<List<EvaluationDataset>>>
-     */
     @GetMapping("/datasets")
     public ResponseEntity<ApiResponse<List<EvaluationDataset>>> listDatasets() {
         log.info("GET /api/evaluation/datasets");
-
-        List<EvaluationDataset> datasets = evaluationService.listDatasets();
-
-        return ResponseEntity.ok(ApiResponse.ok(datasets));
+        return ResponseEntity.ok(ApiResponse.ok(evaluationService.listDatasets()));
     }
 
-    /**
-     * POST /api/evaluation/datasets
-     * Tạo evaluation dataset mới
-     *
-     * @param request CreateDatasetRequest: {datasetName, courseId, workspaceId, createdBy}
-     * @return ResponseEntity<ApiResponse<EvaluationDataset>>
-     */
     @PostMapping("/datasets")
     public ResponseEntity<ApiResponse<EvaluationDataset>> createDataset(
             @Valid @RequestBody CreateDatasetRequest request) {
@@ -72,13 +58,6 @@ public class EvaluationController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(dataset));
     }
 
-    /**
-     * POST /api/evaluation/questions
-     * Thêm câu hỏi vào dataset
-     *
-     * @param request AddQuestionRequest: {datasetId, questionText, groundTruthAnswer}
-     * @return ResponseEntity<ApiResponse<EvaluationQuestion>>
-     */
     @PostMapping("/questions")
     public ResponseEntity<ApiResponse<EvaluationQuestion>> addQuestion(
             @Valid @RequestBody AddQuestionRequest request) {
@@ -93,30 +72,13 @@ public class EvaluationController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(question));
     }
 
-    /**
-     * GET /api/evaluation/datasets/{datasetId}/questions
-     * Lấy danh sách câu hỏi trong dataset
-     *
-     * @param datasetId ID của dataset
-     * @return ResponseEntity<ApiResponse<List<EvaluationQuestion>>>
-     */
     @GetMapping("/datasets/{datasetId}/questions")
     public ResponseEntity<ApiResponse<List<EvaluationQuestion>>> getQuestions(
             @PathVariable UUID datasetId) {
         log.info("GET /api/evaluation/datasets/{}/questions", datasetId);
-
-        List<EvaluationQuestion> questions = evaluationService.getQuestions(datasetId);
-
-        return ResponseEntity.ok(ApiResponse.ok(questions));
+        return ResponseEntity.ok(ApiResponse.ok(evaluationService.getQuestions(datasetId)));
     }
 
-    /**
-     * POST /api/evaluation/experiments
-     * Tạo experiment record mới
-     *
-     * @param request CreateExperimentRequest: {experimentName, experimentType, configJson, createdBy}
-     * @return ResponseEntity<ApiResponse<Experiment>>
-     */
     @PostMapping("/experiments")
     public ResponseEntity<ApiResponse<Experiment>> createExperiment(
             @Valid @RequestBody CreateExperimentRequest request) {
@@ -134,62 +96,25 @@ public class EvaluationController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(experiment));
     }
 
-    /**
-     * GET /api/evaluation/experiments
-     * Lấy danh sách tất cả experiments
-     *
-     * @return ResponseEntity<ApiResponse<List<Experiment>>>
-     */
     @GetMapping("/experiments")
     public ResponseEntity<ApiResponse<List<Experiment>>> listExperiments() {
         log.info("GET /api/evaluation/experiments");
-
-        List<Experiment> experiments = evaluationService.listExperiments();
-
-        return ResponseEntity.ok(ApiResponse.ok(experiments));
+        return ResponseEntity.ok(ApiResponse.ok(evaluationService.listExperiments()));
     }
 
-    /**
-     * POST /api/evaluation/experiments/{experimentId}/run
-     * Chạy benchmark cho experiment
-     * TODO: Implement sau khi có API contract từ TV6
-     *
-     * @param experimentId ID của experiment
-     * @return ResponseEntity<ApiResponse<String>>
-     */
     @PostMapping("/experiments/{experimentId}/run")
-    public ResponseEntity<ApiResponse<String>> runBenchmark(@PathVariable UUID experimentId) {
+    public ResponseEntity<ApiResponse<Experiment>> runBenchmark(@PathVariable UUID experimentId) {
         log.info("POST /api/evaluation/experiments/{}/run", experimentId);
-
-        // TODO: Implement runBenchmark logic:
-        // 1. Gọi evaluationService.runBenchmark(experimentId)
-        // 2. TODO sẽ implement khi TV6 confirm API contract
-
-        throw new UnsupportedOperationException("runBenchmark not implemented yet - waiting for TV6 API contract");
+        return ResponseEntity.ok(ApiResponse.ok(evaluationService.runBenchmark(experimentId)));
     }
 
-    /**
-     * GET /api/evaluation/experiments/{experimentId}/results
-     * Lấy kết quả của experiment
-     *
-     * @param experimentId ID của experiment
-     * @return ResponseEntity<ApiResponse<List<ExperimentResult>>>
-     */
     @GetMapping("/experiments/{experimentId}/results")
     public ResponseEntity<ApiResponse<List<ExperimentResult>>> getResults(
             @PathVariable UUID experimentId) {
         log.info("GET /api/evaluation/experiments/{}/results", experimentId);
-
-        List<ExperimentResult> results = evaluationService.getResults(experimentId);
-
-        return ResponseEntity.ok(ApiResponse.ok(results));
+        return ResponseEntity.ok(ApiResponse.ok(evaluationService.getResults(experimentId)));
     }
 
-    // ==================== Request DTOs ====================
-
-    /**
-     * Request DTO cho createDataset
-     */
     public static class CreateDatasetRequest {
         @NotBlank(message = "datasetName is required and cannot be empty")
         private String datasetName;
@@ -203,31 +128,39 @@ public class EvaluationController {
         @NotNull(message = "createdBy is required")
         private UUID createdBy;
 
-        public CreateDatasetRequest() {}
-
-        public CreateDatasetRequest(String datasetName, UUID courseId, UUID workspaceId, UUID createdBy) {
-            this.datasetName = datasetName;
-            this.courseId = courseId;
-            this.workspaceId = workspaceId;
-            this.createdBy = createdBy;
+        public String getDatasetName() {
+            return datasetName;
         }
 
-        public String getDatasetName() { return datasetName; }
-        public void setDatasetName(String datasetName) { this.datasetName = datasetName; }
+        public void setDatasetName(String datasetName) {
+            this.datasetName = datasetName;
+        }
 
-        public UUID getCourseId() { return courseId; }
-        public void setCourseId(UUID courseId) { this.courseId = courseId; }
+        public UUID getCourseId() {
+            return courseId;
+        }
 
-        public UUID getWorkspaceId() { return workspaceId; }
-        public void setWorkspaceId(UUID workspaceId) { this.workspaceId = workspaceId; }
+        public void setCourseId(UUID courseId) {
+            this.courseId = courseId;
+        }
 
-        public UUID getCreatedBy() { return createdBy; }
-        public void setCreatedBy(UUID createdBy) { this.createdBy = createdBy; }
+        public UUID getWorkspaceId() {
+            return workspaceId;
+        }
+
+        public void setWorkspaceId(UUID workspaceId) {
+            this.workspaceId = workspaceId;
+        }
+
+        public UUID getCreatedBy() {
+            return createdBy;
+        }
+
+        public void setCreatedBy(UUID createdBy) {
+            this.createdBy = createdBy;
+        }
     }
 
-    /**
-     * Request DTO cho addQuestion
-     */
     public static class AddQuestionRequest {
         @NotNull(message = "datasetId is required")
         private UUID datasetId;
@@ -238,27 +171,31 @@ public class EvaluationController {
         @NotBlank(message = "groundTruthAnswer is required and cannot be empty")
         private String groundTruthAnswer;
 
-        public AddQuestionRequest() {}
-
-        public AddQuestionRequest(UUID datasetId, String questionText, String groundTruthAnswer) {
-            this.datasetId = datasetId;
-            this.questionText = questionText;
-            this.groundTruthAnswer = groundTruthAnswer;
+        public UUID getDatasetId() {
+            return datasetId;
         }
 
-        public UUID getDatasetId() { return datasetId; }
-        public void setDatasetId(UUID datasetId) { this.datasetId = datasetId; }
+        public void setDatasetId(UUID datasetId) {
+            this.datasetId = datasetId;
+        }
 
-        public String getQuestionText() { return questionText; }
-        public void setQuestionText(String questionText) { this.questionText = questionText; }
+        public String getQuestionText() {
+            return questionText;
+        }
 
-        public String getGroundTruthAnswer() { return groundTruthAnswer; }
-        public void setGroundTruthAnswer(String groundTruthAnswer) { this.groundTruthAnswer = groundTruthAnswer; }
+        public void setQuestionText(String questionText) {
+            this.questionText = questionText;
+        }
+
+        public String getGroundTruthAnswer() {
+            return groundTruthAnswer;
+        }
+
+        public void setGroundTruthAnswer(String groundTruthAnswer) {
+            this.groundTruthAnswer = groundTruthAnswer;
+        }
     }
 
-    /**
-     * Request DTO cho createExperiment
-     */
     public static class CreateExperimentRequest {
         @NotNull(message = "datasetId is required")
         private UUID datasetId;
@@ -278,33 +215,52 @@ public class EvaluationController {
         @NotNull(message = "createdBy is required")
         private UUID createdBy;
 
-        public CreateExperimentRequest() {}
-
-        public CreateExperimentRequest(UUID datasetId, String experimentName, String experimentType, String llmModel, String configJson, UUID createdBy) {
-            this.datasetId = datasetId;
-            this.experimentName = experimentName;
-            this.experimentType = experimentType;
-            this.llmModel = llmModel;
-            this.configJson = configJson;
-            this.createdBy = createdBy;
+        public UUID getDatasetId() {
+            return datasetId;
         }
 
-        public UUID getDatasetId() { return datasetId; }
-        public void setDatasetId(UUID datasetId) { this.datasetId = datasetId; }
+        public void setDatasetId(UUID datasetId) {
+            this.datasetId = datasetId;
+        }
 
-        public String getExperimentName() { return experimentName; }
-        public void setExperimentName(String experimentName) { this.experimentName = experimentName; }
+        public String getExperimentName() {
+            return experimentName;
+        }
 
-        public String getExperimentType() { return experimentType; }
-        public void setExperimentType(String experimentType) { this.experimentType = experimentType; }
+        public void setExperimentName(String experimentName) {
+            this.experimentName = experimentName;
+        }
 
-        public String getLlmModel() { return llmModel; }
-        public void setLlmModel(String llmModel) { this.llmModel = llmModel; }
+        public String getExperimentType() {
+            return experimentType;
+        }
 
-        public String getConfigJson() { return configJson; }
-        public void setConfigJson(String configJson) { this.configJson = configJson; }
+        public void setExperimentType(String experimentType) {
+            this.experimentType = experimentType;
+        }
 
-        public UUID getCreatedBy() { return createdBy; }
-        public void setCreatedBy(UUID createdBy) { this.createdBy = createdBy; }
+        public String getLlmModel() {
+            return llmModel;
+        }
+
+        public void setLlmModel(String llmModel) {
+            this.llmModel = llmModel;
+        }
+
+        public String getConfigJson() {
+            return configJson;
+        }
+
+        public void setConfigJson(String configJson) {
+            this.configJson = configJson;
+        }
+
+        public UUID getCreatedBy() {
+            return createdBy;
+        }
+
+        public void setCreatedBy(UUID createdBy) {
+            this.createdBy = createdBy;
+        }
     }
 }
