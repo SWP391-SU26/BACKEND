@@ -56,6 +56,42 @@ class FineTuningPrepareRequest(BaseModel):
     validation_ratio: float = Field(default=0.2, ge=0, lt=1)
     seed: int = 42
 
+class GenerateContext(BaseModel):
+    chunk_id: str
+    document_id: str
+    filename: str
+    page: int | None = None
+    content: str
+
+class GenerateRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+    contexts: list[GenerateContext]
+
+class GenerateSource(BaseModel):
+    chunk_id: str
+    document_id: str
+    filename: str
+    page: int | None = None
+    preview: str
+
+class GenerateResponse(BaseModel):
+    answer: str
+    is_out_of_scope: bool
+    sources: list[GenerateSource]
+
+class ChatFinetunedRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+
+class ChatFinetunedResponse(BaseModel):
+    answer: str
+
+class EvaluateRequest(BaseModel):
+    question: str
+    answer_rag: str
+    answer_finetuned: str
+
+class EvaluateResponse(BaseModel):
+    evaluation: str
 
 def build_pipeline() -> tuple[RAGPipeline, SQLiteStore]:
     settings = load_settings()
@@ -207,6 +243,69 @@ def chat(request: ChatRequest) -> ChatResponse:
         sources=result.sources,
         retrieved=retrieved,
     )
+
+@app.post("/api/generate", response_model=GenerateResponse)
+def generate_answer(request: GenerateRequest) -> GenerateResponse:
+    from src.rag_pipeline import OUT_OF_SCOPE_MESSAGE, location_label
+    from src.storage import RetrievedChunk
+    
+    if not request.contexts:
+        return GenerateResponse(
+            answer=OUT_OF_SCOPE_MESSAGE,
+            is_out_of_scope=True,
+            sources=[]
+        )
+        
+    contexts = []
+    sources_dict_list = []
+    
+    for ctx in request.contexts:
+        chunk = RetrievedChunk(
+            chunk_id=ctx.chunk_id,
+            document_id=ctx.document_id,
+            filename=ctx.filename,
+            subject="Unknown",
+            chapter="Unknown",
+            page=ctx.page,
+            content=ctx.content,
+            score=1.0,
+            semantic_score=1.0,
+            lexical_score=1.0
+        )
+        contexts.append(chunk)
+        sources_dict_list.append({
+            "chunk_id": ctx.chunk_id,
+            "document_id": ctx.document_id,
+            "filename": ctx.filename,
+            "page": ctx.page,
+            "location": location_label(chunk),
+            "preview": ctx.content[:280]
+        })
+        
+    try:
+        answer = pipeline._generate_answer(request.question, contexts, sources_dict_list)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Không thể tạo câu trả lời: {exc}") from exc
+        
+    return GenerateResponse(
+        answer=answer,
+        is_out_of_scope=(answer == OUT_OF_SCOPE_MESSAGE),
+        sources=[GenerateSource(**s) for s in sources_dict_list]
+    )
+
+@app.post("/ai/chat-finetuned", response_model=ChatFinetunedResponse)
+def chat_finetuned(request: ChatFinetunedRequest) -> ChatFinetunedResponse:
+    try:
+        answer = pipeline.generate_without_retrieval(request.question)
+        return ChatFinetunedResponse(answer=answer)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Lỗi mô hình finetuned: {exc}") from exc
+
+@app.post("/ai/evaluate", response_model=EvaluateResponse)
+def evaluate_answers(request: EvaluateRequest) -> EvaluateResponse:
+    # Không có API LLM trả phí, sử dụng một placeholder cơ bản
+    eval_text = f"Đánh giá giả lập:\\nRAG: {request.answer_rag[:50]}...\\nFinetuned: {request.answer_finetuned[:50]}..."
+    return EvaluateResponse(evaluation=eval_text)
 
 
 @app.get("/api/benchmarks")
