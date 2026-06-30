@@ -1,0 +1,4 @@
+configuration,run_id,answer_token_f1,source_hit_rate,page_hit_rate,refusal_accuracy,faithfulness_proxy,answer_relevancy_proxy,context_precision_proxy,context_recall_proxy,average_latency_ms
+RAG + Extractive,d37a8348-955d-4ba5-bfca-74b0764c8b82,0.0619,1.0,0.975,1.0,0.7917,0.0774,0.5325,0.3843,335.12
+Fine-tuned only,2c0b4a9d-2fe4-4f9a-9c5f-acea40bb4de4,0.2492,0.0,0.0,0.8,0.0,0.3115,0.0,0.0,7742.18
+RAG + LoRA,fa44b735-6293-4326-93c5-567fab31c60c,0.2276,1.0,0.975,1.0,0.3530,0.2845,0.5325,0.3843,15093.01
