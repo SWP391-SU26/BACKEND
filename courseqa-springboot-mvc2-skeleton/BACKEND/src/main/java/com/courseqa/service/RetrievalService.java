@@ -58,7 +58,8 @@ public class RetrievalService {
         Instant startedAt = Instant.now();
         EmbeddingModel model = embeddingService.resolveModel(request.embeddingModelId);
         int topK = request.topK == null || request.topK <= 0 ? 5 : Math.min(request.topK, 20);
-        double threshold = request.similarityThreshold == null ? 0.05 : request.similarityThreshold;
+        //double threshold = request.similarityThreshold == null ? 0.05 : request.similarityThreshold;
+        double threshold = request.similarityThreshold == null ? 0.18 : request.similarityThreshold;
 
         List<ScoredChunk> scoredChunks = documentChunkRepository.findByWorkspaceIdOrderByCreatedAtAsc(request.workspaceId).stream()
                 .map(chunk -> new ScoredChunk(chunk, embeddingService.cosineKeywordScore(request.queryText, chunk.getContent())))

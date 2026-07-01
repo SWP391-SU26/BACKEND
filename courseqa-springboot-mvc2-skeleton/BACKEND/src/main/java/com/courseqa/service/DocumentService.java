@@ -250,9 +250,12 @@ public class DocumentService {
 
     public List<DocumentDto.DocumentResponse> getDocumentsByWorkspace(UUID workspaceId, UUID requesterId) {
         requireRequester(requesterId);
-        List<CourseDocument> documents = isAdmin(requesterId)
+       /*  List<CourseDocument> documents = isAdmin(requesterId)
                 ? courseDocumentRepository.findByWorkspaceIdOrderByUploadedAtDesc(workspaceId)
                 : courseDocumentRepository.findByWorkspaceIdAndUploadedByOrderByUploadedAtDesc(workspaceId, requesterId);
+       */
+        List<CourseDocument> documents =
+            courseDocumentRepository.findByWorkspaceIdOrderByUploadedAtDesc(workspaceId);
 
         return documents.stream()
                 .map(DocumentDto.DocumentResponse::fromEntity)

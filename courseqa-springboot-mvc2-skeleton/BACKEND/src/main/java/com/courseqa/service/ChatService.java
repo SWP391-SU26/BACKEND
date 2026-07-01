@@ -21,7 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
+//import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -86,7 +86,8 @@ public class ChatService {
         chatSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("ChatSession not found with id: " + sessionId));
 
-        Pageable pageable = PageRequest.of(0, 50, Sort.by(Sort.Direction.ASC, "createdAt"));
+       // Pageable pageable = PageRequest.of(0, 50, Sort.by(Sort.Direction.ASC, "createdAt"));
+       Pageable pageable = PageRequest.of(0, 50);
         return chatMessageRepository.findByChatSessionIdOrderByCreatedAtAsc(sessionId, pageable)
                 .getContent();
     }
@@ -100,7 +101,14 @@ public class ChatService {
         ChatMessage savedUserMessage = saveMessage(sessionId, "user", question);
 
         RagDto.RetrievalResponse retrieval = retrieveFromJavaSql(session, savedUserMessage, question);
-        if (retrieval.results == null || retrieval.results.isEmpty()) {
+
+        // Out-of-scope gate: need at least one chunk AND a strong enough top match.
+        double topScore = (retrieval.results == null || retrieval.results.isEmpty()
+                || retrieval.results.get(0).similarityScore == null)
+                ? 0.0
+                : retrieval.results.get(0).similarityScore;
+
+        if (retrieval.results == null || retrieval.results.isEmpty() || topScore < 0.25) {
             ChatMessage assistantMessage = saveMessage(sessionId, "assistant", OUT_OF_SCOPE_MESSAGE);
             return new ChatDto.AskResponse(
                     sessionId,

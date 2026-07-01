@@ -64,7 +64,8 @@ public class AuthService {
         User savedUser = userRepository.save(user);
         UserRole role = new UserRole();
         role.setUserId(savedUser.getUserId());
-        role.setRoleName(normalizeRole(request.roleName));
+        //role.setRoleName(normalizeRole(request.roleName));
+        role.setRoleName("STUDENT");
         role.setPermissionJson("{}");
         role.setAssignedAt(now);
         role.setIsActive(true);
