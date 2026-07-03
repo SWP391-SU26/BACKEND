@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from experiments.train_lora import REQUIRED_PACKAGES, run_training
+from experiments.train_lora import required_packages_for, run_training
 from src.config import ensure_data_dirs, load_settings
 from src.finetuning import prepare_dataset, validate_jsonl
 
@@ -56,7 +56,7 @@ def main() -> None:
 
     train_validation = validate_jsonl(dataset_dir / "train.jsonl")
     validation_validation = validate_jsonl(dataset_dir / "validation.jsonl")
-    missing = [name for name in REQUIRED_PACKAGES if importlib.util.find_spec(name) is None]
+    missing = [name for name in required_packages_for(config) if importlib.util.find_spec(name) is None]
     summary = {
         "run_name": run_name,
         "source_csv": str(source_path),

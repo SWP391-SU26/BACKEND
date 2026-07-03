@@ -16,6 +16,13 @@ from src.finetuning import validate_jsonl
 REQUIRED_PACKAGES = ["torch", "transformers", "datasets", "peft", "trl"]
 
 
+def required_packages_for(config: dict) -> list[str]:
+    packages = list(REQUIRED_PACKAGES)
+    if bool(config.get("use_qlora", True)):
+        packages.append("bitsandbytes")
+    return packages
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Fine-tune baseline bằng LoRA/QLoRA.")
     parser.add_argument("--config", default=str(ROOT / "experiments" / "lora_config.json"))
@@ -25,7 +32,7 @@ def main() -> None:
     config = json.loads(Path(args.config).read_text(encoding="utf-8"))
     train_validation = validate_jsonl(resolve_path(config["train_file"]))
     validation_validation = validate_jsonl(resolve_path(config["validation_file"]))
-    missing = [name for name in REQUIRED_PACKAGES if importlib.util.find_spec(name) is None]
+    missing = [name for name in required_packages_for(config) if importlib.util.find_spec(name) is None]
     summary = {
         "config": config,
         "train_dataset": train_validation,

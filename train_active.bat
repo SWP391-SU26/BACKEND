@@ -21,4 +21,4 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 call ".venv\Scripts\activate.bat"
-python experiments\train_active.py %*
+".venv\Scripts\python.exe" experiments\train_active.py %*
