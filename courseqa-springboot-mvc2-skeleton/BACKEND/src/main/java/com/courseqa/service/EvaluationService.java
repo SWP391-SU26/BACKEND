@@ -13,13 +13,19 @@ import com.courseqa.repository.ExperimentResultRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -99,6 +105,77 @@ public class EvaluationService {
                 .orElseThrow(() -> new ResourceNotFoundException("EvaluationDataset not found with id: " + datasetId));
 
         return evaluationQuestionRepository.findByDatasetId(datasetId);
+    }
+
+    public Map<String, Object> importQuestions(UUID datasetId, MultipartFile file) {
+        log.info("Importing evaluation questions from CSV: datasetId={}, filename={}", datasetId, file.getOriginalFilename());
+
+        EvaluationDataset dataset = evaluationDatasetRepository.findById(datasetId)
+                .orElseThrow(() -> new ResourceNotFoundException("EvaluationDataset not found with id: " + datasetId));
+
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("CSV file is required.");
+        }
+
+        try {
+            byte[] bytes = file.getBytes();
+            String content = stripUtf8Bom(new String(bytes, StandardCharsets.UTF_8));
+            List<List<String>> csvRows = parseCsv(content);
+            if (csvRows.isEmpty()) {
+                throw new IllegalArgumentException("CSV file has no rows.");
+            }
+
+            Map<String, Integer> headers = headerIndex(csvRows.get(0));
+            Integer questionIndex = firstHeader(headers, "question", "question_text");
+            Integer answerIndex = firstHeader(headers, "expected_answer", "ground_truth_answer", "answer");
+            if (questionIndex == null || answerIndex == null) {
+                throw new IllegalArgumentException("CSV must include question and expected_answer columns.");
+            }
+
+            Integer pageIndex = firstHeader(headers, "expected_page", "page");
+            Integer categoryIndex = firstHeader(headers, "category", "question_type", "type");
+            Integer difficultyIndex = firstHeader(headers, "difficulty");
+
+            int nextQuestionNo = evaluationQuestionRepository.findByDatasetId(datasetId).size() + 1;
+            int skippedCount = 0;
+            List<EvaluationQuestion> importedQuestions = new ArrayList<>();
+
+            for (int rowIndex = 1; rowIndex < csvRows.size(); rowIndex++) {
+                List<String> row = csvRows.get(rowIndex);
+                String questionText = cell(row, questionIndex).trim();
+                String groundTruthAnswer = cell(row, answerIndex).trim();
+                if (questionText.isEmpty() || groundTruthAnswer.isEmpty()) {
+                    skippedCount++;
+                    continue;
+                }
+
+                EvaluationQuestion question = new EvaluationQuestion();
+                question.setDatasetId(datasetId);
+                question.setCourseId(dataset.getCourseId());
+                question.setQuestionNo(nextQuestionNo++);
+                question.setQuestionText(questionText);
+                question.setGroundTruthAnswer(groundTruthAnswer);
+                question.setExpectedPage(parseOptionalInt(cell(row, pageIndex)));
+                question.setQuestionType(defaultIfBlank(cell(row, categoryIndex), "FACTUAL"));
+                question.setDifficulty(defaultIfBlank(cell(row, difficultyIndex), "MEDIUM"));
+                question.setCreatedAt(LocalDateTime.now());
+                importedQuestions.add(question);
+            }
+
+            evaluationQuestionRepository.saveAll(importedQuestions);
+            dataset.setUpdatedAt(LocalDateTime.now());
+            evaluationDatasetRepository.save(dataset);
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("datasetId", datasetId);
+            result.put("importedCount", importedQuestions.size());
+            result.put("skippedCount", skippedCount);
+            result.put("checksum", sha256(bytes));
+            result.put("filename", file.getOriginalFilename());
+            return result;
+        } catch (IOException exception) {
+            throw new RuntimeException("Could not read CSV file: " + exception.getMessage(), exception);
+        }
     }
 
     public Experiment createExperiment(
@@ -223,6 +300,115 @@ public class EvaluationService {
         }
 
         return csvPath;
+    }
+
+    private String stripUtf8Bom(String value) {
+        if (value != null && !value.isEmpty() && value.charAt(0) == '\uFEFF') {
+            return value.substring(1);
+        }
+        return value;
+    }
+
+    private List<List<String>> parseCsv(String content) {
+        List<List<String>> rows = new ArrayList<>();
+        List<String> row = new ArrayList<>();
+        StringBuilder cell = new StringBuilder();
+        boolean inQuotes = false;
+
+        for (int index = 0; index < content.length(); index++) {
+            char current = content.charAt(index);
+            if (current == '"') {
+                if (inQuotes && index + 1 < content.length() && content.charAt(index + 1) == '"') {
+                    cell.append('"');
+                    index++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            } else if (current == ',' && !inQuotes) {
+                row.add(cell.toString());
+                cell.setLength(0);
+            } else if ((current == '\n' || current == '\r') && !inQuotes) {
+                if (current == '\r' && index + 1 < content.length() && content.charAt(index + 1) == '\n') {
+                    index++;
+                }
+                row.add(cell.toString());
+                cell.setLength(0);
+                if (!isBlankRow(row)) {
+                    rows.add(row);
+                }
+                row = new ArrayList<>();
+            } else {
+                cell.append(current);
+            }
+        }
+
+        row.add(cell.toString());
+        if (!isBlankRow(row)) {
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    private boolean isBlankRow(List<String> row) {
+        return row.stream().allMatch(value -> value == null || value.trim().isEmpty());
+    }
+
+    private Map<String, Integer> headerIndex(List<String> headerRow) {
+        Map<String, Integer> headers = new HashMap<>();
+        for (int index = 0; index < headerRow.size(); index++) {
+            headers.put(normalizeHeader(headerRow.get(index)), index);
+        }
+        return headers;
+    }
+
+    private String normalizeHeader(String header) {
+        return header == null ? "" : header.trim().toLowerCase().replace("-", "_");
+    }
+
+    private Integer firstHeader(Map<String, Integer> headers, String... names) {
+        for (String name : names) {
+            Integer index = headers.get(normalizeHeader(name));
+            if (index != null) {
+                return index;
+            }
+        }
+        return null;
+    }
+
+    private String cell(List<String> row, Integer index) {
+        if (index == null || index < 0 || index >= row.size()) {
+            return "";
+        }
+        return row.get(index) == null ? "" : row.get(index);
+    }
+
+    private String defaultIfBlank(String value, String fallback) {
+        return value == null || value.trim().isEmpty() ? fallback : value.trim();
+    }
+
+    private Integer parseOptionalInt(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private String sha256(byte[] bytes) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(bytes);
+            StringBuilder builder = new StringBuilder();
+            for (byte item : hash) {
+                builder.append(String.format("%02x", item));
+            }
+            return builder.toString();
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is not available.", exception);
+        }
     }
 
     private String csvCell(String value) {

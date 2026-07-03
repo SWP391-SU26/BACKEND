@@ -26,16 +26,42 @@ class LocalLoraGenerator:
         self.adapter_dir = adapter_dir
         self.max_new_tokens = max_new_tokens
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        load_kwargs = {
-            "cache_dir": str(cache_dir),
-            "local_files_only": True,
-        }
         self.tokenizer = AutoTokenizer.from_pretrained(adapter_dir, local_files_only=True)
-        local_base = find_cached_snapshot(cache_dir, base_model, "config.json")
-        base = AutoModelForCausalLM.from_pretrained(str(local_base or base_model), **load_kwargs)
+        base = self._load_base_model(AutoModelForCausalLM, torch, base_model, cache_dir)
         self.model = PeftModel.from_pretrained(base, adapter_dir)
         self.model.to(self.device)
         self.model.eval()
+
+    def _load_base_model(self, model_cls, torch_module, base_model: str, cache_dir: Path):
+        dtype = torch_module.float16 if self.device == "cuda" else torch_module.float32
+        local_base = find_cached_snapshot(cache_dir, base_model, "config.json")
+        if local_base:
+            return model_cls.from_pretrained(
+                str(local_base),
+                local_files_only=True,
+                torch_dtype=dtype,
+            )
+
+        try:
+            return model_cls.from_pretrained(
+                base_model,
+                cache_dir=str(cache_dir),
+                local_files_only=True,
+                torch_dtype=dtype,
+            )
+        except Exception:
+            try:
+                return model_cls.from_pretrained(
+                    base_model,
+                    local_files_only=True,
+                    torch_dtype=dtype,
+                )
+            except Exception:
+                return model_cls.from_pretrained(
+                    base_model,
+                    cache_dir=str(cache_dir),
+                    torch_dtype=dtype,
+                )
 
     def generate(self, question: str, contexts: list[RetrievedChunk]) -> str:
         import torch

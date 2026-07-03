@@ -1,0 +1,10 @@
+{
+  "source_csv": "C:\\DEV\\SWP\\ground_truth_triethocmaclenin_100.csv",
+  "train_path": "C:\\DEV\\SWP\\BACKEND\\data\\finetuning\\train.jsonl",
+  "validation_path": "C:\\DEV\\SWP\\BACKEND\\data\\finetuning\\validation.jsonl",
+  "total_examples": 100,
+  "train_examples": 80,
+  "validation_examples": 20,
+  "validation_ratio": 0.2,
+  "seed": 42
+}

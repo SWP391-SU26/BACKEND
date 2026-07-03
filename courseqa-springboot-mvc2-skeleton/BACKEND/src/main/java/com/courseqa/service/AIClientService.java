@@ -21,8 +21,10 @@ public class AIClientService {
     private String pythonAiServiceUrl;
 
     private static final int CHAT_TIMEOUT_SECONDS = 30;
-    private static final int BENCHMARK_TIMEOUT_SECONDS = 120;
     private static final int MAX_RETRIES = 3;
+
+    @Value("${python.ai.service.benchmark-timeout-seconds:1800}")
+    private int benchmarkTimeoutSeconds;
 
     public AIClientService(WebClient webClient) {
         this.webClient = webClient;
@@ -116,7 +118,7 @@ public class AIClientService {
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(responseType)
-                .timeout(Duration.ofSeconds(BENCHMARK_TIMEOUT_SECONDS))
+                .timeout(Duration.ofSeconds(benchmarkTimeoutSeconds))
                 .retryWhen(Retry.backoff(MAX_RETRIES, Duration.ofMillis(200))
                         .filter(throwable -> isRetryableError(throwable))
                         .doBeforeRetry(retrySignal ->
