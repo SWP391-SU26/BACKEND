@@ -17,7 +17,7 @@ cd C:\DEV\SWP\BACKEND
 .venv\Scripts\activate.bat
 set GENERATION_PROVIDER=lora
 set LORA_ADAPTER_DIR=models\qwen-rag-lora
-set LOCAL_MAX_NEW_TOKENS=80
+set LOCAL_MAX_NEW_TOKENS=40
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
 ```
 
@@ -148,7 +148,7 @@ Muốn chạy adapter mới:
 ```cmd
 set GENERATION_PROVIDER=lora
 set LORA_ADAPTER_DIR=models\final-demo
-set LOCAL_MAX_NEW_TOKENS=80
+set LOCAL_MAX_NEW_TOKENS=40
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
 ```
 
@@ -211,5 +211,5 @@ Benchmark Fine-tuning lâu:
 - Có thể giảm output bằng:
 
 ```cmd
-set LOCAL_MAX_NEW_TOKENS=80
+set LOCAL_MAX_NEW_TOKENS=40
 ```

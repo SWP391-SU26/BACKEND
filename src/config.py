@@ -36,7 +36,7 @@ class AppSettings:
     openai_chat_model: str = "gpt-4o-mini"
     generation_provider: str = "auto"
     local_base_model: str = "Qwen/Qwen2.5-0.5B-Instruct"
-    local_max_new_tokens: int = 180
+    local_max_new_tokens: int = 40
 
 
 def load_settings() -> AppSettings:
@@ -61,7 +61,7 @@ def load_settings() -> AppSettings:
         openai_chat_model=os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini"),
         generation_provider=os.getenv("GENERATION_PROVIDER", "auto"),
         local_base_model=os.getenv("LOCAL_BASE_MODEL", "Qwen/Qwen2.5-0.5B-Instruct"),
-        local_max_new_tokens=int(os.getenv("LOCAL_MAX_NEW_TOKENS", "180")),
+        local_max_new_tokens=int(os.getenv("LOCAL_MAX_NEW_TOKENS", "40")),
     )
 
 
