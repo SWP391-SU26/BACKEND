@@ -7,10 +7,13 @@ import com.courseqa.model.entity.EmbeddingModel;
 import com.courseqa.repository.ChunkEmbeddingRepository;
 import com.courseqa.repository.DocumentChunkRepository;
 import com.courseqa.repository.EmbeddingModelRepository;
+import java.text.Normalizer;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
@@ -21,6 +24,11 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class EmbeddingService {
     private static final int DEFAULT_DIMENSION = 128;
+    private static final Set<String> SEARCH_STOPWORDS = Set.of(
+            "trong", "tai", "lieu", "document", "file", "co", "khong", "cua", "cho",
+            "voi", "hay", "la", "tu", "mot", "cac", "nhung", "nay", "do", "duoc",
+            "the", "and", "or", "not", "with", "from", "this", "that"
+    );
 
     private final EmbeddingModelRepository embeddingModelRepository;
     private final DocumentChunkRepository documentChunkRepository;
@@ -133,6 +141,78 @@ public class EmbeddingService {
         return queryNorm == 0.0 || contentNorm == 0.0 ? 0.0 : dot / (queryNorm * contentNorm);
     }
 
+    public double[] embedText(String text, int dimension) {
+        return createHashedVector(text, dimension);
+    }
+
+    public double cosineVectorScore(double[] left, double[] right) {
+        if (left == null || right == null || left.length == 0 || right.length == 0 || left.length != right.length) {
+            return 0.0;
+        }
+
+        double dot = 0.0;
+        double leftNorm = 0.0;
+        double rightNorm = 0.0;
+        for (int index = 0; index < left.length; index++) {
+            dot += left[index] * right[index];
+            leftNorm += left[index] * left[index];
+            rightNorm += right[index] * right[index];
+        }
+        if (leftNorm == 0.0 || rightNorm == 0.0) {
+            return 0.0;
+        }
+        return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm));
+    }
+
+    public double exactTokenOverlapScore(String query, String content) {
+        List<String> queryTokens = tokenize(query).stream()
+                .filter(this::isMeaningfulSearchToken)
+                .toList();
+        if (queryTokens.isEmpty() || content == null || content.isBlank()) {
+            return 0.0;
+        }
+
+        String normalizedContent = content.toLowerCase(Locale.ROOT);
+        for (String token : queryTokens) {
+            if (normalizedContent.contains(token)) {
+                return containsJapanese(token) ? 0.95 : 0.75;
+            }
+        }
+        return 0.0;
+    }
+
+    public double[] parseJsonVector(String embeddingJson) {
+        if (embeddingJson == null || embeddingJson.isBlank()) {
+            return new double[0];
+        }
+
+        String trimmed = embeddingJson.trim();
+        if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) {
+            return new double[0];
+        }
+
+        String body = trimmed.substring(1, trimmed.length() - 1).trim();
+        if (body.isEmpty()) {
+            return new double[0];
+        }
+
+        String[] rawValues = body.split(",");
+        List<Double> values = new ArrayList<>(rawValues.length);
+        for (String rawValue : rawValues) {
+            try {
+                values.add(Double.parseDouble(rawValue.trim()));
+            } catch (NumberFormatException ignored) {
+                return new double[0];
+            }
+        }
+
+        double[] vector = new double[values.size()];
+        for (int index = 0; index < values.size(); index++) {
+            vector[index] = values.get(index);
+        }
+        return vector;
+    }
+
     private EmbeddingModel createDefaultModel() {
         EmbeddingModel model = new EmbeddingModel();
         model.setModelName("keyword-hash-128");
@@ -193,6 +273,33 @@ public class EmbeddingService {
         return List.of(text.toLowerCase(Locale.ROOT).split("[^\\p{L}\\p{N}]+")).stream()
                 .filter(token -> !token.isBlank())
                 .toList();
+    }
+
+    private boolean isMeaningfulSearchToken(String token) {
+        if (containsJapanese(token)) {
+            return true;
+        }
+        String normalized = stripMarks(token);
+        if (SEARCH_STOPWORDS.contains(normalized)) {
+            return false;
+        }
+        return normalized.length() >= 4 || normalized.matches(".*[a-z].*\\d.*|.*\\d.*[a-z].*");
+    }
+
+    private String stripMarks(String token) {
+        if (token == null || token.isBlank()) {
+            return "";
+        }
+        return Normalizer.normalize(token, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .toLowerCase(Locale.ROOT);
+    }
+
+    private boolean containsJapanese(String token) {
+        return token.codePoints().anyMatch(codePoint ->
+                (codePoint >= 0x3040 && codePoint <= 0x30FF) ||
+                (codePoint >= 0x4E00 && codePoint <= 0x9FFF)
+        );
     }
 
     private String defaultString(String value, String fallback) {

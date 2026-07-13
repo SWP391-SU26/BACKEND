@@ -71,6 +71,7 @@ public static class CreateEmbeddingModelRequest {
     }
 
     public static class RetrievedChunk {
+        public UUID retrievalResultId;
         public UUID chunkId;
         public UUID documentId;
         public String documentTitle;
@@ -136,6 +137,8 @@ public static class CreateEmbeddingModelRequest {
 
     public static class RetrievalResponse {
         public UUID retrievalQueryId;
+        public UUID embeddingModelId;
+        public String embeddingModelName;
         public Boolean answerable;
         public String noAnswerReason;
         public List<RetrievedChunk> results;
@@ -144,6 +147,9 @@ public static class CreateEmbeddingModelRequest {
     public static class CitationResponse {
         public UUID citationId;
         public UUID assistantMessageId;
+        public UUID retrievalResultId;
+        public UUID chunkId;
+        public UUID documentId;
         public String documentTitle;
         public Integer pageStart;
         public Integer pageEnd;
@@ -153,6 +159,9 @@ public static class CreateEmbeddingModelRequest {
             CitationResponse response = new CitationResponse();
             response.citationId = citation.getCitationId();
             response.assistantMessageId = citation.getAssistantMessageId();
+            response.retrievalResultId = citation.getRetrievalResultId();
+            response.chunkId = citation.getChunkId();
+            response.documentId = citation.getDocumentId();
             response.documentTitle = citation.getDocumentTitle();
             response.pageStart = citation.getPageStart();
             response.pageEnd = citation.getPageEnd();

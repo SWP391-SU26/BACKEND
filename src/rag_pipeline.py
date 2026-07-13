@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+import unicodedata
 
 from .chunker import chunk_pages
 from .config import AppSettings
@@ -194,6 +195,12 @@ class RAGPipeline:
         contexts: list[RetrievedChunk],
         sources: list[dict[str, Any]],
     ) -> str:
+        if self._is_list_question(question):
+            return self._generate_list_answer(question, contexts)
+
+        if self._is_summary_question(question):
+            return self._generate_summary_answer(contexts)
+
         query_terms = set(tokenize(question))
         candidates: list[tuple[float, str, RetrievedChunk]] = []
         for chunk in contexts:
@@ -206,15 +213,201 @@ class RAGPipeline:
                 candidates.append((score, sentence, chunk))
 
         candidates.sort(key=lambda item: item[0], reverse=True)
-        selected = [sentence for score, sentence, _chunk in candidates[:4] if score > 0]
-        if not selected:
+        selected_candidates = [(score, sentence, chunk) for score, sentence, chunk in candidates[:4] if score > 0]
+        if not selected_candidates:
             return OUT_OF_SCOPE_MESSAGE
 
+        selected = [sentence for _score, sentence, _chunk in selected_candidates]
+        selected_chunks: list[RetrievedChunk] = []
+        seen_chunk_ids: set[str] = set()
+        for _score, _sentence, chunk in selected_candidates:
+            if chunk.chunk_id in seen_chunk_ids:
+                continue
+            seen_chunk_ids.add(chunk.chunk_id)
+            selected_chunks.append(chunk)
+
         source_text = "; ".join(
-            f"[{source['filename']}, {source['location']}]" for source in sources[:3]
+            f"[{source['filename']}, {source['location']}]" for source in build_sources(selected_chunks)[:3]
         )
         body = " ".join(selected)
         return f"Dựa trên tài liệu, {body}\n\nNguồn: {source_text}"
+
+    def _generate_list_answer(self, question: str, contexts: list[RetrievedChunk]) -> str:
+        selected_chunks: list[RetrievedChunk] = []
+        items: list[str] = []
+        seen_items: set[str] = set()
+
+        for chunk in sorted(contexts, key=lambda item: (item.page or 999999, item.chunk_id)):
+            for item in self._items_from_chunk_for_list(chunk.content):
+                key = self._normalize_for_summary(item)
+                if not key or key in seen_items or self._is_weak_list_item(item):
+                    continue
+                seen_items.add(key)
+                items.append(self._trim_summary_item(item, limit=180))
+                if chunk not in selected_chunks:
+                    selected_chunks.append(chunk)
+                if len(items) >= 40:
+                    break
+            if len(items) >= 40:
+                break
+
+        if not items:
+            return OUT_OF_SCOPE_MESSAGE
+
+        source_text = "; ".join(
+            f"[{source['filename']}, {source['location']}]" for source in build_sources(selected_chunks)[:12]
+        )
+        body = "\n".join(f"- {item}" for item in items)
+        return f"Dựa trên tài liệu, {self._list_answer_label(question)}:\n{body}\n\nNguồn: {source_text}"
+
+    def _items_from_chunk_for_list(self, content: str) -> list[str]:
+        sentences = split_sentences(content)
+        if sentences:
+            return sentences
+        cleaned = " ".join((content or "").split())
+        return [cleaned] if cleaned else []
+
+    def _is_weak_list_item(self, item: str) -> bool:
+        normalized = self._normalize_for_summary(item)
+        if len(normalized) < 2:
+            return True
+        return normalized in {"mon hoc", "giang vien"}
+
+    def _list_answer_label(self, question: str) -> str:
+        normalized = self._normalize_for_summary(question)
+        if "tu vung" in normalized:
+            return "danh sách từ vựng tìm thấy"
+        if "ngu phap" in normalized or "mau cau" in normalized:
+            return "các điểm ngữ pháp/mẫu câu tìm thấy"
+        if "bai tap" in normalized or "vi du" in normalized:
+            return "các ví dụ/bài tập tìm thấy"
+        return "các nội dung tìm thấy"
+
+    def _generate_summary_answer(self, contexts: list[RetrievedChunk]) -> str:
+        selected_chunks: list[RetrievedChunk] = []
+        selected_items: list[str] = []
+        seen_items: set[str] = set()
+
+        for chunk in sorted(contexts, key=lambda item: (item.page or 999999, item.chunk_id)):
+            item = self._summary_item_from_chunk(chunk.content)
+            if not item:
+                continue
+            key = self._normalize_for_summary(item)
+            if key in seen_items or self._is_weak_summary_item(item):
+                continue
+            seen_items.add(key)
+            selected_items.append(item)
+            selected_chunks.append(chunk)
+            if len(selected_items) >= 16:
+                break
+
+        if not selected_items:
+            return OUT_OF_SCOPE_MESSAGE
+
+        source_text = "; ".join(
+            f"[{source['filename']}, {source['location']}]" for source in build_sources(selected_chunks)[:12]
+        )
+        body = "\n".join(f"- {item}" for item in selected_items)
+        return f"Dựa trên tài liệu, nội dung chính gồm:\n{body}\n\nNguồn: {source_text}"
+
+    def _summary_item_from_chunk(self, content: str) -> str:
+        sentences = split_sentences(content)
+        if not sentences:
+            return ""
+
+        preferred_keywords = [
+            "tu vung",
+            "ことば",
+            "ngu phap",
+            "ぶんぽう",
+            "tro tu",
+            "phuong tien",
+            "cach thuc",
+            "cac nhom dong tu",
+            "dong tu dac biet",
+            "the て",
+            "ください",
+            "かた",
+            "わかります",
+            "どの",
+            "どれ",
+            "チャレンジ",
+        ]
+
+        for sentence in sentences:
+            normalized = self._normalize_for_summary(sentence)
+            if any(keyword in normalized for keyword in preferred_keywords):
+                return self._trim_summary_item(sentence)
+
+        first = sentences[0]
+        if len(first.strip()) < 8 and len(sentences) > 1:
+            first = f"{first} {sentences[1]}"
+        return self._trim_summary_item(first)
+
+    def _summary_priority(self, item: str) -> int:
+        normalized = self._normalize_for_summary(item)
+        priority = 10
+        if "mon hoc" in normalized or "第" in normalized:
+            priority += 35
+        if "tu vung" in normalized or "ことば" in normalized:
+            priority += 45
+        if "ngu phap" in normalized or "ぶんぽう" in normalized:
+            priority += 45
+        if "tro tu" in normalized or "phuong tien" in normalized or "cach thuc" in normalized:
+            priority += 35
+        if "cac nhom dong tu" in normalized or "dong tu dac biet" in normalized:
+            priority += 35
+        if "the て" in normalized or "ください" in normalized or "かた" in normalized:
+            priority += 35
+        if "わかります" in normalized or "どの" in normalized or "どれ" in normalized:
+            priority += 30
+        if "チャレンジ" in normalized or "challenge" in normalized:
+            priority += 20
+        if len(item) > 80:
+            priority += 5
+        return priority
+
+    def _is_weak_summary_item(self, item: str) -> bool:
+        normalized = self._normalize_for_summary(item)
+        important_short_items = ["tu vung", "ことば", "ngu phap", "ぶんぽう"]
+        if any(keyword in normalized for keyword in important_short_items):
+            return False
+        return len(item.strip()) < 18
+
+    def _trim_summary_item(self, text: str, limit: int = 230) -> str:
+        cleaned = " ".join((text or "").split())
+        if len(cleaned) <= limit:
+            return cleaned
+        return cleaned[:limit].rstrip(" ,.;:") + "..."
+
+    def _is_summary_question(self, question: str) -> bool:
+        normalized = self._normalize_for_summary(question)
+        return any(
+            phrase in normalized
+            for phrase in ["tong hop", "tom tat", "summary", "summarize", "noi dung chinh"]
+        )
+
+    def _is_list_question(self, question: str) -> bool:
+        normalized = self._normalize_for_summary(question)
+        return any(
+            phrase in normalized
+            for phrase in [
+                "tat ca",
+                "toan bo",
+                "liet ke",
+                "danh sach",
+                "tu vung",
+                "ngu phap",
+                "mau cau",
+                "vi du",
+                "bai tap",
+            ]
+        )
+
+    def _normalize_for_summary(self, text: str) -> str:
+        without_marks = unicodedata.normalize("NFD", text or "")
+        without_marks = "".join(char for char in without_marks if unicodedata.category(char) != "Mn")
+        return " ".join(without_marks.lower().split())
 
 
 def build_sources(chunks: list[RetrievedChunk]) -> list[dict[str, Any]]:

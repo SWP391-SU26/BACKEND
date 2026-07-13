@@ -36,6 +36,12 @@ public class AuthController {
         return ApiResponse.ok(authService.login(request));
     }
 
+    @PostMapping("/forgot-password")
+    public ApiResponse<String> forgotPassword(@RequestBody AuthDto.ForgotPasswordRequest request) {
+        authService.forgotPassword(request);
+        return ApiResponse.ok("If the email exists, a new password has been sent.");
+    }
+
     @PostMapping("/logout/{userId}")
     public ApiResponse<Void> logout(@PathVariable UUID userId) {
         authService.logout(userId);

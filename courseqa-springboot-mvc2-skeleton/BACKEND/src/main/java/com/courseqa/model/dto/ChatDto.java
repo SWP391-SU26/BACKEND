@@ -48,12 +48,37 @@ public class ChatDto {
     }
 
     public static class CitationItem {
+        public UUID citationId;
+        public UUID assistantMessageId;
+        public UUID retrievalResultId;
+        public UUID chunkId;
+        public UUID documentId;
         public String documentTitle;
         public Integer pageStart;
         public Integer pageEnd;
         public String quoteText;
 
         public CitationItem(String documentTitle, Integer pageStart, Integer pageEnd, String quoteText) {
+            this.documentTitle = documentTitle;
+            this.pageStart = pageStart;
+            this.pageEnd = pageEnd;
+            this.quoteText = quoteText;
+        }
+
+        public CitationItem(UUID citationId,
+                            UUID assistantMessageId,
+                            UUID retrievalResultId,
+                            UUID chunkId,
+                            UUID documentId,
+                            String documentTitle,
+                            Integer pageStart,
+                            Integer pageEnd,
+                            String quoteText) {
+            this.citationId = citationId;
+            this.assistantMessageId = assistantMessageId;
+            this.retrievalResultId = retrievalResultId;
+            this.chunkId = chunkId;
+            this.documentId = documentId;
             this.documentTitle = documentTitle;
             this.pageStart = pageStart;
             this.pageEnd = pageEnd;
@@ -66,6 +91,9 @@ public class ChatDto {
         public UUID userMessageId;
         public UUID assistantMessageId;
         public String answer;
+        public String answerMode;
+        public String modelName;
+        public UUID retrievalQueryId;
         public List<CitationItem> citations;
 
         public AskResponse(UUID chatSessionId,
@@ -77,6 +105,24 @@ public class ChatDto {
             this.userMessageId = userMessageId;
             this.assistantMessageId = assistantMessageId;
             this.answer = answer;
+            this.citations = citations;
+        }
+
+        public AskResponse(UUID chatSessionId,
+                           UUID userMessageId,
+                           UUID assistantMessageId,
+                           String answer,
+                           String answerMode,
+                           String modelName,
+                           UUID retrievalQueryId,
+                           List<CitationItem> citations) {
+            this.chatSessionId = chatSessionId;
+            this.userMessageId = userMessageId;
+            this.assistantMessageId = assistantMessageId;
+            this.answer = answer;
+            this.answerMode = answerMode;
+            this.modelName = modelName;
+            this.retrievalQueryId = retrievalQueryId;
             this.citations = citations;
         }
     }

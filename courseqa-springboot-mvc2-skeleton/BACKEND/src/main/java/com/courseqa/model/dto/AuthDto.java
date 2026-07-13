@@ -20,6 +20,10 @@ public static class RegisterRequest {
         public String password;
     }
 
+    public static class ForgotPasswordRequest {
+        public String email;
+    }
+
     public static class UpdateUserRoleRequest {
         public String roleName;
     }

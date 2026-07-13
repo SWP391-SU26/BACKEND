@@ -83,7 +83,7 @@ public class ChatController {
         // TODO: Implement askQuestion logic:
         // 1. Gọi chatService.askQuestion(sessionId, question)
         // 2. TODO sẽ implement khi TV6 confirm API contract
-    ChatDto.AskResponse response = chatService.askQuestion(sessionId, request.getQuestion());
+    ChatDto.AskResponse response = chatService.askQuestion(sessionId, request.getQuestion(), request.getAnswerMode());
 
     return ResponseEntity.ok(ApiResponse.ok(response));
     }
@@ -178,6 +178,7 @@ public class ChatController {
     public static class AskQuestionRequest {
         @NotBlank(message = "question is required and cannot be empty")
         private String question;
+        private String answerMode;
 
         public AskQuestionRequest() {}
 
@@ -191,6 +192,14 @@ public class ChatController {
 
         public void setQuestion(String question) {
             this.question = question;
+        }
+
+        public String getAnswerMode() {
+            return answerMode;
+        }
+
+        public void setAnswerMode(String answerMode) {
+            this.answerMode = answerMode;
         }
     }
 

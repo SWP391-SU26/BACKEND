@@ -25,7 +25,7 @@ from src.finetuning import prepare_dataset, validate_jsonl
 from src.job_manager import BackgroundJobManager
 from src.rag_pipeline import RAGPipeline
 from src.storage import SQLiteStore
-from src.text_utils import safe_filename
+from src.text_utils import safe_filename, tokenize
 
 
 class SessionCreateRequest(BaseModel):
@@ -100,6 +100,35 @@ def build_pipeline() -> tuple[RAGPipeline, SQLiteStore]:
     store = SQLiteStore(settings.db_path)
     embedding_provider = get_embedding_provider(settings)
     return RAGPipeline(settings, store, embedding_provider), store
+
+
+def select_sources_for_answer(answer: str, sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not answer or not sources:
+        return sources[:12]
+
+    sources_in_answer: list[tuple[int, dict[str, Any]]] = []
+    for source in sources:
+        label = f"[{source.get('filename')}, {source.get('location')}]"
+        position = answer.find(label)
+        if position >= 0:
+            sources_in_answer.append((position, source))
+    if sources_in_answer:
+        sources_in_answer.sort(key=lambda item: item[0])
+        return [source for _position, source in sources_in_answer[:12]]
+
+    answer_terms = set(tokenize(answer))
+    ranked: list[tuple[int, int, dict[str, Any]]] = []
+    for index, source in enumerate(sources):
+        preview = str(source.get("preview") or "")
+        preview_terms = set(tokenize(preview))
+        score = len(answer_terms & preview_terms)
+        if preview and preview[:80] in answer:
+            score += 20
+        ranked.append((score, index, source))
+
+    ranked.sort(key=lambda item: (-item[0], item[1]))
+    selected = [source for score, _index, source in ranked[:12] if score > 0]
+    return selected or sources[:12]
 
 
 pipeline, store = build_pipeline()
@@ -287,11 +316,13 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
         answer = pipeline._generate_answer(request.question, contexts, sources_dict_list)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Không thể tạo câu trả lời: {exc}") from exc
+
+    selected_sources = select_sources_for_answer(answer, sources_dict_list)
         
     return GenerateResponse(
         answer=answer,
         is_out_of_scope=(answer == OUT_OF_SCOPE_MESSAGE),
-        sources=[GenerateSource(**s) for s in sources_dict_list]
+        sources=[GenerateSource(**s) for s in selected_sources]
     )
 
 @app.post("/ai/chat-finetuned", response_model=ChatFinetunedResponse)

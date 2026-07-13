@@ -5,32 +5,58 @@ import com.courseqa.model.entity.User;
 import com.courseqa.model.entity.UserRole;
 import com.courseqa.repository.UserRepository;
 import com.courseqa.repository.UserRoleRepository;
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.mail.MailException;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AuthService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(AuthService.class);
     private static final List<String> ALLOWED_ROLES = List.of("ADMIN", "USER", "TEACHER", "STUDENT", "RESEARCHER");
+    private static final SecureRandom PASSWORD_RANDOM = new SecureRandom();
+    private static final String PASSWORD_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
 
     private final UserRepository userRepository;
     private final UserRoleRepository userRoleRepository;
     private final PasswordEncoder passwordEncoder;
+    private final ObjectProvider<JavaMailSender> mailSenderProvider;
+    private final String mailFrom;
+    private final String mailHost;
+    private final String mailUsername;
+    private final String mailPassword;
 
     public AuthService(
             UserRepository userRepository,
             UserRoleRepository userRoleRepository,
-            PasswordEncoder passwordEncoder
+            PasswordEncoder passwordEncoder,
+            ObjectProvider<JavaMailSender> mailSenderProvider,
+            @Value("${app.mail.from:no-reply@courseqa.local}") String mailFrom,
+            @Value("${spring.mail.host:}") String mailHost,
+            @Value("${spring.mail.username:}") String mailUsername,
+            @Value("${spring.mail.password:}") String mailPassword
     ) {
         this.userRepository = userRepository;
         this.userRoleRepository = userRoleRepository;
         this.passwordEncoder = passwordEncoder;
+        this.mailSenderProvider = mailSenderProvider;
+        this.mailFrom = mailFrom;
+        this.mailHost = mailHost;
+        this.mailUsername = mailUsername;
+        this.mailPassword = mailPassword;
     }
 
     @Transactional
@@ -95,6 +121,40 @@ public class AuthService {
         User savedUser = userRepository.save(user);
 
         return buildAuthResponse(savedUser);
+    }
+
+    @Transactional
+    public void forgotPassword(AuthDto.ForgotPasswordRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Forgot password request is required.");
+        }
+
+        String email = normalizeEmail(request.email);
+        User user = userRepository.findByEmail(email).orElse(null);
+        if (user == null || Boolean.FALSE.equals(user.getIsActive())) {
+            return;
+        }
+
+        if (isBlank(mailHost) || isBlank(mailUsername) || isBlank(mailPassword)) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Email service is not configured.");
+        }
+
+        JavaMailSender mailSender = mailSenderProvider.getIfAvailable();
+        if (mailSender == null) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Email service is not configured.");
+        }
+
+        String newPassword = generateRandomPassword();
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setUpdatedAt(LocalDateTime.now());
+        userRepository.save(user);
+
+        try {
+            sendNewPasswordEmail(mailSender, user, newPassword);
+        } catch (MailException error) {
+            LOGGER.warn("Could not send reset password email to {}.", user.getEmail(), error);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Could not send reset password email.");
+        }
     }
 
     public void logout(UUID userId) {
@@ -178,6 +238,37 @@ public class AuthService {
         }
         return getRoleNames(userId).stream()
                 .anyMatch(role -> "ADMIN".equalsIgnoreCase(role));
+    }
+
+    private String generateRandomPassword() {
+        StringBuilder password = new StringBuilder();
+        for (int index = 0; index < 12; index++) {
+            password.append(PASSWORD_CHARS.charAt(PASSWORD_RANDOM.nextInt(PASSWORD_CHARS.length())));
+        }
+        return password.toString();
+    }
+
+    private void sendNewPasswordEmail(JavaMailSender mailSender, User user, String newPassword) {
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(mailFrom);
+        message.setTo(user.getEmail());
+        message.setSubject("FStu password reset");
+        message.setText("""
+                Hello %s,
+
+                We received a forgot password request for your FStu account.
+
+                Your new temporary password is:
+                %s
+
+                You can now log in with this password.
+                If you did not request this, please contact the system administrator.
+                """.formatted(user.getFullName(), newPassword));
+        mailSender.send(message);
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 
     private String normalizeEmail(String email) {

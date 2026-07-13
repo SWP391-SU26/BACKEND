@@ -41,6 +41,14 @@ public class PythonAiDto {
         public List<Map<String, Object>> sources;
     }
 
+    public static class ChatFinetunedRequest {
+        public String question;
+    }
+
+    public static class ChatFinetunedResponse {
+        public String answer;
+    }
+
     // What we send to POST /api/benchmarks/run
     public static class BenchmarkRequest {
         public String test_set_path;
