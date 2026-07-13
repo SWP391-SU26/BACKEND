@@ -13,7 +13,7 @@ DB_DIR = DATA_DIR / "db"
 REPORTS_DIR = BASE_DIR / "reports"
 FINETUNING_DIR = DATA_DIR / "finetuning"
 MODEL_CACHE_DIR = DATA_DIR / "models_cache"
-LORA_ADAPTER_DIR = BASE_DIR / "models" / "qwen-chatbot-lora-extracted" / "content" / "qwen-chatbot-lora"
+LORA_ADAPTER_DIR = BASE_DIR / "models" / "qwen-rag-lora"
 
 
 @dataclass(frozen=True)

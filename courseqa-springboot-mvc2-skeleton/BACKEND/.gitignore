@@ -20,6 +20,7 @@ dependency-reduced-pom.xml
 .env
 .env.local
 .env.*.local
+run-spring-cloudinary.local.bat
 
 # OS
 .DS_Store
