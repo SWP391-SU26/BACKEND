@@ -1,7 +1,7 @@
 package com.courseqa.service;
 
 import com.courseqa.exception.ResourceNotFoundException;
-import com.courseqa.model.dto.PythonAiDto;
+import com.courseqa.model.dto.ChatDto;
 import com.courseqa.model.entity.EvaluationDataset;
 import com.courseqa.model.entity.EvaluationQuestion;
 import com.courseqa.model.entity.Experiment;
@@ -10,25 +10,28 @@ import com.courseqa.repository.EvaluationDatasetRepository;
 import com.courseqa.repository.EvaluationQuestionRepository;
 import com.courseqa.repository.ExperimentRepository;
 import com.courseqa.repository.ExperimentResultRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.BufferedWriter;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.text.Normalizer;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -40,19 +43,20 @@ public class EvaluationService {
     private final EvaluationQuestionRepository evaluationQuestionRepository;
     private final ExperimentRepository experimentRepository;
     private final ExperimentResultRepository experimentResultRepository;
-    private final AIClientService aiClientService;
+    private final ChatService chatService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public EvaluationService(
             EvaluationDatasetRepository evaluationDatasetRepository,
             EvaluationQuestionRepository evaluationQuestionRepository,
             ExperimentRepository experimentRepository,
             ExperimentResultRepository experimentResultRepository,
-            AIClientService aiClientService) {
+            ChatService chatService) {
         this.evaluationDatasetRepository = evaluationDatasetRepository;
         this.evaluationQuestionRepository = evaluationQuestionRepository;
         this.experimentRepository = experimentRepository;
         this.experimentResultRepository = experimentResultRepository;
-        this.aiClientService = aiClientService;
+        this.chatService = chatService;
     }
 
     public EvaluationDataset createDataset(String datasetName, UUID courseId, UUID workspaceId, UUID createdBy) {
@@ -221,7 +225,23 @@ public class EvaluationService {
         experimentRepository.findById(experimentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Experiment not found with id: " + experimentId));
 
-        return experimentResultRepository.findByExperimentId(experimentId);
+        List<ExperimentResult> results = experimentResultRepository.findByExperimentId(experimentId);
+        Map<UUID, EvaluationQuestion> questionsById = new HashMap<>();
+        evaluationQuestionRepository.findAllById(
+                results.stream()
+                        .map(ExperimentResult::getEvaluationQuestionId)
+                        .filter(java.util.Objects::nonNull)
+                        .toList()
+        ).forEach(question -> questionsById.put(question.getEvaluationQuestionId(), question));
+
+        for (ExperimentResult result : results) {
+            EvaluationQuestion question = questionsById.get(result.getEvaluationQuestionId());
+            if (question != null) {
+                result.setQuestionText(question.getQuestionText());
+                result.setGroundTruthAnswer(question.getGroundTruthAnswer());
+            }
+        }
+        return results;
     }
 
     public Experiment runBenchmark(UUID experimentId) {
@@ -242,26 +262,14 @@ public class EvaluationService {
         experimentRepository.save(experiment);
 
         try {
-            Path testSetPath = exportPythonBenchmarkCsv(experiment, questions);
-
-            PythonAiDto.BenchmarkRequest request = new PythonAiDto.BenchmarkRequest();
-            request.test_set_path = testSetPath.toAbsolutePath().toString();
-            request.mode = benchmarkModeFor(experiment);
-            request.generation_provider = "auto";
-
-            PythonAiDto.BenchmarkResponse response = aiClientService.callBenchmark(
-                    request,
-                    PythonAiDto.BenchmarkResponse.class
-            );
-
             experimentResultRepository.deleteByExperimentId(experimentId);
-            persistBenchmarkResults(experiment, questions, response);
+            int resultCount = runBenchmarkWithJavaRag(experiment, questions);
 
             experiment.setStatus("COMPLETED");
             experiment.setCompletedAt(LocalDateTime.now());
             experiment.setUpdatedAt(LocalDateTime.now());
             experimentRepository.save(experiment);
-            log.info("Benchmark completed for experimentId: {}, pythonRunId: {}", experimentId, response.run_id);
+            log.info("Benchmark completed for experimentId: {}, resultCount: {}", experimentId, resultCount);
             return experiment;
         } catch (Exception exception) {
             log.error("Benchmark failed for experimentId {}: {}", experimentId, exception.getMessage(), exception);
@@ -271,35 +279,6 @@ public class EvaluationService {
             experimentRepository.save(experiment);
             throw new RuntimeException("Benchmark failed: " + exception.getMessage(), exception);
         }
-    }
-
-    private Path exportPythonBenchmarkCsv(Experiment experiment, List<EvaluationQuestion> questions) throws IOException {
-        Path outputDir = Path.of("target", "python-benchmark");
-        Files.createDirectories(outputDir);
-        Path csvPath = outputDir.resolve("experiment_" + experiment.getExperimentId() + ".csv").toAbsolutePath();
-
-        try (BufferedWriter writer = Files.newBufferedWriter(csvPath, StandardCharsets.UTF_8)) {
-            writer.write("question,expected_answer,expected_source,expected_page,subject,is_out_of_scope,category");
-            writer.newLine();
-            for (EvaluationQuestion question : questions) {
-                writer.write(csvCell(question.getQuestionText()));
-                writer.write(",");
-                writer.write(csvCell(question.getGroundTruthAnswer()));
-                writer.write(",");
-                writer.write(csvCell(""));
-                writer.write(",");
-                writer.write(csvCell(question.getExpectedPage() == null ? "" : question.getExpectedPage().toString()));
-                writer.write(",");
-                writer.write(csvCell(""));
-                writer.write(",");
-                writer.write("false");
-                writer.write(",");
-                writer.write(csvCell(question.getQuestionType() == null ? "general" : question.getQuestionType()));
-                writer.newLine();
-            }
-        }
-
-        return csvPath;
     }
 
     private String stripUtf8Bom(String value) {
@@ -411,66 +390,177 @@ public class EvaluationService {
         }
     }
 
-    private String csvCell(String value) {
-        String safe = value == null ? "" : value;
-        return "\"" + safe.replace("\"", "\"\"") + "\"";
-    }
-
     private String benchmarkModeFor(Experiment experiment) {
         String type = experiment.getExperimentType() == null ? "" : experiment.getExperimentType().toUpperCase();
         return type.contains("FINE") ? "finetuned_only" : "rag";
     }
 
-    private void persistBenchmarkResults(
+    private int runBenchmarkWithJavaRag(Experiment experiment, List<EvaluationQuestion> questions) {
+        if (experiment.getWorkspaceId() == null) {
+            throw new IllegalStateException("Cannot run RAG benchmark because experiment has no workspaceId.");
+        }
+        if (experiment.getCreatedBy() == null) {
+            throw new IllegalStateException("Cannot run RAG benchmark because experiment has no createdBy user.");
+        }
+
+        String answerMode = benchmarkModeFor(experiment).equals("finetuned_only") ? "FINE_TUNED" : "RAG";
+        UUID sessionId = chatService
+                .createOrGetSession(experiment.getCreatedBy(), experiment.getWorkspaceId())
+                .getChatSessionId();
+
+        int resultCount = 0;
+        for (EvaluationQuestion question : questions) {
+            long startedAt = System.nanoTime();
+            ChatDto.AskResponse answer = chatService.askQuestion(sessionId, question.getQuestionText(), answerMode);
+            int latencyMs = (int) Math.round((System.nanoTime() - startedAt) / 1_000_000.0);
+            persistJavaBenchmarkResult(experiment, question, answer, latencyMs);
+            resultCount++;
+        }
+        return resultCount;
+    }
+
+    private void persistJavaBenchmarkResult(
             Experiment experiment,
-            List<EvaluationQuestion> questions,
-            PythonAiDto.BenchmarkResponse response) {
-        if (response == null || response.results == null) {
-            return;
-        }
+            EvaluationQuestion question,
+            ChatDto.AskResponse answer,
+            int latencyMs) {
+        String generatedAnswer = answer == null ? "" : defaultIfBlank(answer.answer, "");
+        List<ChatDto.CitationItem> citations = answer == null || answer.citations == null
+                ? List.of()
+                : answer.citations;
+        List<String> contexts = citations.stream()
+                .map(citation -> defaultIfBlank(citation.quoteText, ""))
+                .filter(value -> !value.isBlank())
+                .toList();
 
-        int count = Math.min(questions.size(), response.results.size());
-        for (int i = 0; i < count; i++) {
-            Map<String, Object> row = response.results.get(i);
-            EvaluationQuestion question = questions.get(i);
+        double answerF1 = tokenF1(generatedAnswer, question.getGroundTruthAnswer());
 
-            ExperimentResult result = new ExperimentResult();
-            result.setExperimentId(experiment.getExperimentId());
-            result.setEvaluationQuestionId(question.getEvaluationQuestionId());
-            result.setGeneratedAnswer(asString(row.get("actual_answer")));
-            result.setFaithfulness(asDouble(row.get("faithfulness_proxy")));
-            result.setAnswerRelevance(asDouble(row.get("answer_relevancy_proxy")));
-            result.setContextPrecision(asDouble(row.get("context_precision_proxy")));
-            result.setContextRecall(asDouble(row.get("context_recall_proxy")));
-            result.setAnswerCorrectness(asDouble(row.get("answer_token_f1")));
-            result.setSemanticSimilarity(asDouble(row.get("answer_token_f1")));
-            result.setLatencyMs(asInteger(row.get("latency_ms")));
-            result.setCost(BigDecimal.ZERO);
-            result.setCreatedAt(LocalDateTime.now());
-            experimentResultRepository.save(result);
-        }
+        ExperimentResult result = new ExperimentResult();
+        result.setExperimentId(experiment.getExperimentId());
+        result.setEvaluationQuestionId(question.getEvaluationQuestionId());
+        result.setGeneratedAnswer(generatedAnswer);
+        result.setRetrievedContextJson(toJson(contexts));
+        result.setCitationsJson(toJson(citations));
+        result.setFaithfulness(faithfulnessProxy(generatedAnswer, contexts));
+        result.setAnswerRelevance(answerF1);
+        result.setContextPrecision(contextPrecisionProxy(question.getGroundTruthAnswer(), contexts));
+        result.setContextRecall(contextRecallProxy(question.getGroundTruthAnswer(), contexts));
+        result.setAnswerCorrectness(answerF1);
+        result.setSemanticSimilarity(answerF1);
+        result.setLatencyMs(latencyMs);
+        result.setCost(BigDecimal.ZERO);
+        result.setCreatedAt(LocalDateTime.now());
+        experimentResultRepository.save(result);
     }
 
-    private String asString(Object value) {
-        return value == null ? null : value.toString();
-    }
-
-    private Double asDouble(Object value) {
-        if (value instanceof Number number) {
-            return number.doubleValue();
-        }
-        if (value == null) {
-            return null;
-        }
+    private String toJson(Object value) {
         try {
-            return Double.parseDouble(value.toString());
-        } catch (NumberFormatException exception) {
-            return null;
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException exception) {
+            return "[]";
         }
     }
 
-    private Integer asInteger(Object value) {
-        Double number = asDouble(value);
-        return number == null ? null : (int) Math.round(number);
+    private double tokenF1(String actual, String expected) {
+        List<String> actualTokens = tokenize(actual);
+        List<String> expectedTokens = tokenize(expected);
+        if (expectedTokens.isEmpty()) {
+            return actualTokens.isEmpty() ? 1.0 : 0.0;
+        }
+        if (actualTokens.isEmpty()) {
+            return 0.0;
+        }
+
+        Map<String, Integer> actualCounts = tokenCounts(actualTokens);
+        Map<String, Integer> expectedCounts = tokenCounts(expectedTokens);
+        int common = 0;
+        for (Map.Entry<String, Integer> entry : actualCounts.entrySet()) {
+            common += Math.min(entry.getValue(), expectedCounts.getOrDefault(entry.getKey(), 0));
+        }
+        if (common == 0) {
+            return 0.0;
+        }
+        double precision = (double) common / actualTokens.size();
+        double recall = (double) common / expectedTokens.size();
+        return round4(2 * precision * recall / (precision + recall));
     }
+
+    private Map<String, Integer> tokenCounts(List<String> tokens) {
+        Map<String, Integer> counts = new HashMap<>();
+        for (String token : tokens) {
+            counts.put(token, counts.getOrDefault(token, 0) + 1);
+        }
+        return counts;
+    }
+
+    private List<String> tokenize(String text) {
+        if (text == null || text.isBlank()) {
+            return List.of();
+        }
+        String normalized = Normalizer.normalize(text, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .toLowerCase(Locale.ROOT);
+        String[] parts = normalized.split("[^a-z0-9\\p{IsAlphabetic}]+");
+        List<String> tokens = new ArrayList<>();
+        for (String part : parts) {
+            if (!part.isBlank()) {
+                tokens.add(part);
+            }
+        }
+        return tokens;
+    }
+
+    private double faithfulnessProxy(String answer, List<String> contexts) {
+        Set<String> answerTokens = meaningfulTokenSet(answer);
+        Set<String> contextTokens = meaningfulTokenSet(String.join(" ", contexts));
+        if (answerTokens.isEmpty()) {
+            return 0.0;
+        }
+        answerTokens.retainAll(contextTokens);
+        return round4((double) answerTokens.size() / meaningfulTokenSet(answer).size());
+    }
+
+    private double contextRecallProxy(String expectedAnswer, List<String> contexts) {
+        Set<String> expectedTokens = meaningfulTokenSet(expectedAnswer);
+        Set<String> contextTokens = meaningfulTokenSet(String.join(" ", contexts));
+        if (expectedTokens.isEmpty()) {
+            return 0.0;
+        }
+        expectedTokens.retainAll(contextTokens);
+        return round4((double) expectedTokens.size() / meaningfulTokenSet(expectedAnswer).size());
+    }
+
+    private double contextPrecisionProxy(String expectedAnswer, List<String> contexts) {
+        Set<String> expectedTokens = meaningfulTokenSet(expectedAnswer);
+        if (expectedTokens.isEmpty() || contexts.isEmpty()) {
+            return 0.0;
+        }
+        long relevant = contexts.stream()
+                .filter(context -> {
+                    Set<String> contextTokens = meaningfulTokenSet(context);
+                    contextTokens.retainAll(expectedTokens);
+                    return !contextTokens.isEmpty();
+                })
+                .count();
+        return round4((double) relevant / contexts.size());
+    }
+
+    private Set<String> meaningfulTokenSet(String text) {
+        Set<String> stopWords = Set.of(
+                "la", "gi", "va", "co", "duoc", "nhu", "the", "nao", "trong", "theo",
+                "nhung", "cac", "cua", "ve", "tai", "de", "mot", "cho", "khi", "tu"
+        );
+        Set<String> tokens = new HashSet<>();
+        for (String token : tokenize(text)) {
+            if (token.length() > 1 && !stopWords.contains(token)) {
+                tokens.add(token);
+            }
+        }
+        return tokens;
+    }
+
+    private double round4(double value) {
+        return Math.round(value * 10_000.0) / 10_000.0;
+    }
+
 }

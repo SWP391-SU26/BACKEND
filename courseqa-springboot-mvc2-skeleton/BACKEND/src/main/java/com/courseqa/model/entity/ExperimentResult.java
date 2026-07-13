@@ -67,6 +67,12 @@ public class ExperimentResult {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
+    @Transient
+    private String questionText;
+
+    @Transient
+    private String groundTruthAnswer;
+
     public ExperimentResult() { }
 
     public UUID getExperimentResultId() { return experimentResultId; }
@@ -125,5 +131,11 @@ public class ExperimentResult {
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
+    public String getQuestionText() { return questionText; }
+    public void setQuestionText(String questionText) { this.questionText = questionText; }
+
+    public String getGroundTruthAnswer() { return groundTruthAnswer; }
+    public void setGroundTruthAnswer(String groundTruthAnswer) { this.groundTruthAnswer = groundTruthAnswer; }
 
 }
