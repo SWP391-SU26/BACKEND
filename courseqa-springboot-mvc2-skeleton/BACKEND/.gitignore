@@ -1,44 +1,64 @@
-# IDE
+# ===== JAVA / MAVEN =====
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.log
+.mvn/
+mvnw
+mvnw.cmd
+
+# ===== SPRING BOOT =====
+application-local.properties
+application-local.yml
+
+# ===== PYTHON =====
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+.venv-win/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.Python
+
+# ===== PYTHON DATA / MODELS =====
+data/raw/
+data/processed/
+data/db/
+data/models_cache/
+models/
+reports/
+*.sqlite3
+*.sqlite
+
+# ===== LOGS =====
+logs/
+*.log
+maven_output.log
+
+# ===== IDE =====
 .idea/
 .vscode/
 *.iml
 *.iws
 *.ipr
-*.cls
-
-# Maven
-target/
-pom.xml.tag
-pom.xml.releaseBackup
-pom.xml.versionsBackup
-pom.xml.next
-release.properties
-dependency-reduced-pom.xml
-.m2repository/
-
-# Environment
-.env
-.env.local
-.env.*.local
-run-spring-cloudinary.local.bat
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Others
-node_modules/
-dist/
-build/
-out/
-*.jar
 .classpath
 .project
 .settings/
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== ENV / SECRETS =====
+.env
+.env.*
+*.key
+*.pem
+secrets/
