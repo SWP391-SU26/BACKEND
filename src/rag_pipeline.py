@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+import importlib.util
 import unicodedata
 
 from .chunker import chunk_pages
@@ -107,9 +108,10 @@ class RAGPipeline:
         question: str,
         contexts: list[RetrievedChunk],
         sources: list[dict[str, Any]],
+        strict: bool = False,
     ) -> str:
         provider = self.settings.generation_provider.lower().strip()
-        if provider in {"auto", "lora", "local"}:
+        if strict or provider in {"auto", "lora", "local"}:
             generator = self._get_local_generator()
             if generator:
                 try:
@@ -118,11 +120,17 @@ class RAGPipeline:
                         return answer
                 except Exception as exc:
                     self.local_generator_error = str(exc)
-        if provider in {"auto", "openai"} and self.settings.openai_api_key:
+                    if strict:
+                        raise RuntimeError(f"Local LoRA generation failed: {exc}") from exc
+        if (strict or provider in {"auto", "openai"}) and self.settings.openai_api_key:
             try:
                 return self._generate_with_openai(question, contexts)
-            except Exception:
+            except Exception as exc:
+                if strict:
+                    raise RuntimeError(f"OpenAI generation failed: {exc}") from exc
                 return self._generate_extractive_answer(question, contexts, sources)
+        if strict:
+            raise RuntimeError(self.local_generator_error or "No strict generation model is ready.")
         return self._generate_extractive_answer(question, contexts, sources)
 
     def _get_local_generator(self):
@@ -146,14 +154,64 @@ class RAGPipeline:
 
     def generation_status(self) -> dict[str, Any]:
         provider = self.settings.generation_provider.lower().strip()
+        required_modules = {name: importlib.util.find_spec(name) is not None for name in ("torch", "transformers", "peft")}
+        adapter_files = ["adapter_config.json", "adapter_model.safetensors", "tokenizer_config.json"]
+        adapter_ready = self.settings.lora_adapter_dir.is_dir() and all(
+            (self.settings.lora_adapter_dir / name).exists() for name in adapter_files
+        )
+        configured_ready = all(required_modules.values()) and adapter_ready and bool(self.settings.local_base_model)
+        inference_ready = configured_ready and self.local_generator is not None \
+            and self.local_generator.warmed_up and self.local_generator_error is None
+        generation_ready = inference_ready or bool(self.settings.openai_api_key)
         return {
             "configured_provider": provider,
-            "adapter_path": str(self.settings.lora_adapter_dir),
+            "adapter_dir": str(self.settings.lora_adapter_dir),
             "adapter_exists": self.settings.lora_adapter_dir.exists(),
+            "adapter_ready": adapter_ready,
+            "configured_ready": configured_ready,
+            "base_model": self.settings.local_base_model,
+            "dependencies": required_modules,
+            "inference_ready": inference_ready,
+            "training_ready": False,
+            "generation_ready": generation_ready,
             "local_model_loaded": self.local_generator is not None,
+            "local_model_warmed_up": bool(self.local_generator and self.local_generator.warmed_up),
             "local_model_error": self.local_generator_error,
             "openai_configured": bool(self.settings.openai_api_key),
         }
+
+    def warmup_local_model(self) -> None:
+        generator = self._get_local_generator()
+        if not generator:
+            raise RuntimeError(self.local_generator_error or "Local LoRA model is not ready.")
+        try:
+            generator.warmup()
+        except Exception as exc:
+            self.local_generator_error = str(exc)
+            raise
+
+    def generate_rag_batch(
+        self,
+        items: list[tuple[str, list[RetrievedChunk]]],
+    ) -> list[tuple[str, list[RetrievedChunk]]]:
+        generator = self._get_local_generator()
+        if not generator:
+            raise RuntimeError(self.local_generator_error or "Local LoRA model is not ready.")
+        return generator.generate_batch(
+            items,
+            max_new_tokens=self.settings.benchmark_max_new_tokens,
+            max_input_tokens=self.settings.benchmark_max_input_tokens,
+        )
+
+    def generate_without_retrieval_batch(self, questions: list[str]) -> list[str]:
+        generator = self._get_local_generator()
+        if not generator:
+            raise RuntimeError(self.local_generator_error or "Local LoRA model is not ready.")
+        return generator.generate_without_context_batch(
+            questions,
+            max_new_tokens=self.settings.benchmark_max_new_tokens,
+            max_input_tokens=self.settings.benchmark_max_input_tokens,
+        )
 
     def generate_without_retrieval(self, question: str) -> str:
         generator = self._get_local_generator()

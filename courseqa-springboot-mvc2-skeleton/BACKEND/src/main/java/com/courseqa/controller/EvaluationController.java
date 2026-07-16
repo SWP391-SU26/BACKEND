@@ -1,19 +1,25 @@
 package com.courseqa.controller;
 
 import com.courseqa.model.dto.ApiResponse;
+import com.courseqa.model.dto.LearningScopeDto;
+import com.courseqa.model.entity.CourseDocument;
 import com.courseqa.model.entity.EvaluationDataset;
 import com.courseqa.model.entity.EvaluationQuestion;
 import com.courseqa.model.entity.Experiment;
 import com.courseqa.model.entity.ExperimentResult;
+import com.courseqa.security.JwtPrincipal;
 import com.courseqa.service.EvaluationService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,258 +30,133 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-
 @RestController
 @RequestMapping("/api/evaluation")
 @CrossOrigin
 public class EvaluationController {
-
-    private static final Logger log = LoggerFactory.getLogger(EvaluationController.class);
-
     private final EvaluationService evaluationService;
 
     public EvaluationController(EvaluationService evaluationService) {
         this.evaluationService = evaluationService;
     }
 
+    @GetMapping("/scopes")
+    public ResponseEntity<ApiResponse<List<LearningScopeDto.SemesterScope>>> scopes(
+            @AuthenticationPrincipal JwtPrincipal principal) {
+        return ResponseEntity.ok(ApiResponse.ok(evaluationService.getScopes(principal.userId())));
+    }
+
     @GetMapping("/datasets")
     public ResponseEntity<ApiResponse<List<EvaluationDataset>>> listDatasets() {
-        log.info("GET /api/evaluation/datasets");
         return ResponseEntity.ok(ApiResponse.ok(evaluationService.listDatasets()));
     }
 
     @PostMapping("/datasets")
     public ResponseEntity<ApiResponse<EvaluationDataset>> createDataset(
+            @AuthenticationPrincipal JwtPrincipal principal,
             @Valid @RequestBody CreateDatasetRequest request) {
-        log.info("POST /api/evaluation/datasets - name: {}", request.getDatasetName());
-
-        EvaluationDataset dataset = evaluationService.createDataset(
-                request.getDatasetName(),
-                request.getCourseId(),
-                request.getWorkspaceId(),
-                request.getCreatedBy()
-        );
-
+        EvaluationDataset dataset = evaluationService.createDataset(request.datasetName, request.courseId,
+                request.documentIds, principal.userId());
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(dataset));
     }
 
+    @GetMapping("/datasets/{datasetId}/documents")
+    public ResponseEntity<ApiResponse<List<CourseDocument>>> datasetDocuments(@PathVariable UUID datasetId) {
+        return ResponseEntity.ok(ApiResponse.ok(evaluationService.getDatasetDocuments(datasetId)));
+    }
+
     @PostMapping("/questions")
-    public ResponseEntity<ApiResponse<EvaluationQuestion>> addQuestion(
-            @Valid @RequestBody AddQuestionRequest request) {
-        log.info("POST /api/evaluation/questions - datasetId: {}", request.getDatasetId());
-
-        EvaluationQuestion question = evaluationService.addQuestion(
-                request.getDatasetId(),
-                request.getQuestionText(),
-                request.getGroundTruthAnswer()
-        );
-
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(question));
+    public ResponseEntity<ApiResponse<EvaluationQuestion>> addQuestion(@Valid @RequestBody AddQuestionRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(evaluationService.addQuestion(
+                request.datasetId, request.questionText, request.groundTruthAnswer)));
     }
 
     @GetMapping("/datasets/{datasetId}/questions")
-    public ResponseEntity<ApiResponse<List<EvaluationQuestion>>> getQuestions(
-            @PathVariable UUID datasetId) {
-        log.info("GET /api/evaluation/datasets/{}/questions", datasetId);
+    public ResponseEntity<ApiResponse<List<EvaluationQuestion>>> getQuestions(@PathVariable UUID datasetId) {
         return ResponseEntity.ok(ApiResponse.ok(evaluationService.getQuestions(datasetId)));
     }
 
-    @PostMapping(
-            value = "/datasets/{datasetId}/questions/import",
-            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
-    )
+    @PostMapping(value = "/datasets/{datasetId}/questions/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<Map<String, Object>>> importQuestions(
-            @PathVariable UUID datasetId,
-            @RequestParam("file") MultipartFile file) {
-        log.info("POST /api/evaluation/datasets/{}/questions/import - file: {}", datasetId, file.getOriginalFilename());
+            @PathVariable UUID datasetId, @RequestParam("file") MultipartFile file) {
         return ResponseEntity.ok(ApiResponse.ok(evaluationService.importQuestions(datasetId, file)));
     }
 
     @PostMapping("/experiments")
     public ResponseEntity<ApiResponse<Experiment>> createExperiment(
+            @AuthenticationPrincipal JwtPrincipal principal,
             @Valid @RequestBody CreateExperimentRequest request) {
-        log.info("POST /api/evaluation/experiments - name: {}", request.getExperimentName());
-
-        Experiment experiment = evaluationService.createExperiment(
-                request.getDatasetId(),
-                request.getExperimentName(),
-                request.getExperimentType(),
-                request.getLlmModel(),
-                request.getConfigJson(),
-                request.getCreatedBy()
-        );
-
+        Experiment experiment = evaluationService.createExperiment(request.datasetId, request.experimentName,
+                request.experimentType, request.llmModel, request.configJson, principal.userId());
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(experiment));
     }
 
     @GetMapping("/experiments")
     public ResponseEntity<ApiResponse<List<Experiment>>> listExperiments() {
-        log.info("GET /api/evaluation/experiments");
         return ResponseEntity.ok(ApiResponse.ok(evaluationService.listExperiments()));
+    }
+
+    @GetMapping("/experiments/{experimentId}")
+    public ResponseEntity<ApiResponse<Experiment>> getExperiment(@PathVariable UUID experimentId) {
+        return ResponseEntity.ok(ApiResponse.ok(evaluationService.getExperiment(experimentId)));
     }
 
     @PostMapping("/experiments/{experimentId}/run")
     public ResponseEntity<ApiResponse<Experiment>> runBenchmark(@PathVariable UUID experimentId) {
-        log.info("POST /api/evaluation/experiments/{}/run", experimentId);
-        return ResponseEntity.ok(ApiResponse.ok(evaluationService.runBenchmark(experimentId)));
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(ApiResponse.ok(evaluationService.startBenchmark(experimentId)));
+    }
+
+    @PostMapping("/experiments/{experimentId}/cancel")
+    public ResponseEntity<ApiResponse<Experiment>> cancelBenchmark(@PathVariable UUID experimentId) {
+        return ResponseEntity.ok(ApiResponse.ok(evaluationService.cancelBenchmark(experimentId)));
     }
 
     @GetMapping("/experiments/{experimentId}/results")
-    public ResponseEntity<ApiResponse<List<ExperimentResult>>> getResults(
-            @PathVariable UUID experimentId) {
-        log.info("GET /api/evaluation/experiments/{}/results", experimentId);
+    public ResponseEntity<ApiResponse<List<ExperimentResult>>> getResults(@PathVariable UUID experimentId) {
         return ResponseEntity.ok(ApiResponse.ok(evaluationService.getResults(experimentId)));
     }
 
+    @GetMapping("/readiness")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> readiness(
+            @RequestParam UUID datasetId, @RequestParam String experimentType) {
+        return ResponseEntity.ok(ApiResponse.ok(evaluationService.readiness(datasetId, experimentType)));
+    }
+
+    @GetMapping("/model-readiness")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> modelReadiness() {
+        return ResponseEntity.ok(ApiResponse.ok(evaluationService.modelReadiness()));
+    }
+
+    @GetMapping("/comparison")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> comparison(
+            @RequestParam UUID datasetId,
+            @RequestParam UUID ragExperimentId,
+            @RequestParam UUID fineTunedExperimentId) {
+        return ResponseEntity.ok(ApiResponse.ok(evaluationService.comparison(datasetId, ragExperimentId,
+                fineTunedExperimentId)));
+    }
+
     public static class CreateDatasetRequest {
-        @NotBlank(message = "datasetName is required and cannot be empty")
-        private String datasetName;
-
-        @NotNull(message = "courseId is required")
-        private UUID courseId;
-
-        @NotNull(message = "workspaceId is required")
-        private UUID workspaceId;
-
-        @NotNull(message = "createdBy is required")
-        private UUID createdBy;
-
-        public String getDatasetName() {
-            return datasetName;
-        }
-
-        public void setDatasetName(String datasetName) {
-            this.datasetName = datasetName;
-        }
-
-        public UUID getCourseId() {
-            return courseId;
-        }
-
-        public void setCourseId(UUID courseId) {
-            this.courseId = courseId;
-        }
-
-        public UUID getWorkspaceId() {
-            return workspaceId;
-        }
-
-        public void setWorkspaceId(UUID workspaceId) {
-            this.workspaceId = workspaceId;
-        }
-
-        public UUID getCreatedBy() {
-            return createdBy;
-        }
-
-        public void setCreatedBy(UUID createdBy) {
-            this.createdBy = createdBy;
-        }
+        @NotBlank public String datasetName;
+        @NotNull public UUID courseId;
+        @NotEmpty public List<UUID> documentIds;
+        public UUID workspaceId;
+        public UUID createdBy;
     }
 
     public static class AddQuestionRequest {
-        @NotNull(message = "datasetId is required")
-        private UUID datasetId;
-
-        @NotBlank(message = "questionText is required and cannot be empty")
-        private String questionText;
-
-        @NotBlank(message = "groundTruthAnswer is required and cannot be empty")
-        private String groundTruthAnswer;
-
-        public UUID getDatasetId() {
-            return datasetId;
-        }
-
-        public void setDatasetId(UUID datasetId) {
-            this.datasetId = datasetId;
-        }
-
-        public String getQuestionText() {
-            return questionText;
-        }
-
-        public void setQuestionText(String questionText) {
-            this.questionText = questionText;
-        }
-
-        public String getGroundTruthAnswer() {
-            return groundTruthAnswer;
-        }
-
-        public void setGroundTruthAnswer(String groundTruthAnswer) {
-            this.groundTruthAnswer = groundTruthAnswer;
-        }
+        @NotNull public UUID datasetId;
+        @NotBlank public String questionText;
+        @NotBlank public String groundTruthAnswer;
     }
 
     public static class CreateExperimentRequest {
-        @NotNull(message = "datasetId is required")
-        private UUID datasetId;
-
-        @NotBlank(message = "experimentName is required and cannot be empty")
-        private String experimentName;
-
-        @NotBlank(message = "experimentType is required and cannot be empty")
-        private String experimentType;
-
-        @NotBlank(message = "llmModel is required and cannot be empty")
-        private String llmModel;
-
-        @NotBlank(message = "configJson is required and cannot be empty")
-        private String configJson;
-
-        @NotNull(message = "createdBy is required")
-        private UUID createdBy;
-
-        public UUID getDatasetId() {
-            return datasetId;
-        }
-
-        public void setDatasetId(UUID datasetId) {
-            this.datasetId = datasetId;
-        }
-
-        public String getExperimentName() {
-            return experimentName;
-        }
-
-        public void setExperimentName(String experimentName) {
-            this.experimentName = experimentName;
-        }
-
-        public String getExperimentType() {
-            return experimentType;
-        }
-
-        public void setExperimentType(String experimentType) {
-            this.experimentType = experimentType;
-        }
-
-        public String getLlmModel() {
-            return llmModel;
-        }
-
-        public void setLlmModel(String llmModel) {
-            this.llmModel = llmModel;
-        }
-
-        public String getConfigJson() {
-            return configJson;
-        }
-
-        public void setConfigJson(String configJson) {
-            this.configJson = configJson;
-        }
-
-        public UUID getCreatedBy() {
-            return createdBy;
-        }
-
-        public void setCreatedBy(UUID createdBy) {
-            this.createdBy = createdBy;
-        }
+        @NotNull public UUID datasetId;
+        @NotBlank public String experimentName;
+        @NotBlank public String experimentType;
+        @NotBlank public String llmModel;
+        public String configJson = "{}";
+        public UUID createdBy;
     }
 }

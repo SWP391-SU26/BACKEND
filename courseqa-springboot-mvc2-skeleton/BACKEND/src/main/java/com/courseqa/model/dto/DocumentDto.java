@@ -4,6 +4,7 @@ import com.courseqa.model.entity.CourseDocument;
 import com.courseqa.model.entity.DocumentChunk;
 import com.courseqa.model.entity.DocumentPage;
 import java.util.UUID;
+import java.time.LocalDateTime;
 
 // DTOs for upload document and document processing responses.
 // TODO: Add request/response DTO classes here.
@@ -31,6 +32,15 @@ public class DocumentDto {
         public String storageProvider;
         public String cloudinarySecureUrl;
         public String cloudinaryPreviewUrl;
+        public Long fileSizeBytes;
+        public String documentScope;
+        public String reviewStatus;
+        public UUID targetCourseId;
+        public LocalDateTime submittedAt;
+        public UUID reviewedBy;
+        public LocalDateTime reviewedAt;
+        public String rejectionReason;
+        public boolean canDelete;
 
         public static DocumentResponse fromEntity(CourseDocument document) {
             DocumentResponse response = new DocumentResponse();
@@ -48,8 +58,26 @@ public class DocumentDto {
             response.storageProvider = document.getStorageProvider();
             response.cloudinarySecureUrl = document.getCloudinarySecureUrl();
             response.cloudinaryPreviewUrl = document.getCloudinaryPreviewUrl();
+            response.fileSizeBytes = document.getFileSizeBytes();
+            response.documentScope = document.getDocumentScope();
+            response.reviewStatus = document.getReviewStatus();
+            response.targetCourseId = document.getTargetCourseId();
+            response.submittedAt = document.getSubmittedAt();
+            response.reviewedBy = document.getReviewedBy();
+            response.reviewedAt = document.getReviewedAt();
+            response.rejectionReason = document.getRejectionReason();
             return response;
         }
+    }
+
+    public static class SubmissionRequest {
+        public UUID courseId;
+    }
+
+    public static class ReviewRequest {
+        public String status;
+        public UUID courseId;
+        public String rejectionReason;
     }
 
     public static class PageResponse {

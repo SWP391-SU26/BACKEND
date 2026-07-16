@@ -23,6 +23,12 @@ public class Course {
     @Column(name = "created_by")
     private UUID createdBy;
 
+    @Column(name = "semester_workspace_id")
+    private UUID semesterWorkspaceId;
+
+    @Column(name = "status")
+    private String status;
+
     @Column(name = "is_active")
     private Boolean isActive;
 
@@ -48,6 +54,10 @@ public class Course {
 
     public UUID getCreatedBy() { return createdBy; }
     public void setCreatedBy(UUID createdBy) { this.createdBy = createdBy; }
+    public UUID getSemesterWorkspaceId() { return semesterWorkspaceId; }
+    public void setSemesterWorkspaceId(UUID semesterWorkspaceId) { this.semesterWorkspaceId = semesterWorkspaceId; }
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
 
     public Boolean getIsActive() { return isActive; }
     public void setIsActive(Boolean isActive) { this.isActive = isActive; }

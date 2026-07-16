@@ -37,11 +37,17 @@ class AppSettings:
     generation_provider: str = "auto"
     local_base_model: str = "Qwen/Qwen2.5-0.5B-Instruct"
     local_max_new_tokens: int = 40
+    benchmark_batch_size: int = 4
+    benchmark_max_new_tokens: int = 64
+    benchmark_max_input_tokens: int = 448
 
 
 def load_settings() -> AppSettings:
     """Load settings from environment variables, keeping demo-friendly defaults."""
     load_dotenv(BASE_DIR / ".env")
+    adapter_value = Path(os.getenv("LORA_ADAPTER_DIR", LORA_ADAPTER_DIR))
+    if not adapter_value.is_absolute():
+        adapter_value = BASE_DIR / adapter_value
     return AppSettings(
         raw_dir=Path(os.getenv("RAW_DIR", RAW_DIR)),
         processed_dir=Path(os.getenv("PROCESSED_DIR", PROCESSED_DIR)),
@@ -49,7 +55,7 @@ def load_settings() -> AppSettings:
         reports_dir=Path(os.getenv("REPORTS_DIR", REPORTS_DIR)),
         finetuning_dir=Path(os.getenv("FINETUNING_DIR", FINETUNING_DIR)),
         model_cache_dir=Path(os.getenv("MODEL_CACHE_DIR", MODEL_CACHE_DIR / "hub")),
-        lora_adapter_dir=Path(os.getenv("LORA_ADAPTER_DIR", LORA_ADAPTER_DIR)),
+        lora_adapter_dir=adapter_value.resolve(),
         top_k=int(os.getenv("TOP_K", "10")),
         chunk_size=int(os.getenv("CHUNK_SIZE", "700")),
         chunk_overlap=int(os.getenv("CHUNK_OVERLAP", "120")),
@@ -62,6 +68,9 @@ def load_settings() -> AppSettings:
         generation_provider=os.getenv("GENERATION_PROVIDER", "auto"),
         local_base_model=os.getenv("LOCAL_BASE_MODEL", "Qwen/Qwen2.5-0.5B-Instruct"),
         local_max_new_tokens=int(os.getenv("LOCAL_MAX_NEW_TOKENS", "40")),
+        benchmark_batch_size=max(1, int(os.getenv("BENCHMARK_BATCH_SIZE", "4"))),
+        benchmark_max_new_tokens=max(1, int(os.getenv("BENCHMARK_MAX_NEW_TOKENS", "64"))),
+        benchmark_max_input_tokens=max(64, int(os.getenv("BENCHMARK_MAX_INPUT_TOKENS", "448"))),
     )
 
 
@@ -87,5 +96,5 @@ def load_dotenv(path: Path) -> None:
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
+        if key == "LORA_ADAPTER_DIR" or (key and key not in os.environ):
             os.environ[key] = value

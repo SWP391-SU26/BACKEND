@@ -31,6 +31,12 @@ public class ChatSession {
     @Column(name = "course_id")
     private UUID courseId;
 
+    @Column(name = "semester_workspace_id")
+    private UUID semesterWorkspaceId;
+
+    @Column(name = "scope_type")
+    private String scopeType;
+
     @Column(name = "chapter_id")
     private UUID chapterId;
 
@@ -68,6 +74,12 @@ public class ChatSession {
 
     public UUID getCourseId() { return courseId; }
     public void setCourseId(UUID courseId) { this.courseId = courseId; }
+
+    public UUID getSemesterWorkspaceId() { return semesterWorkspaceId; }
+    public void setSemesterWorkspaceId(UUID semesterWorkspaceId) { this.semesterWorkspaceId = semesterWorkspaceId; }
+
+    public String getScopeType() { return scopeType; }
+    public void setScopeType(String scopeType) { this.scopeType = scopeType; }
 
     public UUID getChapterId() { return chapterId; }
     public void setChapterId(UUID chapterId) { this.chapterId = chapterId; }

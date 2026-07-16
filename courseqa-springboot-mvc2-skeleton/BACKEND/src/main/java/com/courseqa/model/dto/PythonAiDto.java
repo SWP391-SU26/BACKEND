@@ -24,6 +24,7 @@ public class PythonAiDto {
     public static class GenerateRequest {
         public String question;
         public List<GenerateContext> contexts;
+        public Boolean strict;
     }
 
     public static class GenerateContext {
@@ -41,12 +42,62 @@ public class PythonAiDto {
         public List<Map<String, Object>> sources;
     }
 
+    public static class GenerateBatchItem {
+        public String request_id;
+        public String question;
+        public List<GenerateContext> contexts;
+    }
+
+    public static class GenerateBatchRequest {
+        public List<GenerateBatchItem> items;
+        public Boolean strict;
+    }
+
+    public static class GenerateBatchResult {
+        public String request_id;
+        public String answer;
+        public Boolean is_out_of_scope;
+        public List<Map<String, Object>> sources;
+        public String error;
+    }
+
+    public static class GenerateBatchResponse {
+        public List<GenerateBatchResult> items;
+        public Integer batch_size;
+        public Integer max_input_tokens;
+        public Integer max_new_tokens;
+    }
+
     public static class ChatFinetunedRequest {
         public String question;
+        public Boolean strict;
     }
 
     public static class ChatFinetunedResponse {
         public String answer;
+    }
+
+    public static class ChatFinetunedBatchItem {
+        public String request_id;
+        public String question;
+    }
+
+    public static class ChatFinetunedBatchRequest {
+        public List<ChatFinetunedBatchItem> items;
+        public Boolean strict;
+    }
+
+    public static class ChatFinetunedBatchResult {
+        public String request_id;
+        public String answer;
+        public String error;
+    }
+
+    public static class ChatFinetunedBatchResponse {
+        public List<ChatFinetunedBatchResult> items;
+        public Integer batch_size;
+        public Integer max_input_tokens;
+        public Integer max_new_tokens;
     }
 
     // What we send to POST /api/benchmarks/run

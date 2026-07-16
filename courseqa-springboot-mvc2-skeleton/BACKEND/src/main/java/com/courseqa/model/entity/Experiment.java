@@ -51,6 +51,21 @@ public class Experiment {
     @Column(name = "status")
     private String status;
 
+    @Column(name = "progress")
+    private Integer progress;
+
+    @Column(name = "error_message", columnDefinition = "NVARCHAR(MAX)")
+    private String errorMessage;
+
+    @Column(name = "success_count")
+    private Integer successCount;
+
+    @Column(name = "failure_count")
+    private Integer failureCount;
+
+    @Column(name = "dataset_checksum")
+    private String datasetChecksum;
+
     @Column(name = "created_by")
     private UUID createdBy;
 
@@ -109,6 +124,21 @@ public class Experiment {
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+
+    public Integer getProgress() { return progress; }
+    public void setProgress(Integer progress) { this.progress = progress; }
+
+    public String getErrorMessage() { return errorMessage; }
+    public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+
+    public Integer getSuccessCount() { return successCount; }
+    public void setSuccessCount(Integer successCount) { this.successCount = successCount; }
+
+    public Integer getFailureCount() { return failureCount; }
+    public void setFailureCount(Integer failureCount) { this.failureCount = failureCount; }
+
+    public String getDatasetChecksum() { return datasetChecksum; }
+    public void setDatasetChecksum(String datasetChecksum) { this.datasetChecksum = datasetChecksum; }
 
     public UUID getCreatedBy() { return createdBy; }
     public void setCreatedBy(UUID createdBy) { this.createdBy = createdBy; }

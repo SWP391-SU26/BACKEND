@@ -3,6 +3,7 @@ package com.courseqa.model.entity;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.List;
 
 @Entity
 @Table(name = "evaluation_datasets")
@@ -18,6 +19,9 @@ public class EvaluationDataset {
     @Column(name = "workspace_id")
     private UUID workspaceId;
 
+    @Column(name = "semester_workspace_id")
+    private UUID semesterWorkspaceId;
+
     @Column(name = "dataset_name")
     private String datasetName;
 
@@ -27,6 +31,15 @@ public class EvaluationDataset {
     @Column(name = "description", columnDefinition = "NVARCHAR(MAX)")
     private String description;
 
+    @Column(name = "status")
+    private String status;
+
+    @Column(name = "validation_error", columnDefinition = "NVARCHAR(MAX)")
+    private String validationError;
+
+    @Column(name = "checksum")
+    private String checksum;
+
     @Column(name = "created_by")
     private UUID createdBy;
 
@@ -35,6 +48,9 @@ public class EvaluationDataset {
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    @Transient
+    private List<UUID> documentIds = List.of();
 
     public EvaluationDataset() { }
 
@@ -47,6 +63,9 @@ public class EvaluationDataset {
     public UUID getWorkspaceId() { return workspaceId; }
     public void setWorkspaceId(UUID workspaceId) { this.workspaceId = workspaceId; }
 
+    public UUID getSemesterWorkspaceId() { return semesterWorkspaceId; }
+    public void setSemesterWorkspaceId(UUID semesterWorkspaceId) { this.semesterWorkspaceId = semesterWorkspaceId; }
+
     public String getDatasetName() { return datasetName; }
     public void setDatasetName(String datasetName) { this.datasetName = datasetName; }
 
@@ -56,6 +75,15 @@ public class EvaluationDataset {
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
 
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+
+    public String getValidationError() { return validationError; }
+    public void setValidationError(String validationError) { this.validationError = validationError; }
+
+    public String getChecksum() { return checksum; }
+    public void setChecksum(String checksum) { this.checksum = checksum; }
+
     public UUID getCreatedBy() { return createdBy; }
     public void setCreatedBy(UUID createdBy) { this.createdBy = createdBy; }
 
@@ -64,6 +92,9 @@ public class EvaluationDataset {
 
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+
+    public List<UUID> getDocumentIds() { return documentIds; }
+    public void setDocumentIds(List<UUID> documentIds) { this.documentIds = documentIds == null ? List.of() : documentIds; }
 
 
 }

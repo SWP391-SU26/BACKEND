@@ -49,6 +49,15 @@ public class ExperimentResult {
     @Column(name = "latency_ms")
     private Integer latencyMs;
 
+    @Column(name = "batch_latency_ms")
+    private Integer batchLatencyMs;
+
+    @Column(name = "effective_latency_ms")
+    private Integer effectiveLatencyMs;
+
+    @Column(name = "batch_size")
+    private Integer batchSize;
+
     @Column(name = "input_tokens")
     private Integer inputTokens;
 
@@ -113,6 +122,15 @@ public class ExperimentResult {
 
     public Integer getLatencyMs() { return latencyMs; }
     public void setLatencyMs(Integer latencyMs) { this.latencyMs = latencyMs; }
+
+    public Integer getBatchLatencyMs() { return batchLatencyMs; }
+    public void setBatchLatencyMs(Integer batchLatencyMs) { this.batchLatencyMs = batchLatencyMs; }
+
+    public Integer getEffectiveLatencyMs() { return effectiveLatencyMs; }
+    public void setEffectiveLatencyMs(Integer effectiveLatencyMs) { this.effectiveLatencyMs = effectiveLatencyMs; }
+
+    public Integer getBatchSize() { return batchSize; }
+    public void setBatchSize(Integer batchSize) { this.batchSize = batchSize; }
 
     public Integer getInputTokens() { return inputTokens; }
     public void setInputTokens(Integer inputTokens) { this.inputTokens = inputTokens; }

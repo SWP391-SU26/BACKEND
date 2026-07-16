@@ -9,6 +9,7 @@ import com.courseqa.repository.CourseRepository;
 import com.courseqa.repository.CourseWorkspaceRepository;
 import com.courseqa.repository.UserRepository;
 import com.courseqa.repository.UserRoleRepository;
+import com.courseqa.repository.SemesterWorkspaceRepository;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -21,6 +22,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class CourseService {
 
     private final UserRoleRepository userRoleRepository;
+    private final SemesterWorkspaceRepository semesterWorkspaceRepository;
 
     private final CourseRepository courseRepository;
     private final ChapterRepository chapterRepository;
@@ -32,13 +34,14 @@ public class CourseService {
         ChapterRepository chapterRepository,
         CourseWorkspaceRepository courseWorkspaceRepository,
         UserRepository userRepository,
-        UserRoleRepository userRoleRepository
+        UserRoleRepository userRoleRepository, SemesterWorkspaceRepository semesterWorkspaceRepository
 ) {
     this.courseRepository = courseRepository;
     this.chapterRepository = chapterRepository;
     this.courseWorkspaceRepository = courseWorkspaceRepository;
     this.userRepository = userRepository;
     this.userRoleRepository = userRoleRepository;
+    this.semesterWorkspaceRepository = semesterWorkspaceRepository;
 }
 
 
@@ -60,7 +63,7 @@ private void requireTeacherOrAdmin(UUID requesterId) {
 
 
     public List<CourseDto.CourseResponse> getCourses() {
-        return courseRepository.findByIsActiveTrueOrderByCreatedAtDesc().stream()
+        return courseRepository.findByStatusNotOrderByCreatedAtDesc("ARCHIVED").stream()
                 .map(CourseDto.CourseResponse::fromEntity)
                 .toList();
     }
@@ -73,9 +76,12 @@ private void requireTeacherOrAdmin(UUID requesterId) {
         if (request == null || isBlank(request.courseCode) || isBlank(request.courseName)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "courseCode and courseName are required.");
         }
+        if (request.semesterWorkspaceId == null || !semesterWorkspaceRepository.existsById(request.semesterWorkspaceId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "semesterWorkspaceId is required and must exist.");
+        }
        // I added this . ps: Khang
-       if (courseRepository.existsByCourseCode(request.courseCode.trim())) {
-        throw new ResponseStatusException(HttpStatus.CONFLICT, "Course code already exists.");
+       if (courseRepository.existsByCourseCodeAndSemesterWorkspaceId(request.courseCode.trim(), request.semesterWorkspaceId)) {
+        throw new ResponseStatusException(HttpStatus.CONFLICT, "Course code already exists in this semester.");
     }
 
 
@@ -88,12 +94,25 @@ private void requireTeacherOrAdmin(UUID requesterId) {
         course.setCourseCode(request.courseCode.trim());
         course.setCourseName(request.courseName.trim());
         course.setDescription(trimToNull(request.description));
-        course.setCreatedBy(request.createdBy);
-        course.setIsActive(true);
+        course.setCreatedBy(requesterId);
+        course.setSemesterWorkspaceId(request.semesterWorkspaceId);
+        course.setStatus("DRAFT");
+        course.setIsActive(false);
         course.setCreatedAt(now);
         course.setUpdatedAt(now);
 
-        return CourseDto.CourseResponse.fromEntity(courseRepository.save(course));
+        Course saved = courseRepository.save(course);
+        CourseWorkspace knowledgeBase = new CourseWorkspace();
+        knowledgeBase.setCourseId(saved.getCourseId());
+        knowledgeBase.setOwnerUserId(requesterId);
+        knowledgeBase.setWorkspaceTitle(saved.getCourseName() + " Knowledge Base");
+        knowledgeBase.setDescription("System-managed knowledge base for " + saved.getCourseCode());
+        knowledgeBase.setVisibility("COURSE");
+        knowledgeBase.setIsActive(true);
+        knowledgeBase.setCreatedAt(now);
+        knowledgeBase.setUpdatedAt(now);
+        courseWorkspaceRepository.save(knowledgeBase);
+        return CourseDto.CourseResponse.fromEntity(saved);
     }
 
     public List<CourseDto.ChapterResponse> getChapters(UUID courseId) {

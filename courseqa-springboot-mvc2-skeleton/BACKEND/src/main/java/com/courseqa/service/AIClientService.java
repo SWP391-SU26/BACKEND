@@ -1,14 +1,17 @@
 package com.courseqa.service;
 
+import com.courseqa.model.dto.PythonAiDto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 import reactor.util.retry.Retry;
 
 import java.time.Duration;
+import java.util.Map;
 
 @Service
 public class AIClientService {
@@ -22,6 +25,8 @@ public class AIClientService {
 
     private static final int CHAT_TIMEOUT_SECONDS = 30;
     private static final int MAX_RETRIES = 3;
+    private static final int BENCHMARK_BATCH_TIMEOUT_SECONDS = 60;
+    private static final int MODEL_WARMUP_TIMEOUT_SECONDS = 180;
 
     @Value("${python.ai.service.benchmark-timeout-seconds:1800}")
     private int benchmarkTimeoutSeconds;
@@ -130,6 +135,43 @@ public class AIClientService {
                 .block();
     }
 
+    public PythonAiDto.GenerateBatchResponse callGenerateBatch(PythonAiDto.GenerateBatchRequest request) {
+        return callBenchmarkBatch("/api/generate-batch", request, PythonAiDto.GenerateBatchResponse.class);
+    }
+
+    public PythonAiDto.ChatFinetunedBatchResponse callChatFinetunedBatch(
+            PythonAiDto.ChatFinetunedBatchRequest request) {
+        return callBenchmarkBatch("/ai/chat-finetuned-batch", request,
+                PythonAiDto.ChatFinetunedBatchResponse.class);
+    }
+
+    private <T> T callBenchmarkBatch(String path, Object request, Class<T> responseType) {
+        log.info("Calling Python AI Engine {}", path);
+        return webClient.post()
+                .uri(pythonAiServiceUrl + path)
+                .bodyValue(request)
+                .retrieve()
+                .bodyToMono(responseType)
+                .timeout(Duration.ofSeconds(BENCHMARK_BATCH_TIMEOUT_SECONDS))
+                .retryWhen(Retry.max(1)
+                        .filter(this::isConnectionFailure)
+                        .doBeforeRetry(signal -> log.warn("Retrying {} after connection failure: {}",
+                                path, signal.failure().getMessage())))
+                .onErrorMap(this::handleError)
+                .block();
+    }
+
+    public Map<String, Object> getModelStatus() {
+        log.info("Calling Python AI Engine /api/model/status");
+        return webClient.get()
+                .uri(pythonAiServiceUrl + "/api/model/status")
+                .retrieve()
+                .bodyToMono(new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() { })
+                .timeout(Duration.ofSeconds(MODEL_WARMUP_TIMEOUT_SECONDS))
+                .onErrorMap(this::handleError)
+                .block();
+    }
+
     private boolean isRetryableError(Throwable throwable) {
         if (throwable instanceof WebClientResponseException) {
             WebClientResponseException ex = (WebClientResponseException) throwable;
@@ -137,6 +179,17 @@ public class AIClientService {
         }
         return throwable instanceof java.net.ConnectException ||
                throwable instanceof java.net.SocketTimeoutException;
+    }
+
+    private boolean isConnectionFailure(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof java.net.ConnectException) return true;
+            if (current instanceof WebClientRequestException
+                    && current.getCause() instanceof java.net.ConnectException) return true;
+            current = current.getCause();
+        }
+        return false;
     }
 
     private Throwable handleError(Throwable throwable) {

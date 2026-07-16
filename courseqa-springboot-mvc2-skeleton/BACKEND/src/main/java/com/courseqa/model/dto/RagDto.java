@@ -64,6 +64,10 @@ public static class CreateEmbeddingModelRequest {
         public UUID chatSessionId;
         public UUID userMessageId;
         public UUID workspaceId;
+        public List<UUID> workspaceIds;
+        public List<UUID> documentIds;
+        public UUID semesterId;
+        public String scopeType;
         public String queryText;
         public UUID embeddingModelId;
         public Integer topK;
@@ -86,6 +90,8 @@ public static class CreateEmbeddingModelRequest {
     public static class RetrievalQueryResponse {
         public UUID retrievalQueryId;
         public UUID workspaceId;
+        public UUID semesterId;
+        public String scopeType;
         public String queryText;
         public UUID embeddingModelId;
         public Integer topK;
@@ -99,6 +105,8 @@ public static class CreateEmbeddingModelRequest {
             RetrievalQueryResponse response = new RetrievalQueryResponse();
             response.retrievalQueryId = query.getRetrievalQueryId();
             response.workspaceId = query.getWorkspaceId();
+            response.semesterId = query.getSemesterWorkspaceId();
+            response.scopeType = query.getScopeType();
             response.queryText = query.getQueryText();
             response.embeddingModelId = query.getEmbeddingModelId();
             response.topK = query.getTopK();
