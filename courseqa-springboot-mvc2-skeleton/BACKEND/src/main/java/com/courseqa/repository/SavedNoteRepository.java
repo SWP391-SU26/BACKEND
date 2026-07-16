@@ -10,4 +10,5 @@ import java.util.UUID;
 @Repository
 public interface SavedNoteRepository extends JpaRepository<SavedNote, UUID> {
     List<SavedNote> findByWorkspaceIdOrderByCreatedAtDesc(UUID workspaceId);
+    List<SavedNote> findByWorkspaceIdAndUserIdOrderByCreatedAtDesc(UUID workspaceId, UUID userId);
 }

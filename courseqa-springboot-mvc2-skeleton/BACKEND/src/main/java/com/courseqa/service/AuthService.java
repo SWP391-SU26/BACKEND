@@ -5,6 +5,7 @@ import com.courseqa.model.entity.User;
 import com.courseqa.model.entity.UserRole;
 import com.courseqa.repository.UserRepository;
 import com.courseqa.repository.UserRoleRepository;
+import com.courseqa.security.JwtService;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -33,6 +34,7 @@ public class AuthService {
     private final UserRepository userRepository;
     private final UserRoleRepository userRoleRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
     private final ObjectProvider<JavaMailSender> mailSenderProvider;
     private final String mailFrom;
     private final String mailHost;
@@ -43,6 +45,7 @@ public class AuthService {
             UserRepository userRepository,
             UserRoleRepository userRoleRepository,
             PasswordEncoder passwordEncoder,
+            JwtService jwtService,
             ObjectProvider<JavaMailSender> mailSenderProvider,
             @Value("${app.mail.from:no-reply@courseqa.local}") String mailFrom,
             @Value("${spring.mail.host:}") String mailHost,
@@ -52,6 +55,7 @@ public class AuthService {
         this.userRepository = userRepository;
         this.userRoleRepository = userRoleRepository;
         this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
         this.mailSenderProvider = mailSenderProvider;
         this.mailFrom = mailFrom;
         this.mailHost = mailHost;
@@ -223,7 +227,8 @@ public class AuthService {
     }
 
     private AuthDto.AuthResponse buildAuthResponse(User user) {
-        return new AuthDto.AuthResponse(user.getUserId().toString(), user, getRoleNames(user.getUserId()));
+        List<String> roles = getRoleNames(user.getUserId());
+        return new AuthDto.AuthResponse(jwtService.issue(user.getUserId(), user.getEmail(), roles), user, roles);
     }
 
     private List<String> getRoleNames(UUID userId) {
@@ -232,7 +237,7 @@ public class AuthService {
                 .toList();
     }
 
-    private boolean isAdmin(UUID userId) {
+    public boolean isAdmin(UUID userId) {
         if (!userRepository.existsById(userId)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Requester user not found.");
         }

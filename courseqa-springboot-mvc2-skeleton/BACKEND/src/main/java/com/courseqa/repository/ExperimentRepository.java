@@ -10,4 +10,5 @@ import java.util.UUID;
 @Repository
 public interface ExperimentRepository extends JpaRepository<Experiment, UUID> {
     List<Experiment> findByCreatedByOrderByCreatedAtDesc(UUID createdBy);
+    List<Experiment> findByDatasetIdOrderByCreatedAtDesc(UUID datasetId);
 }

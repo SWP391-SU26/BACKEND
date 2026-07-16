@@ -9,11 +9,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import com.courseqa.security.JwtPrincipal;
 
 import com.courseqa.model.dto.ApiResponse;
 import com.courseqa.model.dto.ChatDto;
@@ -57,12 +61,28 @@ public class ChatController {
      * @return ResponseEntity<ApiResponse<ChatSession>>
      */
     @PostMapping("/sessions")
-    public ResponseEntity<ApiResponse<ChatSession>> createOrGetSession(@Valid @RequestBody CreateSessionRequest request) {
-        log.info("POST /api/chat/sessions - userId: {}, workspaceId: {}", request.getUserId(), request.getWorkspaceId());
+    public ResponseEntity<ApiResponse<ChatDto.SessionResponse>> createSession(@AuthenticationPrincipal JwtPrincipal principal, @Valid @RequestBody CreateSessionRequest request) {
+        log.info("POST /api/chat/sessions - userId: {}, courseId: {}", principal.userId(), request.getCourseId());
+        ChatSession session = chatService.createSession(principal.userId(), request.getScopeType(),
+                request.getSemesterId(), request.getCourseId(), request.getDocumentIds(),
+                principal.roles().contains("ADMIN"), request.getTitle());
 
-        ChatSession session = chatService.createOrGetSession(request.getUserId(), request.getWorkspaceId());
+        return ResponseEntity.ok(ApiResponse.ok(chatService.toSessionResponse(session)));
+    }
 
-        return ResponseEntity.ok(ApiResponse.ok(session));
+    @GetMapping("/sessions")
+    public ApiResponse<List<ChatDto.SessionResponse>> getSessions(
+            @RequestParam(required = false) UUID semesterId,
+            @RequestParam(required = false) UUID courseId,
+            @RequestParam(required = false) String scopeType,
+            @AuthenticationPrincipal JwtPrincipal principal) {
+        return ApiResponse.ok(chatService.getSessions(principal.userId(), semesterId, courseId, scopeType,
+                principal.roles().contains("ADMIN")));
+    }
+
+    @DeleteMapping("/sessions/{sessionId}")
+    public ApiResponse<Void> deleteSession(@PathVariable UUID sessionId, @AuthenticationPrincipal JwtPrincipal principal) {
+        chatService.deleteSession(sessionId, principal.userId()); return ApiResponse.ok(null);
     }
 
     /**
@@ -77,12 +97,14 @@ public class ChatController {
     @PostMapping("/sessions/{sessionId}/ask")
     public ResponseEntity<ApiResponse<ChatDto.AskResponse>> askQuestion(
             @PathVariable UUID sessionId,
+            @AuthenticationPrincipal JwtPrincipal principal,
             @Valid @RequestBody AskQuestionRequest request) {
         log.info("POST /api/chat/sessions/{}/ask - question: {}", sessionId, request.getQuestion());
 
         // TODO: Implement askQuestion logic:
         // 1. Gọi chatService.askQuestion(sessionId, question)
         // 2. TODO sẽ implement khi TV6 confirm API contract
+    chatService.requireSessionOwner(sessionId, principal.userId());
     ChatDto.AskResponse response = chatService.askQuestion(sessionId, request.getQuestion(), request.getAnswerMode());
 
     return ResponseEntity.ok(ApiResponse.ok(response));
@@ -96,9 +118,10 @@ public class ChatController {
      * @return ResponseEntity<ApiResponse<List<ChatMessage>>>
      */
     @GetMapping("/sessions/{sessionId}/history")
-    public ResponseEntity<ApiResponse<List<ChatMessage>>> getHistory(@PathVariable UUID sessionId) {
+    public ResponseEntity<ApiResponse<List<ChatMessage>>> getHistory(@PathVariable UUID sessionId, @AuthenticationPrincipal JwtPrincipal principal) {
         log.info("GET /api/chat/sessions/{}/history", sessionId);
 
+        chatService.requireSessionOwner(sessionId, principal.userId());
         List<ChatMessage> history = chatService.getHistory(sessionId);
 
         return ResponseEntity.ok(ApiResponse.ok(history));
@@ -112,10 +135,10 @@ public class ChatController {
      * @return ResponseEntity<ApiResponse<SavedNote>>
      */
     @PostMapping("/notes")
-    public ResponseEntity<ApiResponse<SavedNote>> saveNote(@Valid @RequestBody SaveNoteRequest request) {
-        log.info("POST /api/chat/notes - userId: {}, workspaceId: {}", request.getUserId(), request.getWorkspaceId());
+    public ResponseEntity<ApiResponse<SavedNote>> saveNote(@AuthenticationPrincipal JwtPrincipal principal, @Valid @RequestBody SaveNoteRequest request) {
+        log.info("POST /api/chat/notes - userId: {}, workspaceId: {}", principal.userId(), request.getWorkspaceId());
 
-        SavedNote note = noteService.saveNote(request.getUserId(), request.getWorkspaceId(), request.getNoteTitle(), request.getNoteContent());
+        SavedNote note = noteService.saveNote(principal.userId(), request.getWorkspaceId(), request.getNoteTitle(), request.getNoteContent());
 
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(note));
     }
@@ -128,10 +151,10 @@ public class ChatController {
      * @return ResponseEntity<ApiResponse<List<SavedNote>>>
      */
     @GetMapping("/notes/workspace/{workspaceId}")
-    public ResponseEntity<ApiResponse<List<SavedNote>>> getNotes(@PathVariable UUID workspaceId) {
+    public ResponseEntity<ApiResponse<List<SavedNote>>> getNotes(@PathVariable UUID workspaceId, @AuthenticationPrincipal JwtPrincipal principal) {
         log.info("GET /api/chat/notes/workspace/{}", workspaceId);
 
-        List<SavedNote> notes = noteService.getNotes(workspaceId);
+        List<SavedNote> notes = noteService.getNotes(workspaceId, principal.userId());
 
         return ResponseEntity.ok(ApiResponse.ok(notes));
     }
@@ -142,34 +165,24 @@ public class ChatController {
      * Request DTO cho createOrGetSession
      */
     public static class CreateSessionRequest {
-        @NotNull(message = "userId is required")
-        private UUID userId;
-
-        @NotNull(message = "workspaceId is required")
-        private UUID workspaceId;
+        private String scopeType;
+        private UUID semesterId;
+        private UUID courseId;
+        private List<UUID> documentIds = List.of();
+        private String title;
 
         public CreateSessionRequest() {}
 
-        public CreateSessionRequest(UUID userId, UUID workspaceId) {
-            this.userId = userId;
-            this.workspaceId = workspaceId;
-        }
-
-        public UUID getUserId() {
-            return userId;
-        }
-
-        public void setUserId(UUID userId) {
-            this.userId = userId;
-        }
-
-        public UUID getWorkspaceId() {
-            return workspaceId;
-        }
-
-        public void setWorkspaceId(UUID workspaceId) {
-            this.workspaceId = workspaceId;
-        }
+        public String getScopeType() { return scopeType; }
+        public void setScopeType(String scopeType) { this.scopeType = scopeType; }
+        public UUID getSemesterId() { return semesterId; }
+        public void setSemesterId(UUID semesterId) { this.semesterId = semesterId; }
+        public UUID getCourseId() { return courseId; }
+        public void setCourseId(UUID courseId) { this.courseId = courseId; }
+        public List<UUID> getDocumentIds() { return documentIds; }
+        public void setDocumentIds(List<UUID> documentIds) { this.documentIds = documentIds == null ? List.of() : documentIds; }
+        public String getTitle() { return title; }
+        public void setTitle(String title) { this.title = title; }
     }
 
     /**
@@ -207,9 +220,6 @@ public class ChatController {
      * Request DTO cho saveNote
      */
     public static class SaveNoteRequest {
-        @NotNull(message = "userId is required")
-        private UUID userId;
-
         @NotNull(message = "workspaceId is required")
         private UUID workspaceId;
 
@@ -221,19 +231,10 @@ public class ChatController {
 
         public SaveNoteRequest() {}
 
-        public SaveNoteRequest(UUID userId, UUID workspaceId, String noteTitle, String noteContent) {
-            this.userId = userId;
+        public SaveNoteRequest(UUID workspaceId, String noteTitle, String noteContent) {
             this.workspaceId = workspaceId;
             this.noteTitle = noteTitle;
             this.noteContent = noteContent;
-        }
-
-        public UUID getUserId() {
-            return userId;
-        }
-
-        public void setUserId(UUID userId) {
-            this.userId = userId;
         }
 
         public UUID getWorkspaceId() {

@@ -7,16 +7,30 @@ import com.courseqa.model.dto.RagDto;
 import com.courseqa.model.entity.AnswerCitation;
 import com.courseqa.model.entity.ChatMessage;
 import com.courseqa.model.entity.ChatSession;
+import com.courseqa.model.entity.ChatSessionDocument;
+import com.courseqa.model.entity.Course;
+import com.courseqa.model.entity.CourseDocument;
 import com.courseqa.model.entity.CourseWorkspace;
+import com.courseqa.model.entity.SemesterWorkspace;
 import com.courseqa.repository.AnswerCitationRepository;
 import com.courseqa.repository.ChatMessageRepository;
 import com.courseqa.repository.ChatSessionRepository;
+import com.courseqa.repository.ChatSessionDocumentRepository;
 import com.courseqa.repository.CourseWorkspaceRepository;
+import com.courseqa.repository.CourseMembershipRepository;
+import com.courseqa.repository.UserRoleRepository;
+import com.courseqa.repository.CourseRepository;
+import com.courseqa.repository.SemesterWorkspaceRepository;
+import com.courseqa.repository.CourseDocumentRepository;
 import java.text.Normalizer;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,55 +44,141 @@ public class ChatService {
 
     private static final Logger log = LoggerFactory.getLogger(ChatService.class);
     private static final String OUT_OF_SCOPE_MESSAGE =
-            "Không tìm thấy nội dung phù hợp trong tài liệu của workspace.";
+            "Không tìm thấy nội dung phù hợp trong tài liệu của môn học.";
 
     private final ChatSessionRepository chatSessionRepository;
+    private final ChatSessionDocumentRepository chatSessionDocumentRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final CourseWorkspaceRepository courseWorkspaceRepository;
     private final AIClientService aiClientService;
     private final AnswerCitationRepository answerCitationRepository;
     private final RetrievalService retrievalService;
+    private final CourseMembershipRepository courseMembershipRepository;
+    private final UserRoleRepository userRoleRepository;
+    private final CourseRepository courseRepository;
+    private final SemesterWorkspaceRepository semesterWorkspaceRepository;
+    private final CourseDocumentRepository courseDocumentRepository;
+    private final LearningScopeService learningScopeService;
+    private final PersonalWorkspaceService personalWorkspaceService;
 
     public ChatService(
             ChatSessionRepository chatSessionRepository,
+            ChatSessionDocumentRepository chatSessionDocumentRepository,
             ChatMessageRepository chatMessageRepository,
             CourseWorkspaceRepository courseWorkspaceRepository,
             AIClientService aiClientService,
             AnswerCitationRepository answerCitationRepository,
-            RetrievalService retrievalService) {
+            RetrievalService retrievalService,
+            CourseMembershipRepository courseMembershipRepository,
+            UserRoleRepository userRoleRepository,
+            CourseRepository courseRepository,
+            SemesterWorkspaceRepository semesterWorkspaceRepository,
+            CourseDocumentRepository courseDocumentRepository,
+            LearningScopeService learningScopeService,
+            PersonalWorkspaceService personalWorkspaceService) {
         this.chatSessionRepository = chatSessionRepository;
+        this.chatSessionDocumentRepository = chatSessionDocumentRepository;
         this.chatMessageRepository = chatMessageRepository;
         this.courseWorkspaceRepository = courseWorkspaceRepository;
         this.aiClientService = aiClientService;
         this.answerCitationRepository = answerCitationRepository;
         this.retrievalService = retrievalService;
+        this.courseMembershipRepository = courseMembershipRepository;
+        this.userRoleRepository = userRoleRepository;
+        this.courseRepository = courseRepository;
+        this.semesterWorkspaceRepository = semesterWorkspaceRepository;
+        this.courseDocumentRepository = courseDocumentRepository;
+        this.learningScopeService = learningScopeService;
+        this.personalWorkspaceService = personalWorkspaceService;
     }
 
-    public ChatSession createOrGetSession(UUID userId, UUID workspaceId) {
-        log.info("Creating or getting chat session for userId: {}, workspaceId: {}", userId, workspaceId);
+    public ChatSession createSession(UUID userId, UUID courseId, boolean admin, String requestedTitle) {
+        return createSession(userId, "COURSE", null, courseId, List.of(), admin, requestedTitle);
+    }
 
-        ChatSession existingSession = chatSessionRepository
-                .findByUserIdAndWorkspaceIdAndIsActiveTrue(userId, workspaceId)
-                .orElse(null);
-        if (existingSession != null) {
-            log.info("Found existing active chat session: {}", existingSession.getChatSessionId());
-            return existingSession;
+    public ChatSession createSession(UUID userId, String requestedScopeType, UUID requestedSemesterId,
+            UUID courseId, List<UUID> requestedDocumentIds, boolean admin, String requestedTitle) {
+        String scopeType = normalizeScopeType(requestedScopeType);
+        Course course = null;
+        CourseWorkspace workspace = null;
+        UUID semesterId = requestedSemesterId;
+        List<CourseDocument> selectedDocuments = List.of();
+
+        if ("PERSONAL".equals(scopeType)) {
+            selectedDocuments = validatePersonalDocuments(userId, requestedDocumentIds);
+            workspace = personalWorkspaceService.getOrCreate(userId);
+            courseId = null;
+            semesterId = null;
+        } else if ("SEMESTER".equals(scopeType)) {
+            if (semesterId == null) badRequest("semesterId is required for SEMESTER scope.");
+            if (learningScopeService.accessibleCoursesInSemester(semesterId, userId, admin).isEmpty()) {
+                conflict("This semester has no available processed documents for chat.");
+            }
+        } else {
+            if (courseId == null) badRequest("courseId is required for COURSE and DOCUMENTS scopes.");
+            course = learningScopeService.requireAccessibleCourse(courseId, userId, admin);
+            semesterId = course.getSemesterWorkspaceId();
+            if (requestedSemesterId != null && !requestedSemesterId.equals(semesterId)) {
+                badRequest("The selected course does not belong to the selected semester.");
+            }
+            workspace = learningScopeService.requireActiveWorkspace(courseId);
+            if ("DOCUMENTS".equals(scopeType)) {
+                selectedDocuments = validateSelectedDocuments(courseId, requestedDocumentIds);
+            }
         }
 
-        CourseWorkspace workspace = courseWorkspaceRepository.findById(workspaceId)
-                .orElseThrow(() -> new ResourceNotFoundException("CourseWorkspace not found with id: " + workspaceId));
-
+        log.info("Creating chat session for userId: {}, scope: {}, courseId: {}, semesterId: {}",
+                userId, scopeType, courseId, semesterId);
         ChatSession newSession = new ChatSession();
         newSession.setUserId(userId);
-        newSession.setWorkspaceId(workspaceId);
-        newSession.setCourseId(workspace.getCourseId());
+        newSession.setWorkspaceId(workspace == null ? null : workspace.getWorkspaceId());
+        newSession.setCourseId(course == null ? null : course.getCourseId());
+        newSession.setSemesterWorkspaceId(semesterId);
+        newSession.setScopeType(scopeType);
+        newSession.setSessionTitle(requestedTitle == null || requestedTitle.isBlank() ? "New conversation" : truncate(requestedTitle.trim(), 60));
         newSession.setIsActive(true);
         newSession.setStartedAt(LocalDateTime.now());
         newSession.setUpdatedAt(LocalDateTime.now());
 
         ChatSession savedSession = chatSessionRepository.save(newSession);
+        for (CourseDocument document : selectedDocuments) {
+            ChatSessionDocument selection = new ChatSessionDocument();
+            selection.setChatSessionId(savedSession.getChatSessionId());
+            selection.setDocumentId(document.getDocumentId());
+            chatSessionDocumentRepository.save(selection);
+        }
         log.info("Created new chat session: {}", savedSession.getChatSessionId());
         return savedSession;
+    }
+
+    public ChatSession createEvaluationSession(UUID userId, UUID courseId, UUID semesterId, List<UUID> documentIds) {
+        return createSession(userId, "DOCUMENTS", semesterId, courseId, documentIds, true,
+                "Evaluation benchmark");
+    }
+
+    public List<ChatDto.SessionResponse> getSessions(UUID userId, UUID semesterId, UUID courseId,
+            String requestedScopeType, boolean admin) {
+        List<ChatSession> sessions;
+        if ("PERSONAL".equalsIgnoreCase(requestedScopeType)) {
+            sessions = chatSessionRepository.findByUserIdAndScopeTypeAndIsActiveTrueOrderByUpdatedAtDesc(userId, "PERSONAL");
+        } else if (semesterId != null) {
+            learningScopeService.requireAccessibleSemester(semesterId);
+            sessions = chatSessionRepository.findByUserIdAndSemesterWorkspaceIdAndIsActiveTrueOrderByUpdatedAtDesc(userId, semesterId);
+        } else if (courseId != null) {
+            learningScopeService.requireAccessibleCourse(courseId, userId, admin);
+            sessions = chatSessionRepository.findByUserIdAndCourseIdAndIsActiveTrueOrderByUpdatedAtDesc(userId, courseId);
+        } else {
+            badRequest("semesterId, courseId, or PERSONAL scopeType is required.");
+            return List.of();
+        }
+        return sessions.stream().map(this::toSessionResponse).toList();
+    }
+
+    public void deleteSession(UUID sessionId, UUID userId) {
+        requireSessionOwner(sessionId, userId);
+        ChatSession session = chatSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("ChatSession not found: " + sessionId));
+        session.setIsActive(false); session.setUpdatedAt(LocalDateTime.now()); chatSessionRepository.save(session);
     }
 
     public List<ChatMessage> getHistory(UUID sessionId) {
@@ -93,34 +193,58 @@ public class ChatService {
                 .getContent();
     }
 
+    public void requireSessionOwner(UUID sessionId, UUID userId) {
+        ChatSession session = chatSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("ChatSession not found with id: " + sessionId));
+        if (!session.getUserId().equals(userId)) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.FORBIDDEN, "This chat session belongs to another user.");
+        }
+        if (!Boolean.TRUE.equals(session.getIsActive())) {
+            throw new ResourceNotFoundException("ChatSession not found with id: " + sessionId);
+        }
+    }
+
     public ChatDto.AskResponse askQuestion(UUID sessionId, String question) {
         return askQuestion(sessionId, question, "RAG");
     }
 
     public ChatDto.AskResponse askQuestion(UUID sessionId, String question, String requestedAnswerMode) {
+        return askQuestion(sessionId, question, requestedAnswerMode, false);
+    }
+
+    public ChatDto.AskResponse askQuestion(UUID sessionId, String question, String requestedAnswerMode, boolean strict) {
         String answerMode = normalizeAnswerMode(requestedAnswerMode);
         log.info("askQuestion - sessionId: {}, mode: {}, question: {}", sessionId, answerMode, question);
 
         ChatSession session = chatSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("ChatSession not found: " + sessionId));
+        boolean admin = userRoleRepository.findByUserIdAndIsActiveTrue(session.getUserId()).stream()
+                .anyMatch(role -> "ADMIN".equalsIgnoreCase(role.getRoleName()));
+        ResolvedScope resolvedScope = resolveScope(session, admin);
+        if (session.getSessionTitle() == null || session.getSessionTitle().isBlank() || "New conversation".equals(session.getSessionTitle())) {
+            session.setSessionTitle(truncate(question.trim(), 60));
+        }
+        session.setUpdatedAt(LocalDateTime.now()); chatSessionRepository.save(session);
 
         ChatMessage savedUserMessage = saveMessage(sessionId, "user", question);
 
-        if ("FINE_TUNED".equals(answerMode)) {
-            return answerWithFineTunedModel(sessionId, savedUserMessage, question);
+        if (isGreeting(question)) {
+            String greeting = "Chào bạn! Hãy đặt câu hỏi về phạm vi tài liệu bạn đã chọn nhé.";
+            ChatMessage assistantMessage = saveMessage(sessionId, "assistant", greeting, "GREETING");
+            return new ChatDto.AskResponse(sessionId, savedUserMessage.getMessageId(),
+                    assistantMessage.getMessageId(), greeting, "RAG", "local", "GREETING", null, List.of());
         }
 
-        RagDto.RetrievalResponse retrieval = retrieveFromJavaSql(session, savedUserMessage, question);
+        if ("FINE_TUNED".equals(answerMode)) {
+            return answerWithFineTunedModel(sessionId, savedUserMessage, question, strict);
+        }
 
-        // Out-of-scope gate: need at least one chunk AND a strong enough top match.
-        double topScore = (retrieval.results == null || retrieval.results.isEmpty()
-                || retrieval.results.get(0).similarityScore == null)
-                ? 0.0
-                : retrieval.results.get(0).similarityScore;
+        RagDto.RetrievalResponse retrieval = retrieveFromJavaSql(session, resolvedScope, savedUserMessage, question);
 
-        if (retrieval.results == null || retrieval.results.isEmpty() || topScore < 0.25) {
+        if (!Boolean.TRUE.equals(retrieval.answerable) || retrieval.results == null || retrieval.results.isEmpty()) {
             String message = firstNonBlank(retrieval.noAnswerReason, OUT_OF_SCOPE_MESSAGE);
-            ChatMessage assistantMessage = saveMessage(sessionId, "assistant", message);
+            ChatMessage assistantMessage = saveMessage(sessionId, "assistant", message, "LOCAL_EXTRACTIVE");
             return new ChatDto.AskResponse(
                     sessionId,
                     savedUserMessage.getMessageId(),
@@ -128,6 +252,7 @@ public class ChatService {
                     message,
                     "RAG",
                     retrieval.embeddingModelName,
+                    "LOCAL_EXTRACTIVE",
                     retrieval.retrievalQueryId,
                     new ArrayList<>()
             );
@@ -136,22 +261,27 @@ public class ChatService {
         PythonAiDto.GenerateResponse generated;
         try {
             generated = aiClientService.callGenerate(
-                    toGenerateRequest(question, retrieval.results),
+                    toGenerateRequest(question, retrieval.results, strict),
                     PythonAiDto.GenerateResponse.class
             );
         } catch (Exception exception) {
             log.error("Python /api/generate failed for sessionId {}: {}", sessionId, exception.getMessage());
-            String message = "AI service is not responding. Please start the Python AI service and try again.";
-            ChatMessage assistantMessage = saveMessage(sessionId, "assistant", message);
+            if (strict) {
+                throw new IllegalStateException("Strict RAG generation failed: " + exception.getMessage(), exception);
+            }
+            String answer = fallbackAnswer(retrieval.results);
+            ChatMessage assistantMessage = saveMessage(sessionId, "assistant", answer, "LOCAL_FALLBACK");
+            List<ChatDto.CitationItem> citations = saveCitations(assistantMessage, retrieval.results, List.of());
             return new ChatDto.AskResponse(
                     sessionId,
                     savedUserMessage.getMessageId(),
                     assistantMessage.getMessageId(),
-                    message,
+                    answer,
                     "RAG",
                     retrieval.embeddingModelName,
+                    "LOCAL_FALLBACK",
                     retrieval.retrievalQueryId,
-                    new ArrayList<>()
+                    citations
             );
         }
 
@@ -159,7 +289,7 @@ public class ChatService {
                 ? OUT_OF_SCOPE_MESSAGE
                 : (generated.answer == null || generated.answer.isBlank() ? OUT_OF_SCOPE_MESSAGE : generated.answer);
 
-        ChatMessage savedAssistantMessage = saveMessage(sessionId, "assistant", answer);
+        ChatMessage savedAssistantMessage = saveMessage(sessionId, "assistant", answer, "LOCAL_EXTRACTIVE");
         List<ChatDto.CitationItem> citations = OUT_OF_SCOPE_MESSAGE.equals(answer)
                 ? new ArrayList<>()
                 : saveCitations(savedAssistantMessage, retrieval.results, generated.sources);
@@ -171,13 +301,144 @@ public class ChatService {
                 answer,
                 "RAG",
                 retrieval.embeddingModelName,
+                "LOCAL_EXTRACTIVE",
                 retrieval.retrievalQueryId,
                 citations
         );
     }
 
-    private ChatDto.AskResponse answerWithFineTunedModel(UUID sessionId, ChatMessage savedUserMessage, String question) {
-        return answerWithoutRetrieval(sessionId, savedUserMessage, question, "FINE_TUNED", "qwen-rag-lora");
+    /**
+     * Benchmark-only path. Retrieval and audit rows are still produced per question,
+     * while model inference is amortized across one GPU batch.
+     */
+    public List<ChatDto.AskResponse> askEvaluationBatch(
+            UUID sessionId, List<String> questions, String requestedAnswerMode) {
+        if (questions == null || questions.isEmpty()) return List.of();
+        String answerMode = normalizeAnswerMode(requestedAnswerMode);
+        ChatSession session = chatSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("ChatSession not found: " + sessionId));
+        boolean admin = userRoleRepository.findByUserIdAndIsActiveTrue(session.getUserId()).stream()
+                .anyMatch(role -> "ADMIN".equalsIgnoreCase(role.getRoleName()));
+        ResolvedScope resolvedScope = resolveScope(session, admin);
+        session.setUpdatedAt(LocalDateTime.now());
+        chatSessionRepository.save(session);
+
+        List<BenchmarkQuestionContext> prepared = new ArrayList<>();
+        for (String question : questions) {
+            ChatMessage userMessage = saveMessage(sessionId, "user", question);
+            RagDto.RetrievalResponse retrieval = "RAG".equals(answerMode)
+                    ? retrieveFromJavaSql(session, resolvedScope, userMessage, question)
+                    : null;
+            prepared.add(new BenchmarkQuestionContext(question, userMessage, retrieval));
+        }
+        return "FINE_TUNED".equals(answerMode)
+                ? answerFineTunedEvaluationBatch(sessionId, prepared)
+                : answerRagEvaluationBatch(sessionId, prepared);
+    }
+
+    private List<ChatDto.AskResponse> answerFineTunedEvaluationBatch(
+            UUID sessionId, List<BenchmarkQuestionContext> prepared) {
+        PythonAiDto.ChatFinetunedBatchRequest request = new PythonAiDto.ChatFinetunedBatchRequest();
+        request.strict = true;
+        request.items = prepared.stream().map(item -> {
+            PythonAiDto.ChatFinetunedBatchItem batchItem = new PythonAiDto.ChatFinetunedBatchItem();
+            batchItem.request_id = item.userMessage().getMessageId().toString();
+            batchItem.question = item.question();
+            return batchItem;
+        }).toList();
+
+        PythonAiDto.ChatFinetunedBatchResponse generated = aiClientService.callChatFinetunedBatch(request);
+        Map<String, PythonAiDto.ChatFinetunedBatchResult> byId = new HashMap<>();
+        if (generated != null && generated.items != null) {
+            generated.items.forEach(item -> byId.put(item.request_id, item));
+        }
+
+        List<ChatDto.AskResponse> answers = new ArrayList<>();
+        for (BenchmarkQuestionContext item : prepared) {
+            String requestId = item.userMessage().getMessageId().toString();
+            PythonAiDto.ChatFinetunedBatchResult result = byId.get(requestId);
+            if (result == null || result.error != null || result.answer == null || result.answer.isBlank()) {
+                throw new IllegalStateException("Fine-tuned batch did not return a valid answer for " + requestId);
+            }
+            ChatMessage assistant = saveMessage(sessionId, "assistant", result.answer, "FINE_TUNED");
+            answers.add(new ChatDto.AskResponse(
+                    sessionId, item.userMessage().getMessageId(), assistant.getMessageId(), result.answer,
+                    "FINE_TUNED", "qwen-rag-lora", "FINE_TUNED", null, new ArrayList<>()));
+        }
+        return answers;
+    }
+
+    private List<ChatDto.AskResponse> answerRagEvaluationBatch(
+            UUID sessionId, List<BenchmarkQuestionContext> prepared) {
+        PythonAiDto.GenerateBatchRequest request = new PythonAiDto.GenerateBatchRequest();
+        request.strict = true;
+        request.items = prepared.stream()
+                .filter(item -> item.retrieval() != null
+                        && Boolean.TRUE.equals(item.retrieval().answerable)
+                        && item.retrieval().results != null
+                        && !item.retrieval().results.isEmpty())
+                .map(item -> {
+                    PythonAiDto.GenerateBatchItem batchItem = new PythonAiDto.GenerateBatchItem();
+                    batchItem.request_id = item.userMessage().getMessageId().toString();
+                    batchItem.question = item.question();
+                    batchItem.contexts = item.retrieval().results.stream().map(this::toGenerateContext).toList();
+                    return batchItem;
+                }).toList();
+
+        Map<String, PythonAiDto.GenerateBatchResult> byId = new HashMap<>();
+        if (!request.items.isEmpty()) {
+            PythonAiDto.GenerateBatchResponse generated = aiClientService.callGenerateBatch(request);
+            if (generated != null && generated.items != null) {
+                generated.items.forEach(item -> byId.put(item.request_id, item));
+            }
+        }
+
+        List<ChatDto.AskResponse> answers = new ArrayList<>();
+        for (BenchmarkQuestionContext item : prepared) {
+            RagDto.RetrievalResponse retrieval = item.retrieval();
+            if (retrieval == null || !Boolean.TRUE.equals(retrieval.answerable)
+                    || retrieval.results == null || retrieval.results.isEmpty()) {
+                String answer = retrieval == null
+                        ? OUT_OF_SCOPE_MESSAGE
+                        : firstNonBlank(retrieval.noAnswerReason, OUT_OF_SCOPE_MESSAGE);
+                ChatMessage assistant = saveMessage(sessionId, "assistant", answer, "LOCAL_EXTRACTIVE");
+                answers.add(new ChatDto.AskResponse(
+                        sessionId, item.userMessage().getMessageId(), assistant.getMessageId(), answer,
+                        "RAG", retrieval == null ? null : retrieval.embeddingModelName,
+                        "LOCAL_EXTRACTIVE", retrieval == null ? null : retrieval.retrievalQueryId,
+                        new ArrayList<>()));
+                continue;
+            }
+
+            String requestId = item.userMessage().getMessageId().toString();
+            PythonAiDto.GenerateBatchResult result = byId.get(requestId);
+            if (result == null || result.error != null) {
+                throw new IllegalStateException("RAG batch did not return a valid answer for " + requestId);
+            }
+            String answer = Boolean.TRUE.equals(result.is_out_of_scope)
+                    ? OUT_OF_SCOPE_MESSAGE
+                    : firstNonBlank(result.answer, OUT_OF_SCOPE_MESSAGE);
+            ChatMessage assistant = saveMessage(sessionId, "assistant", answer, "LOCAL_EXTRACTIVE");
+            List<ChatDto.CitationItem> citations = OUT_OF_SCOPE_MESSAGE.equals(answer)
+                    ? new ArrayList<>()
+                    : saveCitations(assistant, retrieval.results,
+                            result.sources == null ? List.of() : result.sources);
+            answers.add(new ChatDto.AskResponse(
+                    sessionId, item.userMessage().getMessageId(), assistant.getMessageId(), answer,
+                    "RAG", retrieval.embeddingModelName, "LOCAL_EXTRACTIVE",
+                    retrieval.retrievalQueryId, citations));
+        }
+        return answers;
+    }
+
+    private record BenchmarkQuestionContext(
+            String question, ChatMessage userMessage, RagDto.RetrievalResponse retrieval) { }
+
+    private String truncate(String value, int max) { return value.length() <= max ? value : value.substring(0, max).trim(); }
+
+    private ChatDto.AskResponse answerWithFineTunedModel(UUID sessionId, ChatMessage savedUserMessage,
+            String question, boolean strict) {
+        return answerWithoutRetrieval(sessionId, savedUserMessage, question, "FINE_TUNED", "qwen-rag-lora", strict);
     }
 
     private ChatDto.AskResponse answerWithoutRetrieval(
@@ -185,10 +446,12 @@ public class ChatService {
             ChatMessage savedUserMessage,
             String question,
             String responseMode,
-            String modelName
+            String modelName,
+            boolean strict
     ) {
         PythonAiDto.ChatFinetunedRequest request = new PythonAiDto.ChatFinetunedRequest();
         request.question = question;
+        request.strict = strict;
 
         String answer;
         try {
@@ -201,10 +464,13 @@ public class ChatService {
                     : response.answer;
         } catch (Exception exception) {
             log.error("Python /ai/chat-finetuned failed for sessionId {}: {}", sessionId, exception.getMessage());
+            if (strict) {
+                throw new IllegalStateException("Fine-tuned model is not ready: " + exception.getMessage(), exception);
+            }
             answer = "The fine-tuned model is not ready on this machine. Check the local model or switch back to RAG.";
         }
 
-        ChatMessage assistantMessage = saveMessage(sessionId, "assistant", answer);
+        ChatMessage assistantMessage = saveMessage(sessionId, "assistant", answer, "FINE_TUNED");
         return new ChatDto.AskResponse(
                 sessionId,
                 savedUserMessage.getMessageId(),
@@ -212,6 +478,7 @@ public class ChatService {
                 answer,
                 responseMode,
                 modelName,
+                "FINE_TUNED",
                 null,
                 new ArrayList<>()
         );
@@ -228,11 +495,16 @@ public class ChatService {
         return "RAG";
     }
 
-    private RagDto.RetrievalResponse retrieveFromJavaSql(ChatSession session, ChatMessage userMessage, String question) {
+    private RagDto.RetrievalResponse retrieveFromJavaSql(ChatSession session, ResolvedScope scope,
+            ChatMessage userMessage, String question) {
         RagDto.RetrievalRequest request = new RagDto.RetrievalRequest();
         request.chatSessionId = session.getChatSessionId();
         request.userMessageId = userMessage.getMessageId();
-        request.workspaceId = session.getWorkspaceId();
+        request.workspaceId = scope.primaryWorkspaceId();
+        request.workspaceIds = scope.workspaceIds();
+        request.documentIds = scope.documentIds();
+        request.semesterId = session.getSemesterWorkspaceId();
+        request.scopeType = normalizedSessionScope(session);
         request.queryText = question;
         request.embeddingModelId = session.getSelectedEmbeddingModelId();
         request.topK = needsExpandedContext(question) ? 40 : 5;
@@ -275,9 +547,11 @@ public class ChatService {
                 .toLowerCase(java.util.Locale.ROOT);
     }
 
-    private PythonAiDto.GenerateRequest toGenerateRequest(String question, List<RagDto.RetrievedChunk> chunks) {
+    private PythonAiDto.GenerateRequest toGenerateRequest(String question, List<RagDto.RetrievedChunk> chunks,
+            boolean strict) {
         PythonAiDto.GenerateRequest request = new PythonAiDto.GenerateRequest();
         request.question = question;
+        request.strict = strict;
         request.contexts = chunks.stream()
                 .map(this::toGenerateContext)
                 .toList();
@@ -336,7 +610,7 @@ public class ChatService {
             List<RagDto.RetrievedChunk> retrievedChunks,
             List<Map<String, Object>> pythonSources) {
         if (pythonSources == null || pythonSources.isEmpty()) {
-            return List.of();
+            return retrievedChunks == null ? List.of() : retrievedChunks.stream().limit(3).toList();
         }
 
         List<UUID> sourceChunkIds = pythonSources.stream()
@@ -360,10 +634,15 @@ public class ChatService {
     }
 
     private ChatMessage saveMessage(UUID sessionId, String role, String content) {
+        return saveMessage(sessionId, role, content, null);
+    }
+
+    private ChatMessage saveMessage(UUID sessionId, String role, String content, String model) {
         ChatMessage message = new ChatMessage();
         message.setChatSessionId(sessionId);
         message.setSenderRole(role);
         message.setMessageContent(content);
+        message.setLlmModel(model);
         message.setCreatedAt(LocalDateTime.now());
         return chatMessageRepository.save(message);
     }
@@ -389,4 +668,153 @@ public class ChatService {
         }
         return content.length() <= 280 ? content : content.substring(0, 280);
     }
+
+    private List<CourseDocument> validateSelectedDocuments(UUID courseId, List<UUID> requestedDocumentIds) {
+        List<UUID> documentIds = requestedDocumentIds == null
+                ? List.of()
+                : requestedDocumentIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (documentIds.isEmpty()) badRequest("At least one documentId is required for DOCUMENTS scope.");
+
+        List<CourseDocument> selected = courseDocumentRepository.findAllById(documentIds);
+        if (selected.size() != documentIds.size()) badRequest("One or more selected documents do not exist.");
+        boolean invalid = selected.stream().anyMatch(document ->
+                !courseId.equals(document.getCourseId()) || !"PROCESSED".equals(document.getProcessingStatus()));
+        if (invalid) badRequest("All selected documents must be processed and belong to the selected course.");
+        return selected;
+    }
+
+    private List<CourseDocument> validatePersonalDocuments(UUID userId, List<UUID> requestedDocumentIds) {
+        List<UUID> documentIds = requestedDocumentIds == null
+                ? List.of()
+                : requestedDocumentIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (documentIds.isEmpty()) badRequest("At least one documentId is required for PERSONAL scope.");
+        List<CourseDocument> selected = courseDocumentRepository.findAllById(documentIds);
+        if (selected.size() != documentIds.size()) badRequest("One or more selected documents do not exist.");
+        boolean invalid = selected.stream().anyMatch(document ->
+                !userId.equals(document.getUploadedBy()) || !"PROCESSED".equals(document.getProcessingStatus()));
+        if (invalid) badRequest("Personal chat only accepts processed documents uploaded by the current user.");
+        return selected;
+    }
+
+    private ResolvedScope resolveScope(ChatSession session, boolean admin) {
+        String scopeType = normalizedSessionScope(session);
+        if ("PERSONAL".equals(scopeType)) {
+            List<UUID> selectedIds = chatSessionDocumentRepository.findByChatSessionId(session.getChatSessionId()).stream()
+                    .map(ChatSessionDocument::getDocumentId).distinct().toList();
+            List<UUID> documentIds = validatePersonalDocuments(session.getUserId(), selectedIds).stream()
+                    .map(CourseDocument::getDocumentId).toList();
+            CourseWorkspace workspace = personalWorkspaceService.getOrCreate(session.getUserId());
+            return new ResolvedScope(workspace.getWorkspaceId(), List.of(workspace.getWorkspaceId()), documentIds);
+        }
+        if ("SEMESTER".equals(scopeType)) {
+            UUID semesterId = session.getSemesterWorkspaceId();
+            if (semesterId == null) conflict("This semester chat session is missing its semester scope.");
+            List<Course> availableCourses = learningScopeService.accessibleCoursesInSemester(
+                    semesterId, session.getUserId(), admin);
+            if (availableCourses.isEmpty()) conflict("This semester has no available documents for chat.");
+            List<UUID> courseIds = availableCourses.stream().map(Course::getCourseId).toList();
+            List<UUID> documentIds = courseDocumentRepository
+                    .findByCourseIdInAndProcessingStatus(courseIds, "PROCESSED").stream()
+                    .map(CourseDocument::getDocumentId).distinct().toList();
+            List<UUID> workspaceIds = availableCourses.stream()
+                    .map(course -> learningScopeService.requireActiveWorkspace(course.getCourseId()).getWorkspaceId())
+                    .distinct().toList();
+            if (documentIds.isEmpty()) conflict("This semester has no processed document available for chat.");
+            return new ResolvedScope(null, workspaceIds, documentIds);
+        }
+
+        Course course = learningScopeService.requireAccessibleCourse(session.getCourseId(), session.getUserId(), admin);
+        CourseWorkspace workspace = learningScopeService.requireActiveWorkspace(course.getCourseId());
+        List<UUID> documentIds;
+        if ("DOCUMENTS".equals(scopeType)) {
+            List<UUID> selectedIds = chatSessionDocumentRepository.findByChatSessionId(session.getChatSessionId()).stream()
+                    .map(ChatSessionDocument::getDocumentId).distinct().toList();
+            documentIds = validateSelectedDocuments(course.getCourseId(), selectedIds).stream()
+                    .map(CourseDocument::getDocumentId).toList();
+        } else {
+            documentIds = courseDocumentRepository
+                    .findByCourseIdAndProcessingStatusOrderByUploadedAtDesc(course.getCourseId(), "PROCESSED").stream()
+                    .map(CourseDocument::getDocumentId).distinct().toList();
+        }
+        if (documentIds.isEmpty()) conflict("This course has no processed document available for chat.");
+        return new ResolvedScope(workspace.getWorkspaceId(), List.of(workspace.getWorkspaceId()), documentIds);
+    }
+
+    public ChatDto.SessionResponse toSessionResponse(ChatSession session) {
+        String scopeType = normalizedSessionScope(session);
+        List<UUID> documentIds = Set.of("DOCUMENTS", "PERSONAL").contains(scopeType)
+                ? chatSessionDocumentRepository.findByChatSessionId(session.getChatSessionId()).stream()
+                        .map(ChatSessionDocument::getDocumentId).distinct().toList()
+                : List.of();
+        String scopeLabel;
+        if ("PERSONAL".equals(scopeType)) {
+            scopeLabel = documentIds.size() + " tài liệu cá nhân";
+        } else if ("SEMESTER".equals(scopeType)) {
+            scopeLabel = semesterWorkspaceRepository.findById(session.getSemesterWorkspaceId())
+                    .map(SemesterWorkspace::getSemesterName).orElse("Học kỳ");
+        } else {
+            Course course = courseRepository.findById(session.getCourseId()).orElse(null);
+            String courseLabel = course == null ? "Môn học" : firstNonBlank(course.getCourseCode(), course.getCourseName());
+            scopeLabel = "DOCUMENTS".equals(scopeType)
+                    ? documentIds.size() + " tài liệu · " + courseLabel
+                    : courseLabel;
+        }
+        return ChatDto.SessionResponse.builder()
+                .chatSessionId(session.getChatSessionId())
+                .userId(session.getUserId())
+                .workspaceId(session.getWorkspaceId())
+                .semesterId(session.getSemesterWorkspaceId())
+                .courseId(session.getCourseId())
+                .scopeType(scopeType)
+                .documentIds(documentIds)
+                .scopeLabel(scopeLabel)
+                .sessionTitle(session.getSessionTitle())
+                .isActive(session.getIsActive())
+                .startedAt(session.getStartedAt())
+                .updatedAt(session.getUpdatedAt())
+                .build();
+    }
+
+    private String normalizeScopeType(String requestedScopeType) {
+        String value = requestedScopeType == null || requestedScopeType.isBlank()
+                ? "COURSE"
+                : requestedScopeType.trim().toUpperCase(java.util.Locale.ROOT);
+        if (!Set.of("PERSONAL", "DOCUMENTS", "COURSE", "SEMESTER").contains(value)) {
+            badRequest("scopeType must be PERSONAL, DOCUMENTS, COURSE, or SEMESTER.");
+        }
+        return value;
+    }
+
+    private String normalizedSessionScope(ChatSession session) {
+        return normalizeScopeType(session.getScopeType());
+    }
+
+    private boolean isGreeting(String question) {
+        String normalized = normalizeText(question == null ? "" : question).trim()
+                .replaceAll("[!.?]+$", "").trim();
+        return Set.of("chao", "xin chao", "hello", "hi", "cam on", "cam on ban", "thank you", "thanks")
+                .contains(normalized);
+    }
+
+    private String fallbackAnswer(List<RagDto.RetrievedChunk> chunks) {
+        StringBuilder answer = new StringBuilder("Mình tìm thấy nội dung liên quan trong tài liệu:\n");
+        chunks.stream().limit(3).forEach(chunk -> {
+            String content = chunk.content == null ? "" : chunk.content.trim();
+            if (content.length() > 700) content = content.substring(0, 700).trim() + "...";
+            if (!content.isBlank()) answer.append("\n").append(content);
+        });
+        return answer.toString().trim();
+    }
+
+    private void badRequest(String message) {
+        throw new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.BAD_REQUEST, message);
+    }
+
+    private void conflict(String message) {
+        throw new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.CONFLICT, message);
+    }
+
+    private record ResolvedScope(UUID primaryWorkspaceId, List<UUID> workspaceIds, List<UUID> documentIds) { }
 }

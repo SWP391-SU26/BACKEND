@@ -13,10 +13,13 @@ import com.courseqa.repository.ChapterRepository;
 import com.courseqa.repository.CourseDocumentRepository;
 import com.courseqa.repository.CourseRepository;
 import com.courseqa.repository.CourseWorkspaceRepository;
+import com.courseqa.repository.DocumentChapterRangeRepository;
+import com.courseqa.repository.DocumentChapterSuggestionRepository;
 import com.courseqa.repository.DocumentChunkRepository;
 import com.courseqa.repository.DocumentPageRepository;
 import com.courseqa.repository.UserRepository;
 import com.courseqa.repository.UserRoleRepository;
+import com.courseqa.repository.SemesterWorkspaceRepository;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -50,6 +53,9 @@ public class DocumentService {
     private static final int CHUNK_SIZE = 700;
     private static final int CHUNK_OVERLAP = 120;
     private static final String CHUNK_STRATEGY = "paragraph_700_120";
+    private static final long PERSONAL_FILE_LIMIT = 20L * 1024 * 1024;
+    private static final long PERSONAL_STORAGE_LIMIT = 200L * 1024 * 1024;
+    private static final long PERSONAL_DOCUMENT_LIMIT = 20;
 
     private final CourseDocumentRepository courseDocumentRepository;
     private final CourseRepository courseRepository;
@@ -59,10 +65,14 @@ public class DocumentService {
     private final DocumentChunkRepository documentChunkRepository;
     private final UserRepository userRepository;
     private final UserRoleRepository userRoleRepository;
+    private final SemesterWorkspaceRepository semesterWorkspaceRepository;
+    private final DocumentChapterRangeRepository documentChapterRangeRepository;
+    private final DocumentChapterSuggestionRepository documentChapterSuggestionRepository;
     private final JdbcTemplate jdbcTemplate;
     private final Path uploadRoot;
     private final Path previewRoot;
     private final Cloudinary cloudinary;
+    private final PersonalWorkspaceService personalWorkspaceService;
 
     public DocumentService(
             CourseDocumentRepository courseDocumentRepository,
@@ -73,7 +83,11 @@ public class DocumentService {
             DocumentChunkRepository documentChunkRepository,
             UserRepository userRepository,
             UserRoleRepository userRoleRepository,
+            SemesterWorkspaceRepository semesterWorkspaceRepository,
+            DocumentChapterRangeRepository documentChapterRangeRepository,
+            DocumentChapterSuggestionRepository documentChapterSuggestionRepository,
             JdbcTemplate jdbcTemplate,
+            PersonalWorkspaceService personalWorkspaceService,
             @Value("${app.upload-dir:uploads}") String uploadDir,
             @Value("${cloudinary.cloud-name:}") String cloudinaryCloudName,
             @Value("${cloudinary.api-key:}") String cloudinaryApiKey,
@@ -87,7 +101,11 @@ public class DocumentService {
         this.documentChunkRepository = documentChunkRepository;
         this.userRepository = userRepository;
         this.userRoleRepository = userRoleRepository;
+        this.semesterWorkspaceRepository = semesterWorkspaceRepository;
+        this.documentChapterRangeRepository = documentChapterRangeRepository;
+        this.documentChapterSuggestionRepository = documentChapterSuggestionRepository;
         this.jdbcTemplate = jdbcTemplate;
+        this.personalWorkspaceService = personalWorkspaceService;
         this.uploadRoot = Path.of(uploadDir).toAbsolutePath().normalize();
         this.previewRoot = this.uploadRoot.resolve("previews").normalize();
         this.cloudinary = createCloudinary(cloudinaryCloudName, cloudinaryApiKey, cloudinaryApiSecret);
@@ -185,9 +203,7 @@ public class DocumentService {
             targetPath = uploadRoot.resolve(UUID.randomUUID() + "-" + originalFilename).normalize();
             file.transferTo(targetPath);
             CloudinaryUpload originalUpload = uploadToCloudinary(
-                    targetPath,
-                    "courseqa/documents/" + UUID.randomUUID() + "-" + originalFilename
-            );
+                    targetPath, "courseqa/documents/" + UUID.randomUUID() + "-" + originalFilename);
             uploadedPublicId = originalUpload.publicId();
 
             CloudinaryUpload previewUpload = createAndUploadPreview(targetPath, originalFilename, fileType);
@@ -215,13 +231,15 @@ public class DocumentService {
             }
             document.setFileSizeBytes(file.getSize());
             document.setProcessingStatus("PROCESSING");
+            document.setDocumentScope(request.courseId == null ? "PERSONAL" : "COURSE");
+            document.setReviewStatus(request.courseId == null ? "NOT_SUBMITTED" : "APPROVED");
             document.setLanguage("vi");
             document.setUploadedAt(now);
             document.setUpdatedAt(now);
 
             CourseDocument savedDocument = courseDocumentRepository.save(document);
             processDocument(savedDocument, targetPath, fileType);
-            return DocumentDto.DocumentResponse.fromEntity(savedDocument);
+            return toResponse(savedDocument, request.uploadedBy);
         } catch (IOException exception) {
             destroyCloudinaryAsset(uploadedPublicId);
             destroyCloudinaryAsset(uploadedPreviewPublicId);
@@ -237,19 +255,152 @@ public class DocumentService {
         }
     }
 
+    @Transactional
+    public DocumentDto.DocumentResponse uploadPersonalDocument(MultipartFile file, UUID userId) {
+        requireRequester(userId);
+        validatePersonalQuota(file, userId);
+        CourseWorkspace workspace = personalWorkspaceService.getOrCreate(userId);
+        DocumentDto.UploadDocumentRequest request = new DocumentDto.UploadDocumentRequest();
+        request.workspaceId = workspace.getWorkspaceId();
+        request.uploadedBy = userId;
+        return uploadDocument(file, request);
+    }
+
+    public List<DocumentDto.DocumentResponse> getMyDocuments(UUID userId) {
+        requireRequester(userId);
+        return courseDocumentRepository.findByUploadedByOrderByUploadedAtDesc(userId).stream()
+                .map(document -> toResponse(document, userId))
+                .toList();
+    }
+
+    public List<DocumentDto.DocumentResponse> getReviewQueue(UUID adminId) {
+        requireAdmin(adminId);
+        return courseDocumentRepository.findByReviewStatusOrderBySubmittedAtAsc("PENDING").stream()
+                .map(document -> toResponse(document, adminId))
+                .toList();
+    }
+
+    @Transactional
+    public DocumentDto.DocumentResponse submitForReview(UUID documentId, UUID courseId, UUID userId) {
+        CourseDocument document = requireOwnedDocument(documentId, userId);
+        if (!"PROCESSED".equals(document.getProcessingStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only processed documents can be submitted.");
+        }
+        if (!"PERSONAL".equals(document.getDocumentScope())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This document is already shared with a course.");
+        }
+        if ("PENDING".equals(document.getReviewStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This document is already waiting for review.");
+        }
+        requireShareableCourse(courseId);
+        LocalDateTime now = LocalDateTime.now();
+        document.setTargetCourseId(courseId);
+        document.setReviewStatus("PENDING");
+        document.setSubmittedAt(now);
+        document.setReviewedBy(null);
+        document.setReviewedAt(null);
+        document.setRejectionReason(null);
+        document.setUpdatedAt(now);
+        return toResponse(courseDocumentRepository.save(document), userId);
+    }
+
+    @Transactional
+    public DocumentDto.DocumentResponse cancelSubmission(UUID documentId, UUID userId) {
+        CourseDocument document = requireOwnedDocument(documentId, userId);
+        if (!"PERSONAL".equals(document.getDocumentScope()) || !"PENDING".equals(document.getReviewStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only pending personal submissions can be cancelled.");
+        }
+        document.setReviewStatus("NOT_SUBMITTED");
+        document.setTargetCourseId(null);
+        document.setSubmittedAt(null);
+        document.setReviewedBy(null);
+        document.setReviewedAt(null);
+        document.setRejectionReason(null);
+        document.setUpdatedAt(LocalDateTime.now());
+        return toResponse(courseDocumentRepository.save(document), userId);
+    }
+
+    @Transactional
+    public DocumentDto.DocumentResponse reviewDocument(UUID documentId, DocumentDto.ReviewRequest request, UUID adminId) {
+        requireAdmin(adminId);
+        CourseDocument document = courseDocumentRepository.findById(documentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
+        if (!"PERSONAL".equals(document.getDocumentScope()) || !"PENDING".equals(document.getReviewStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This document is not waiting for review.");
+        }
+        String status = request == null || request.status == null
+                ? "" : request.status.trim().toUpperCase(Locale.ROOT);
+        LocalDateTime now = LocalDateTime.now();
+        if ("REJECTED".equals(status)) {
+            if (request.rejectionReason == null || request.rejectionReason.isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A rejection reason is required.");
+            }
+            document.setReviewStatus("REJECTED");
+            document.setReviewedBy(adminId);
+            document.setReviewedAt(now);
+            document.setRejectionReason(request.rejectionReason.trim());
+            document.setUpdatedAt(now);
+            return toResponse(courseDocumentRepository.save(document), adminId);
+        }
+        if (!"APPROVED".equals(status)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Review status must be APPROVED or REJECTED.");
+        }
+
+        UUID courseId = request.courseId != null ? request.courseId : document.getTargetCourseId();
+        requireShareableCourse(courseId);
+        CourseWorkspace courseWorkspace = courseWorkspaceRepository.findByCourseIdOrderByCreatedAtDesc(courseId).stream()
+                .filter(workspace -> Boolean.TRUE.equals(workspace.getIsActive()))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "The selected course has no active workspace."));
+
+        document.setWorkspaceId(courseWorkspace.getWorkspaceId());
+        document.setCourseId(courseId);
+        document.setChapterId(null);
+        document.setDocumentScope("COURSE");
+        document.setReviewStatus("APPROVED");
+        document.setTargetCourseId(courseId);
+        document.setReviewedBy(adminId);
+        document.setReviewedAt(now);
+        document.setRejectionReason(null);
+        document.setUpdatedAt(now);
+        courseDocumentRepository.save(document);
+
+        List<DocumentChunk> chunks = documentChunkRepository.findByDocumentIdOrderByChunkIndexAsc(documentId);
+        chunks.forEach(chunk -> {
+            chunk.setWorkspaceId(courseWorkspace.getWorkspaceId());
+            chunk.setCourseId(courseId);
+            chunk.setChapterId(null);
+        });
+        documentChunkRepository.saveAll(chunks);
+        return toResponse(document, adminId);
+    }
+
     public List<DocumentDto.DocumentResponse> getDocuments(UUID requesterId) {
         requireRequester(requesterId);
         List<CourseDocument> documents = isAdmin(requesterId)
                 ? courseDocumentRepository.findAllByOrderByUploadedAtDesc()
-                : courseDocumentRepository.findByUploadedByOrderByUploadedAtDesc(requesterId);
+                : courseDocumentRepository.findAllByOrderByUploadedAtDesc().stream()
+                    .filter(this::isApprovedCourseDocument)
+                    .filter(document -> isCourseAvailable(document.getCourseId()))
+                    .toList();
 
         return documents.stream()
-                .map(DocumentDto.DocumentResponse::fromEntity)
+                .map(document -> toResponse(document, requesterId))
                 .toList();
     }
 
     public List<DocumentDto.DocumentResponse> getDocumentsByWorkspace(UUID workspaceId, UUID requesterId) {
         requireRequester(requesterId);
+        CourseWorkspace workspace = courseWorkspaceRepository.findById(workspaceId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workspace not found."));
+        if (!isAdmin(requesterId)) {
+            if (workspace.getCourseId() == null && !requesterId.equals(workspace.getOwnerUserId())) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This personal workspace belongs to another user.");
+            }
+            if (workspace.getCourseId() != null && !isCourseAvailable(workspace.getCourseId())) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This course is not currently available.");
+            }
+        }
        /*  List<CourseDocument> documents = isAdmin(requesterId)
                 ? courseDocumentRepository.findByWorkspaceIdOrderByUploadedAtDesc(workspaceId)
                 : courseDocumentRepository.findByWorkspaceIdAndUploadedByOrderByUploadedAtDesc(workspaceId, requesterId);
@@ -258,13 +409,14 @@ public class DocumentService {
             courseDocumentRepository.findByWorkspaceIdOrderByUploadedAtDesc(workspaceId);
 
         return documents.stream()
-                .map(DocumentDto.DocumentResponse::fromEntity)
+                .filter(document -> isAdmin(requesterId) || requesterId.equals(document.getUploadedBy()) || isApprovedCourseDocument(document))
+                .map(document -> toResponse(document, requesterId))
                 .toList();
     }
 
     public DocumentDto.DocumentResponse getDocument(UUID documentId, UUID requesterId) {
         CourseDocument document = getAccessibleDocument(documentId, requesterId);
-        return DocumentDto.DocumentResponse.fromEntity(document);
+        return toResponse(document, requesterId);
     }
 
     public List<DocumentDto.PageResponse> getPages(UUID documentId, UUID requesterId) {
@@ -284,6 +436,15 @@ public class DocumentService {
     @Transactional
     public void deleteDocument(UUID documentId, UUID requesterId) {
         CourseDocument document = getAccessibleDocument(documentId, requesterId);
+        boolean admin = isAdmin(requesterId);
+        boolean deletablePersonal = requesterId.equals(document.getUploadedBy())
+                && "PERSONAL".equals(document.getDocumentScope())
+                && List.of("NOT_SUBMITTED", "REJECTED").contains(document.getReviewStatus());
+        if (!admin && !deletablePersonal) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only unsubmitted or rejected personal documents can be deleted by their owner.");
+        }
+        UUID courseId = document.getCourseId();
         Path previewPath = previewRoot.resolve(documentId + ".pdf").normalize();
         Path originalPath = null;
         if (!isCloudStored(document)) {
@@ -297,11 +458,28 @@ public class DocumentService {
                    OR retrieval_result_id IN (SELECT retrieval_result_id FROM retrieval_results WHERE document_id = ?)
                 """, documentId, documentId, documentId);
         jdbcTemplate.update("DELETE FROM retrieval_results WHERE document_id = ?", documentId);
+        jdbcTemplate.update("DELETE FROM chat_session_documents WHERE document_id = ?", documentId);
         jdbcTemplate.update("UPDATE saved_notes SET document_id = NULL WHERE document_id = ?", documentId);
 
+        documentChapterRangeRepository.findByDocumentIdOrderByPageStartAsc(documentId).stream()
+                .map(com.courseqa.model.entity.DocumentChapterRange::getChapterId).distinct()
+                .forEach(chapterId -> chapterRepository.findById(chapterId).ifPresent(chapter -> {
+                    chapter.setIsActive(false); chapter.setUpdatedAt(LocalDateTime.now()); chapterRepository.save(chapter);
+                }));
+        documentChapterRangeRepository.deleteByDocumentId(documentId);
+        documentChapterSuggestionRepository.deleteByDocumentId(documentId);
         documentPageRepository.deleteByDocumentId(documentId);
         documentChunkRepository.deleteByDocumentId(documentId);
         courseDocumentRepository.delete(document);
+        courseDocumentRepository.flush();
+
+        if (courseId != null && !courseDocumentRepository.existsByCourseIdAndProcessingStatus(courseId, "PROCESSED")) {
+            courseRepository.findById(courseId).ifPresent(course -> {
+                course.setIsActive(false);
+                course.setUpdatedAt(LocalDateTime.now());
+                courseRepository.save(course);
+            });
+        }
 
         if (isCloudStored(document)) {
             destroyCloudinaryAsset(document.getCloudinaryPublicId());
@@ -709,8 +887,8 @@ public class DocumentService {
         if (file == null || file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "File is required.");
         }
-        if (request == null || request.workspaceId == null || request.courseId == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "workspaceId and courseId are required.");
+        if (request == null || request.workspaceId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "workspaceId is required.");
         }
         if (request.uploadedBy == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "uploadedBy is required.");
@@ -718,14 +896,22 @@ public class DocumentService {
         if (!userRepository.existsById(request.uploadedBy)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "uploadedBy user not found.");
         }
-        if (!courseRepository.existsById(request.courseId)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Course not found.");
-        }
-
         CourseWorkspace workspace = courseWorkspaceRepository.findById(request.workspaceId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Workspace not found."));
-        if (!request.courseId.equals(workspace.getCourseId())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Workspace does not belong to the selected course.");
+        if (request.courseId == null) {
+            if (workspace.getCourseId() != null || !request.uploadedBy.equals(workspace.getOwnerUserId())
+                    || !"PRIVATE".equals(workspace.getVisibility())) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid personal workspace.");
+            }
+        } else {
+            com.courseqa.model.entity.Course uploadCourse = courseRepository.findById(request.courseId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Course not found."));
+            if ("ARCHIVED".equals(uploadCourse.getStatus())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Archived courses are read-only.");
+            }
+            if (!request.courseId.equals(workspace.getCourseId())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Workspace does not belong to the selected course.");
+            }
         }
 
         if (request.chapterId != null) {
@@ -746,7 +932,90 @@ public class DocumentService {
             return document;
         }
 
-        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can only access documents uploaded by your account.");
+        if (isApprovedCourseDocument(document) && isCourseAvailable(document.getCourseId())) return document;
+
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You cannot access this document.");
+    }
+
+    private boolean isCourseAvailable(UUID courseId) {
+        if (courseId == null) return false;
+        return courseRepository.findById(courseId)
+                .filter(course -> Boolean.TRUE.equals(course.getIsActive()))
+                .filter(course -> !"ARCHIVED".equals(course.getStatus()))
+                .filter(course -> semesterWorkspaceRepository.findById(course.getSemesterWorkspaceId())
+                        .map(semester -> "ACTIVE".equals(semester.getStatus()))
+                        .orElse(false))
+                .filter(course -> courseDocumentRepository.existsByCourseIdAndProcessingStatus(courseId, "PROCESSED"))
+                .isPresent();
+    }
+
+    private void validatePersonalQuota(MultipartFile file, UUID userId) {
+        if (file == null || file.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "File is required.");
+        }
+        String fileType = resolveFileType(sanitizeFilename(file.getOriginalFilename()));
+        if (!List.of("PDF", "DOCX", "PPTX").contains(fileType)) {
+            throw new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+                    "Personal uploads support PDF, DOCX, and PPTX files only.");
+        }
+        if (file.getSize() > PERSONAL_FILE_LIMIT) {
+            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Each file is limited to 20 MB.");
+        }
+        if (courseDocumentRepository.countByUploadedBy(userId) >= PERSONAL_DOCUMENT_LIMIT) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "You can store at most 20 documents.");
+        }
+        long usedBytes = java.util.Optional.ofNullable(courseDocumentRepository.sumFileSizeByUploadedBy(userId)).orElse(0L);
+        if (usedBytes + file.getSize() > PERSONAL_STORAGE_LIMIT) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Your personal document storage is limited to 200 MB.");
+        }
+    }
+
+    private CourseDocument requireOwnedDocument(UUID documentId, UUID userId) {
+        requireRequester(userId);
+        CourseDocument document = courseDocumentRepository.findById(documentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
+        if (!userId.equals(document.getUploadedBy())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This document belongs to another user.");
+        }
+        return document;
+    }
+
+    private void requireShareableCourse(UUID courseId) {
+        if (courseId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "courseId is required.");
+        }
+        com.courseqa.model.entity.Course course = courseRepository.findById(courseId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Course not found."));
+        boolean available = Boolean.TRUE.equals(course.getIsActive())
+                && !"ARCHIVED".equals(course.getStatus())
+                && semesterWorkspaceRepository.findById(course.getSemesterWorkspaceId())
+                    .map(semester -> "ACTIVE".equals(semester.getStatus()))
+                    .orElse(false);
+        if (!available) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Documents can only be submitted to an active course in an active semester.");
+        }
+    }
+
+    private boolean isApprovedCourseDocument(CourseDocument document) {
+        return document.getCourseId() != null
+                && (document.getDocumentScope() == null || "COURSE".equals(document.getDocumentScope()))
+                && (document.getReviewStatus() == null || "APPROVED".equals(document.getReviewStatus()));
+    }
+
+    private DocumentDto.DocumentResponse toResponse(CourseDocument document, UUID requesterId) {
+        DocumentDto.DocumentResponse response = DocumentDto.DocumentResponse.fromEntity(document);
+        response.canDelete = isAdmin(requesterId) || (requesterId != null && requesterId.equals(document.getUploadedBy())
+                && "PERSONAL".equals(document.getDocumentScope())
+                && List.of("NOT_SUBMITTED", "REJECTED").contains(document.getReviewStatus()));
+        return response;
+    }
+
+    private void requireAdmin(UUID userId) {
+        requireRequester(userId);
+        if (!isAdmin(userId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Administrator permission is required.");
+        }
     }
 
     private void requireRequester(UUID requesterId) {

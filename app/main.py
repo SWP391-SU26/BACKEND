@@ -66,6 +66,7 @@ class GenerateContext(BaseModel):
 class GenerateRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
     contexts: list[GenerateContext]
+    strict: bool = False
 
 class GenerateSource(BaseModel):
     chunk_id: str
@@ -80,11 +81,53 @@ class GenerateResponse(BaseModel):
     is_out_of_scope: bool
     sources: list[GenerateSource]
 
+class GenerateBatchItem(BaseModel):
+    request_id: str = Field(min_length=1, max_length=100)
+    question: str = Field(min_length=1, max_length=4000)
+    contexts: list[GenerateContext]
+
+class GenerateBatchRequest(BaseModel):
+    items: list[GenerateBatchItem] = Field(min_length=1, max_length=16)
+    strict: bool = True
+
+class GenerateBatchResult(BaseModel):
+    request_id: str
+    answer: str | None = None
+    is_out_of_scope: bool = False
+    sources: list[GenerateSource] = Field(default_factory=list)
+    error: str | None = None
+
+class GenerateBatchResponse(BaseModel):
+    items: list[GenerateBatchResult]
+    batch_size: int
+    max_input_tokens: int
+    max_new_tokens: int
+
 class ChatFinetunedRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
+    strict: bool = True
 
 class ChatFinetunedResponse(BaseModel):
     answer: str
+
+class ChatFinetunedBatchItem(BaseModel):
+    request_id: str = Field(min_length=1, max_length=100)
+    question: str = Field(min_length=1, max_length=4000)
+
+class ChatFinetunedBatchRequest(BaseModel):
+    items: list[ChatFinetunedBatchItem] = Field(min_length=1, max_length=16)
+    strict: bool = True
+
+class ChatFinetunedBatchResult(BaseModel):
+    request_id: str
+    answer: str | None = None
+    error: str | None = None
+
+class ChatFinetunedBatchResponse(BaseModel):
+    items: list[ChatFinetunedBatchResult]
+    batch_size: int
+    max_input_tokens: int
+    max_new_tokens: int
 
 class EvaluateRequest(BaseModel):
     question: str
@@ -172,9 +215,18 @@ def health() -> dict[str, str]:
 
 @app.get("/api/model/status")
 def model_status() -> dict[str, Any]:
+    try:
+        pipeline.warmup_local_model()
+    except Exception:
+        pass
+    generation = pipeline.generation_status()
     return {
         "embedding_model": pipeline.embedding_provider.model,
-        "generation": pipeline.generation_status(),
+        "generation": generation,
+        "inference_ready": generation["inference_ready"],
+        "training_ready": generation["training_ready"],
+        "generation_ready": generation["generation_ready"],
+        "adapter_dir": generation["adapter_dir"],
     }
 
 
@@ -313,7 +365,12 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
         })
         
     try:
-        answer = pipeline._generate_answer(request.question, contexts, sources_dict_list)
+        answer = pipeline._generate_answer(
+            request.question,
+            contexts,
+            sources_dict_list,
+            strict=request.strict,
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Không thể tạo câu trả lời: {exc}") from exc
 
@@ -325,13 +382,119 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
         sources=[GenerateSource(**s) for s in selected_sources]
     )
 
+
+def _to_retrieved_contexts(contexts: list[GenerateContext]):
+    from src.rag_pipeline import location_label
+    from src.storage import RetrievedChunk
+
+    retrieved = []
+    sources = []
+    for ctx in contexts:
+        chunk = RetrievedChunk(
+            chunk_id=ctx.chunk_id,
+            document_id=ctx.document_id,
+            filename=ctx.filename,
+            subject="Unknown",
+            chapter="Unknown",
+            page=ctx.page,
+            content=ctx.content,
+            score=1.0,
+            semantic_score=1.0,
+            lexical_score=1.0,
+        )
+        retrieved.append(chunk)
+        sources.append({
+            "chunk_id": ctx.chunk_id,
+            "document_id": ctx.document_id,
+            "filename": ctx.filename,
+            "page": ctx.page,
+            "location": location_label(chunk),
+            "preview": ctx.content[:280],
+        })
+    return retrieved, sources
+
+
+@app.post("/api/generate-batch", response_model=GenerateBatchResponse)
+def generate_answer_batch(request: GenerateBatchRequest) -> GenerateBatchResponse:
+    from src.rag_pipeline import OUT_OF_SCOPE_MESSAGE
+
+    settings = load_settings()
+    if len(request.items) > settings.benchmark_batch_size:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Batch contains {len(request.items)} items; maximum is {settings.benchmark_batch_size}.",
+        )
+
+    prepared = []
+    source_maps: dict[str, dict[str, dict[str, Any]]] = {}
+    for item in request.items:
+        contexts, sources = _to_retrieved_contexts(item.contexts)
+        prepared.append((item.question, contexts))
+        source_maps[item.request_id] = {source["chunk_id"]: source for source in sources}
+
+    try:
+        generated = pipeline.generate_rag_batch(prepared)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Batch RAG generation failed: {exc}") from exc
+
+    results = []
+    for item, (answer, included_contexts) in zip(request.items, generated):
+        normalized = answer.strip() if answer else OUT_OF_SCOPE_MESSAGE
+        included_sources = [
+            source_maps[item.request_id].get(context.chunk_id)
+            for context in included_contexts
+            if source_maps[item.request_id].get(context.chunk_id) is not None
+        ]
+        selected_sources = select_sources_for_answer(normalized, included_sources)
+        results.append(GenerateBatchResult(
+            request_id=item.request_id,
+            answer=normalized,
+            is_out_of_scope=normalized == OUT_OF_SCOPE_MESSAGE,
+            sources=[GenerateSource(**source) for source in selected_sources],
+        ))
+    return GenerateBatchResponse(
+        items=results,
+        batch_size=len(results),
+        max_input_tokens=settings.benchmark_max_input_tokens,
+        max_new_tokens=settings.benchmark_max_new_tokens,
+    )
+
 @app.post("/ai/chat-finetuned", response_model=ChatFinetunedResponse)
 def chat_finetuned(request: ChatFinetunedRequest) -> ChatFinetunedResponse:
     try:
         answer = pipeline.generate_without_retrieval(request.question)
         return ChatFinetunedResponse(answer=answer)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Lỗi mô hình finetuned: {exc}") from exc
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "MODEL_NOT_READY", "message": f"Fine-tuned model is not ready: {exc}"},
+        ) from exc
+
+
+@app.post("/ai/chat-finetuned-batch", response_model=ChatFinetunedBatchResponse)
+def chat_finetuned_batch(request: ChatFinetunedBatchRequest) -> ChatFinetunedBatchResponse:
+    settings = load_settings()
+    if len(request.items) > settings.benchmark_batch_size:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Batch contains {len(request.items)} items; maximum is {settings.benchmark_batch_size}.",
+        )
+    try:
+        answers = pipeline.generate_without_retrieval_batch([item.question for item in request.items])
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "MODEL_NOT_READY", "message": f"Fine-tuned batch failed: {exc}"},
+        ) from exc
+    return ChatFinetunedBatchResponse(
+        items=[
+            ChatFinetunedBatchResult(request_id=item.request_id, answer=answer.strip())
+            for item, answer in zip(request.items, answers)
+        ],
+        batch_size=len(answers),
+        max_input_tokens=settings.benchmark_max_input_tokens,
+        max_new_tokens=settings.benchmark_max_new_tokens,
+    )
 
 @app.post("/ai/evaluate", response_model=EvaluateResponse)
 def evaluate_answers(request: EvaluateRequest) -> EvaluateResponse:

@@ -5,6 +5,7 @@ import com.courseqa.model.entity.CourseWorkspace;
 import com.courseqa.model.entity.Chapter;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.List;
 
 // DTOs for course, chapter, workspace requests/responses.
 // TODO: Add request/response DTO classes here.
@@ -15,12 +16,34 @@ public class CourseDto {
         public String courseName;
         public String description;
         public UUID createdBy;
+        public UUID semesterWorkspaceId;
     }
 
     public static class UpdateCourseRequest {
+        public String courseCode;
         public String courseName;
         public String description;
         public Boolean isActive;
+    }
+
+    public static class StatusRequest { public String status; }
+    public static class MemberRequest { public UUID userId; public String membershipRole; }
+    public static class MemberResponse {
+        public UUID courseMembershipId;
+        public UUID userId;
+        public String fullName;
+        public String email;
+        public String membershipRole;
+        public String status;
+        public LocalDateTime assignedAt;
+    }
+    public static class PublishChecklistResponse {
+        public boolean semesterActive;
+        public boolean processedDocument;
+        public boolean confirmedChapter;
+        public boolean assignedStudent;
+        public boolean canPublish;
+        public List<String> missing;
     }
 
     public static class CreateChapterRequest {
@@ -56,6 +79,8 @@ public class CourseDto {
         public String courseName;
         public String description;
         public UUID createdBy;
+        public UUID semesterWorkspaceId;
+        public String status;
         public Boolean isActive;
         public LocalDateTime createdAt;
 
@@ -66,6 +91,8 @@ public class CourseDto {
             response.courseName = course.getCourseName();
             response.description = course.getDescription();
             response.createdBy = course.getCreatedBy();
+            response.semesterWorkspaceId = course.getSemesterWorkspaceId();
+            response.status = course.getStatus();
             response.isActive = course.getIsActive();
             response.createdAt = course.getCreatedAt();
             return response;
