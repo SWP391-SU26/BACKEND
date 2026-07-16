@@ -1,0 +1,21 @@
+{
+  "model_name": "Qwen/Qwen2.5-0.5B-Instruct",
+  "train_file": "data/finetuning/train.jsonl",
+  "validation_file": "data/finetuning/validation.jsonl",
+  "output_dir": "models/qwen-rag-lora",
+  "use_qlora": true,
+  "epochs": 1,
+  "batch_size": 1,
+  "gradient_accumulation_steps": 16,
+  "learning_rate": 0.0002,
+  "max_length": 512,
+  "lora_r": 8,
+  "lora_alpha": 16,
+  "lora_dropout": 0.05,
+  "target_modules": [
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "o_proj"
+  ]
+}

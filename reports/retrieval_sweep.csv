@@ -1,0 +1,4 @@
+﻿run_id,semantic_weight,lexical_weight,threshold,top_k,total_questions,answer_token_f1,source_hit_rate,page_hit_rate,refusal_accuracy,average_top_retrieval_score,average_latency_ms,quality_score
+aa77fa65-9fd8-4816-a02d-31276a388c45,0.4,0.6,0.2,10,50,0.0619,1,0.975,1,0.3784,274.38,0.7592
+d4de991f-6fca-49c6-9efa-af665d4c89aa,0.4,0.6,0.2,8,50,0.0617,1,0.95,1,0.3784,236.95,0.7529
+661500c7-462b-4a4a-a3a7-d5d27f15bf85,0.4,0.6,0.2,5,50,0.0617,1,0.9,1,0.3784,229.25,0.7404

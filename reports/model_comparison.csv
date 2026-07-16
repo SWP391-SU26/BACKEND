@@ -1,0 +1,4 @@
+model,semantic_weight,lexical_weight,threshold,top_k,answer_token_f1,source_hit_rate,page_hit_rate,refusal_accuracy,average_latency_ms,quality_score
+local-hash-v1,0.4,0.6,0.08,5,0.0531,0.975,0.6,0.84,19.74,0.617
+BAAI/bge-m3,0.4,0.6,0.2,10,0.0619,1.0,0.975,1.0,274.38,0.7592
+BAAI/bge-m3 + Qwen LoRA,0.4,0.6,0.2,10,0.2276,1.0,0.975,1.0,13458.18,0.8007

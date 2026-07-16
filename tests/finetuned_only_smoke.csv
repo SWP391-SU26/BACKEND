@@ -1,0 +1,3 @@
+question,expected_answer,expected_source,expected_page,subject,is_out_of_scope,category
+"Boundary value analysis tập trung kiểm thử ở đâu?","Boundary value analysis tập trung vào các giá trị ở hai phía của biên vì lỗi thường xuất hiện gần biên.","SWT4.pdf",11,"Software Testing",false,"definition"
+"Định luật Ohm phát biểu điều gì?","","",,"Ngoài tài liệu",true,"out_of_scope"
