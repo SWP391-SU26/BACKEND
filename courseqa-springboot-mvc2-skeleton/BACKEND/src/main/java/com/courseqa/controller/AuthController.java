@@ -53,6 +53,15 @@ public class AuthController {
         return ApiResponse.ok(null);
     }
 
+    @PutMapping("/change-password")
+    public ApiResponse<Void> changePassword(
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @RequestBody AuthDto.ChangePasswordRequest request
+    ) {
+        authService.changePassword(principal.userId(), request);
+        return ApiResponse.ok(null);
+    }
+
     @GetMapping("/users")
     public ApiResponse<List<AuthDto.UserResponse>> getUsers() {
         return ApiResponse.ok(authService.getUsers());

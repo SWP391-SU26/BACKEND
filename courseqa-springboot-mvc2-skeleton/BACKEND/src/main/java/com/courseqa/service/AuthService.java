@@ -169,6 +169,35 @@ public class AuthService {
         userRepository.save(user);
     }
 
+    @Transactional
+    public void changePassword(UUID userId, AuthDto.ChangePasswordRequest request) {
+        if (userId == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required.");
+        }
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Change password request is required.");
+        }
+        if (isBlank(request.currentPassword)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Current password is required.");
+        }
+        if (isBlank(request.newPassword)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "New password is required.");
+        }
+        if (request.newPassword.trim().length() < 6) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "New password must be at least 6 characters.");
+        }
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found."));
+        if (!passwordEncoder.matches(request.currentPassword, user.getPasswordHash())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Current password is incorrect.");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword));
+        user.setUpdatedAt(LocalDateTime.now());
+        userRepository.save(user);
+    }
+
     public List<AuthDto.UserResponse> getUsers() {
         return userRepository.findAll().stream()
                 .map(user -> new AuthDto.UserResponse(user, getRoleNames(user.getUserId())))
