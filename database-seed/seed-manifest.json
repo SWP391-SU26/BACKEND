@@ -1,0 +1,40 @@
+{
+  "snapshotVersion": "v1",
+  "createdAt": "2026-07-18T13:16:53+07:00",
+  "databaseName": "VietnameseCourseQA20DB",
+  "sqlServer": {
+    "productVersion": "16.0.1000.6",
+    "majorVersion": 2022,
+    "edition": "Developer Edition (64-bit)",
+    "compatibilityLevel": 160
+  },
+  "backup": {
+    "fileName": "VietnameseCourseQA20DB_seed_20260718_v1.bak",
+    "sizeBytes": 5128192,
+    "sha256": "14B03099F1C6E072F47AB573EE0830C95E1E8589BC09C646559A59E739C43E82",
+    "distribution": "Private team storage",
+    "downloadUrl": null
+  },
+  "logicalFiles": {
+    "data": "VietnameseCourseQA20DB",
+    "log": "VietnameseCourseQA20DB_log"
+  },
+  "expectedCounts": {
+    "tables": 26,
+    "users": 10,
+    "courses": 7,
+    "courseDocuments": 7,
+    "documentChunks": 532,
+    "chunkEmbeddings": 280,
+    "evaluationQuestions": 552
+  },
+  "documents": {
+    "storageProvider": "CLOUDINARY",
+    "processedCount": 7
+  },
+  "verification": {
+    "restoreVerifyOnly": "PASSED",
+    "temporaryRestore": "PASSED",
+    "temporaryDatabaseRemoved": true
+  }
+}

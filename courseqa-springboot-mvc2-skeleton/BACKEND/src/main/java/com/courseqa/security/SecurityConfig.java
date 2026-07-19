@@ -29,6 +29,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/forgot-password").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/error").permitAll()
                         .requestMatchers("/api/auth/users/**").hasRole("ADMIN")
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/semester-workspaces/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/courses", "/api/courses/workspaces").hasRole("ADMIN")
                         .requestMatchers("/api/courses/*/members", "/api/courses/*/publish-checklist").hasRole("ADMIN")
