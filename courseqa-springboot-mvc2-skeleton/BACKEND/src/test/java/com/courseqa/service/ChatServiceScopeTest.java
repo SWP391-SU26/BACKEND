@@ -51,7 +51,7 @@ class ChatServiceScopeTest {
     void setUp() {
         service = new ChatService(sessions, sessionDocuments, messages, workspaces, ai, citations, retrieval,
                 mock(CourseMembershipRepository.class), roles, courses, semesters, documents, learningScope,
-                personalWorkspaces);
+                personalWorkspaces, new QuestionScopeGuard());
         when(sessions.save(any(ChatSession.class))).thenAnswer(invocation -> {
             ChatSession session = invocation.getArgument(0);
             if (session.getChatSessionId() == null) session.setChatSessionId(UUID.randomUUID());
