@@ -45,6 +45,9 @@ public class ChatService {
     private static final Logger log = LoggerFactory.getLogger(ChatService.class);
     private static final String OUT_OF_SCOPE_MESSAGE =
             "Không tìm thấy nội dung phù hợp trong tài liệu của môn học.";
+    private static final String FINE_TUNED_REFUSE_MESSAGE =
+            "Mình chỉ trả lời trong phạm vi học tập và dữ liệu đã huấn luyện. "
+                    + "Câu hỏi này chưa phù hợp với phạm vi đó, bạn hỏi lại về nội dung học tập nhé.";
 
     private final ChatSessionRepository chatSessionRepository;
     private final ChatSessionDocumentRepository chatSessionDocumentRepository;
@@ -244,15 +247,15 @@ public class ChatService {
             return guardedResponse(sessionId, savedUserMessage, preCheck.message(), answerMode, null, null);
         }
 
+        if ("FINE_TUNED".equals(answerMode)) {
+            return answerWithFineTunedModel(sessionId, savedUserMessage, question, strict);
+        }
+
         RagDto.RetrievalResponse retrieval = retrieveFromJavaSql(session, resolvedScope, savedUserMessage, question);
         QuestionScopeGuard.GuardDecision retrievalCheck = questionScopeGuard.postRetrievalCheck(question, retrieval);
         if (!retrievalCheck.allowed()) {
             return guardedResponse(sessionId, savedUserMessage, retrievalCheck.message(), answerMode,
                     retrieval.embeddingModelName, retrieval.retrievalQueryId);
-        }
-
-        if ("FINE_TUNED".equals(answerMode)) {
-            return answerWithFineTunedModel(sessionId, savedUserMessage, question, strict);
         }
 
         if (!Boolean.TRUE.equals(retrieval.answerable) || retrieval.results == null || retrieval.results.isEmpty()) {
@@ -470,12 +473,16 @@ public class ChatService {
             String answerMode, String modelName, UUID retrievalQueryId) {
         String responseMode = "FINE_TUNED".equals(answerMode) ? "FINE_TUNED" : "RAG";
         String generationMode = "SCOPE_GUARD";
-        ChatMessage assistantMessage = saveMessage(sessionId, "assistant", message, generationMode);
+        String responseMessage = "FINE_TUNED".equals(answerMode)
+                && QuestionScopeGuard.REFUSE_MESSAGE.equals(message)
+                ? FINE_TUNED_REFUSE_MESSAGE
+                : message;
+        ChatMessage assistantMessage = saveMessage(sessionId, "assistant", responseMessage, generationMode);
         return new ChatDto.AskResponse(
                 sessionId,
                 savedUserMessage.getMessageId(),
                 assistantMessage.getMessageId(),
-                message,
+                responseMessage,
                 responseMode,
                 modelName == null ? "scope-guard" : modelName,
                 generationMode,

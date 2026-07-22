@@ -51,19 +51,11 @@ public class QuestionScopeGuard {
             Pattern.compile("\\b(ti\\s*so|ty\\s*so|score|tran\\s*dau|da\\s*bong|bong\\s*da|world\\s*cup|euro|fc)\\b"),
             Pattern.compile("\\b(thoi\\s*tiet|du\\s*bao|nhiet\\s*do|troi\\s*(mua|nang)|mua\\s*(khong|ko|k))\\b"),
             Pattern.compile("\\b(gia\\s*(bitcoin|btc|vang|usd|do\\s*la|co\\s*phieu)|btc|bitcoin|coin|crypto|vang\\s*sjc|chung\\s*khoan|ty\\s*gia)\\b"),
-            Pattern.compile("\\b(viet\\s*code|code\\s*(java|python|javascript|js|sql)|fix\\s*bug|debug|lap\\s*trinh|react|spring\\s*boot)\\b"),
-            Pattern.compile("\\b(dich\\s*(cau\\s*nay\\s*)?(sang|qua)|translate|translation)\\b"),
             Pattern.compile("\\b(lich\\s*chieu\\s*phim|cgv|phim\\s*(toi\\s*nay|hom\\s*nay))\\b"),
             Pattern.compile("\\b(xo\\s*so|ket\\s*qua\\s*xo\\s*so|vietlott)\\b"),
-            Pattern.compile("\\b(tong\\s*thong|thu\\s*tuong|chu\\s*tich\\s*nuoc|bo\\s*truong)\\b"),
-            Pattern.compile("\\b(tu\\s*van\\s*mua|nen\\s*chon\\s*may\\s*nao|laptop|dien\\s*thoai|ma\\s*giam\\s*gia|shopee|lazada|tiki)\\b"),
-            Pattern.compile("\\b(thuc\\s*don|giam\\s*can|tang\\s*can|calo|eat\\s*clean)\\b"),
+            Pattern.compile("\\b(tong\\s*thong|thu\\s*tuong|chu\\s*tich\\s*nuoc|bo\\s*truong).*(hien\\s*nay|bay\\s*gio|hom\\s*nay|moi\\s*nhat)\\b"),
+            Pattern.compile("\\b(ma\\s*giam\\s*gia|shopee|lazada|tiki).*(moi\\s*nhat|hom\\s*nay|bay\\s*gio)?\\b"),
             Pattern.compile("\\b(mat\\s*khau|password|tai\\s*khoan\\s*admin|admin\\s*password|secret|api\\s*key)\\b"),
-            Pattern.compile("\\b(chuyen\\s*cuoi|ke\\s*.*cuoi|truyen\\s*cuoi|meme)\\b"),
-            Pattern.compile("\\b(tao\\s+.*\\b(logo|anh|hinh|poster)|ve\\s+.*\\b(logo|anh|hinh)|thiet\\s*ke\\s*logo)\\b"),
-            Pattern.compile("\\b(giai\\s*phuong\\s*trinh|dao\\s*ham|tich\\s*phan|can\\s*bac|x\\s*2)\\b"),
-            Pattern.compile("\\b(bai\\s*hat|ten\\s*bai\\s*hat|lyrics|loi\\s*bai\\s*hat)\\b"),
-            Pattern.compile("\\b(dau\\s*dau|dau\\s*bung|uong\\s*thuoc|thuoc\\s*gi|trieu\\s*chung|benh\\s*gi|bac\\s*si)\\b"),
             Pattern.compile("\\b(dat\\s*lich|nhac\\s*toi|remind|reminder|hen\\s*gio|bao\\s*thuc)\\b")
     );
     private static final List<Pattern> OUT_OF_SCOPE_INTENT_PATTERNS = List.of(
@@ -71,7 +63,6 @@ public class QuestionScopeGuard {
             Pattern.compile("\\b(thoi\\s*tiet|mua|nang|nhiet\\s*do|du\\s*bao)\\b"),
             Pattern.compile("\\b(gia|btc|bitcoin|coin|crypto|vang|co\\s*phieu|chung\\s*khoan|usd|vnd)\\b"),
             Pattern.compile("\\b(hom\\s*nay|hien\\s*tai|bay\\s*gio|toi\\s*qua|hom\\s*qua|moi\\s*nhat|latest|current)\\b"),
-            Pattern.compile("\\b(viet\\s*code|fix\\s*bug|javascript|python|java|sql|react|spring)\\b"),
             Pattern.compile("\\b(dich\\s*sang|translate|translation)\\b"),
             Pattern.compile("\\b(lich\\s*cua\\s*toi|deadline\\s*cua\\s*toi|tai\\s*khoan\\s*cua\\s*toi)\\b")
     );
@@ -88,9 +79,6 @@ public class QuestionScopeGuard {
         if (hasHardOutOfScopeIntent(normalized)) {
             return GuardDecision.refuse(REFUSE_MESSAGE);
         }
-        if (hasOutOfScopeIntent(normalized) && !hasLearningHint(tokens)) {
-            return GuardDecision.refuse(REFUSE_MESSAGE);
-        }
         return GuardDecision.allow();
     }
 
@@ -98,6 +86,10 @@ public class QuestionScopeGuard {
         if (retrieval == null || !Boolean.TRUE.equals(retrieval.answerable)
                 || retrieval.results == null || retrieval.results.isEmpty()) {
             return GuardDecision.refuse(REFUSE_MESSAGE);
+        }
+
+        if (containsCjk(question)) {
+            return GuardDecision.allow();
         }
 
         List<String> keyTerms = keyTerms(question);
@@ -177,6 +169,17 @@ public class QuestionScopeGuard {
 
     private boolean hasRiskyShortTerm(List<String> keyTerms) {
         return keyTerms.stream().anyMatch(term -> term.length() <= 3);
+    }
+
+    private boolean containsCjk(String value) {
+        if (value == null) {
+            return false;
+        }
+        return value.codePoints().anyMatch(codePoint ->
+                Character.UnicodeScript.of(codePoint) == Character.UnicodeScript.HIRAGANA
+                        || Character.UnicodeScript.of(codePoint) == Character.UnicodeScript.KATAKANA
+                        || Character.UnicodeScript.of(codePoint) == Character.UnicodeScript.HAN
+                        || Character.UnicodeScript.of(codePoint) == Character.UnicodeScript.HANGUL);
     }
 
     private List<String> tokens(String value) {
