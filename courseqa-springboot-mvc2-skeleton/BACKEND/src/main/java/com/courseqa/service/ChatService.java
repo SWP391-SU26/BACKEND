@@ -60,6 +60,7 @@ public class ChatService {
     private final CourseDocumentRepository courseDocumentRepository;
     private final LearningScopeService learningScopeService;
     private final PersonalWorkspaceService personalWorkspaceService;
+    private final QuestionScopeGuard questionScopeGuard;
 
     public ChatService(
             ChatSessionRepository chatSessionRepository,
@@ -75,7 +76,8 @@ public class ChatService {
             SemesterWorkspaceRepository semesterWorkspaceRepository,
             CourseDocumentRepository courseDocumentRepository,
             LearningScopeService learningScopeService,
-            PersonalWorkspaceService personalWorkspaceService) {
+            PersonalWorkspaceService personalWorkspaceService,
+            QuestionScopeGuard questionScopeGuard) {
         this.chatSessionRepository = chatSessionRepository;
         this.chatSessionDocumentRepository = chatSessionDocumentRepository;
         this.chatMessageRepository = chatMessageRepository;
@@ -90,6 +92,7 @@ public class ChatService {
         this.courseDocumentRepository = courseDocumentRepository;
         this.learningScopeService = learningScopeService;
         this.personalWorkspaceService = personalWorkspaceService;
+        this.questionScopeGuard = questionScopeGuard;
     }
 
     public ChatSession createSession(UUID userId, UUID courseId, boolean admin, String requestedTitle) {
@@ -236,11 +239,21 @@ public class ChatService {
                     assistantMessage.getMessageId(), greeting, "RAG", "local", "GREETING", null, List.of());
         }
 
-        if ("FINE_TUNED".equals(answerMode)) {
-            return answerWithFineTunedModel(sessionId, savedUserMessage, question, strict);
+        QuestionScopeGuard.GuardDecision preCheck = questionScopeGuard.preCheck(question);
+        if (!preCheck.allowed()) {
+            return guardedResponse(sessionId, savedUserMessage, preCheck.message(), answerMode, null, null);
         }
 
         RagDto.RetrievalResponse retrieval = retrieveFromJavaSql(session, resolvedScope, savedUserMessage, question);
+        QuestionScopeGuard.GuardDecision retrievalCheck = questionScopeGuard.postRetrievalCheck(question, retrieval);
+        if (!retrievalCheck.allowed()) {
+            return guardedResponse(sessionId, savedUserMessage, retrievalCheck.message(), answerMode,
+                    retrieval.embeddingModelName, retrieval.retrievalQueryId);
+        }
+
+        if ("FINE_TUNED".equals(answerMode)) {
+            return answerWithFineTunedModel(sessionId, savedUserMessage, question, strict);
+        }
 
         if (!Boolean.TRUE.equals(retrieval.answerable) || retrieval.results == null || retrieval.results.isEmpty()) {
             String message = firstNonBlank(retrieval.noAnswerReason, OUT_OF_SCOPE_MESSAGE);
@@ -326,10 +339,13 @@ public class ChatService {
         List<BenchmarkQuestionContext> prepared = new ArrayList<>();
         for (String question : questions) {
             ChatMessage userMessage = saveMessage(sessionId, "user", question);
-            RagDto.RetrievalResponse retrieval = "RAG".equals(answerMode)
-                    ? retrieveFromJavaSql(session, resolvedScope, userMessage, question)
-                    : null;
-            prepared.add(new BenchmarkQuestionContext(question, userMessage, retrieval));
+            QuestionScopeGuard.GuardDecision guard = questionScopeGuard.preCheck(question);
+            RagDto.RetrievalResponse retrieval = null;
+            if (guard.allowed()) {
+                retrieval = retrieveFromJavaSql(session, resolvedScope, userMessage, question);
+                guard = questionScopeGuard.postRetrievalCheck(question, retrieval);
+            }
+            prepared.add(new BenchmarkQuestionContext(question, userMessage, retrieval, guard));
         }
         return "FINE_TUNED".equals(answerMode)
                 ? answerFineTunedEvaluationBatch(sessionId, prepared)
@@ -340,21 +356,28 @@ public class ChatService {
             UUID sessionId, List<BenchmarkQuestionContext> prepared) {
         PythonAiDto.ChatFinetunedBatchRequest request = new PythonAiDto.ChatFinetunedBatchRequest();
         request.strict = true;
-        request.items = prepared.stream().map(item -> {
+        request.items = prepared.stream().filter(item -> item.guard().allowed()).map(item -> {
             PythonAiDto.ChatFinetunedBatchItem batchItem = new PythonAiDto.ChatFinetunedBatchItem();
             batchItem.request_id = item.userMessage().getMessageId().toString();
             batchItem.question = item.question();
             return batchItem;
         }).toList();
 
-        PythonAiDto.ChatFinetunedBatchResponse generated = aiClientService.callChatFinetunedBatch(request);
         Map<String, PythonAiDto.ChatFinetunedBatchResult> byId = new HashMap<>();
-        if (generated != null && generated.items != null) {
-            generated.items.forEach(item -> byId.put(item.request_id, item));
+        if (!request.items.isEmpty()) {
+            PythonAiDto.ChatFinetunedBatchResponse generated = aiClientService.callChatFinetunedBatch(request);
+            if (generated != null && generated.items != null) {
+                generated.items.forEach(item -> byId.put(item.request_id, item));
+            }
         }
 
         List<ChatDto.AskResponse> answers = new ArrayList<>();
         for (BenchmarkQuestionContext item : prepared) {
+            if (!item.guard().allowed()) {
+                answers.add(guardedResponse(sessionId, item.userMessage(), item.guard().message(),
+                        "FINE_TUNED", "scope-guard", item.retrieval() == null ? null : item.retrieval().retrievalQueryId));
+                continue;
+            }
             String requestId = item.userMessage().getMessageId().toString();
             PythonAiDto.ChatFinetunedBatchResult result = byId.get(requestId);
             if (result == null || result.error != null || result.answer == null || result.answer.isBlank()) {
@@ -373,7 +396,8 @@ public class ChatService {
         PythonAiDto.GenerateBatchRequest request = new PythonAiDto.GenerateBatchRequest();
         request.strict = true;
         request.items = prepared.stream()
-                .filter(item -> item.retrieval() != null
+                .filter(item -> item.guard().allowed()
+                        && item.retrieval() != null
                         && Boolean.TRUE.equals(item.retrieval().answerable)
                         && item.retrieval().results != null
                         && !item.retrieval().results.isEmpty())
@@ -395,6 +419,13 @@ public class ChatService {
 
         List<ChatDto.AskResponse> answers = new ArrayList<>();
         for (BenchmarkQuestionContext item : prepared) {
+            if (!item.guard().allowed()) {
+                RagDto.RetrievalResponse retrieval = item.retrieval();
+                answers.add(guardedResponse(sessionId, item.userMessage(), item.guard().message(),
+                        "RAG", retrieval == null ? null : retrieval.embeddingModelName,
+                        retrieval == null ? null : retrieval.retrievalQueryId));
+                continue;
+            }
             RagDto.RetrievalResponse retrieval = item.retrieval();
             if (retrieval == null || !Boolean.TRUE.equals(retrieval.answerable)
                     || retrieval.results == null || retrieval.results.isEmpty()) {
@@ -432,7 +463,26 @@ public class ChatService {
     }
 
     private record BenchmarkQuestionContext(
-            String question, ChatMessage userMessage, RagDto.RetrievalResponse retrieval) { }
+            String question, ChatMessage userMessage, RagDto.RetrievalResponse retrieval,
+            QuestionScopeGuard.GuardDecision guard) { }
+
+    private ChatDto.AskResponse guardedResponse(UUID sessionId, ChatMessage savedUserMessage, String message,
+            String answerMode, String modelName, UUID retrievalQueryId) {
+        String responseMode = "FINE_TUNED".equals(answerMode) ? "FINE_TUNED" : "RAG";
+        String generationMode = "SCOPE_GUARD";
+        ChatMessage assistantMessage = saveMessage(sessionId, "assistant", message, generationMode);
+        return new ChatDto.AskResponse(
+                sessionId,
+                savedUserMessage.getMessageId(),
+                assistantMessage.getMessageId(),
+                message,
+                responseMode,
+                modelName == null ? "scope-guard" : modelName,
+                generationMode,
+                retrievalQueryId,
+                new ArrayList<>()
+        );
+    }
 
     private String truncate(String value, int max) { return value.length() <= max ? value : value.substring(0, max).trim(); }
 
