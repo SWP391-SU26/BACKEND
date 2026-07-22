@@ -4,6 +4,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 
 @Configuration
@@ -13,9 +14,12 @@ public class AppConfig {
         return new BCryptPasswordEncoder();
     }
 
-@Bean
+    @Bean
     public WebClient webClient() {
-        return WebClient.builder().build();
+        ExchangeStrategies strategies = ExchangeStrategies.builder()
+                .codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(16 * 1024 * 1024))
+                .build();
+        return WebClient.builder().exchangeStrategies(strategies).build();
     }
 
 }

@@ -11,6 +11,9 @@ public interface CourseDocumentRepository extends JpaRepository<CourseDocument, 
     List<CourseDocument> findAllByOrderByUploadedAtDesc();
 
     List<CourseDocument> findByUploadedByOrderByUploadedAtDesc(UUID uploadedBy);
+    List<CourseDocument> findByUploadedByAndDeletedAtIsNullOrderByUploadedAtDesc(UUID uploadedBy);
+    List<CourseDocument> findByUploadedByAndDeletedAtIsNotNullOrderByDeletedAtDesc(UUID uploadedBy);
+    List<CourseDocument> findByDeletedAtIsNotNullOrderByDeletedAtDesc();
 
     List<CourseDocument> findByWorkspaceIdOrderByUploadedAtDesc(UUID workspaceId);
 
@@ -19,6 +22,18 @@ public interface CourseDocumentRepository extends JpaRepository<CourseDocument, 
     List<CourseDocument> findByCourseIdAndProcessingStatusOrderByUploadedAtDesc(UUID courseId, String processingStatus);
     List<CourseDocument> findByCourseIdInAndProcessingStatus(List<UUID> courseIds, String processingStatus);
     boolean existsByCourseIdAndProcessingStatus(UUID courseId, String processingStatus);
+    boolean existsByCourseIdAndProcessingStatusAndIndexingStatus(
+            UUID courseId, String processingStatus, String indexingStatus);
+    boolean existsByCourseIdAndProcessingStatusAndIndexingStatusAndDeletedAtIsNull(
+            UUID courseId, String processingStatus, String indexingStatus);
+    List<CourseDocument> findByCourseIdAndProcessingStatusAndIndexingStatusOrderByUploadedAtDesc(
+            UUID courseId, String processingStatus, String indexingStatus);
+    List<CourseDocument> findByCourseIdAndProcessingStatusAndIndexingStatusAndDeletedAtIsNullOrderByUploadedAtDesc(
+            UUID courseId, String processingStatus, String indexingStatus);
+    List<CourseDocument> findByCourseIdInAndProcessingStatusAndIndexingStatus(
+            List<UUID> courseIds, String processingStatus, String indexingStatus);
+    List<CourseDocument> findByCourseIdInAndProcessingStatusAndIndexingStatusAndDeletedAtIsNull(
+            List<UUID> courseIds, String processingStatus, String indexingStatus);
     List<CourseDocument> findByReviewStatusOrderBySubmittedAtAsc(String reviewStatus);
     long countByUploadedBy(UUID uploadedBy);
     long countByProcessingStatus(String processingStatus);

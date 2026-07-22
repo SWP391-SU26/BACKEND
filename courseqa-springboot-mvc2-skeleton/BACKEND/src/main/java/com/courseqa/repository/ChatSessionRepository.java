@@ -16,4 +16,7 @@ public interface ChatSessionRepository extends JpaRepository<ChatSession, UUID> 
     List<ChatSession> findByUserIdAndCourseIdAndIsActiveTrueOrderByUpdatedAtDesc(UUID userId, UUID courseId);
     List<ChatSession> findByUserIdAndSemesterWorkspaceIdAndIsActiveTrueOrderByUpdatedAtDesc(UUID userId, UUID semesterWorkspaceId);
     List<ChatSession> findByUserIdAndScopeTypeAndIsActiveTrueOrderByUpdatedAtDesc(UUID userId, String scopeType);
+    List<ChatSession> findByUserIdAndCourseIdAndIsActiveTrue(UUID userId, UUID courseId);
+    List<ChatSession> findByUserIdAndSemesterWorkspaceIdAndIsActiveTrue(UUID userId, UUID semesterWorkspaceId);
+    List<ChatSession> findByUserIdAndScopeTypeAndIsActiveTrue(UUID userId, String scopeType);
 }

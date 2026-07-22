@@ -13,5 +13,7 @@ public interface CourseRepository extends JpaRepository<Course, UUID> {
     boolean existsByCourseCode(String courseCode);
     boolean existsByCourseCodeAndSemesterWorkspaceId(String courseCode, UUID semesterWorkspaceId);
     List<Course> findBySemesterWorkspaceIdOrderByCreatedAtDesc(UUID semesterWorkspaceId);
+    List<Course> findBySemesterWorkspaceIdAndDeletedAtIsNullOrderByCreatedAtDesc(UUID semesterWorkspaceId);
+    List<Course> findByDeletedAtIsNotNullOrderByDeletedAtDesc();
     List<Course> findByCourseIdInAndStatusAndIsActiveTrueOrderByCreatedAtDesc(List<UUID> courseIds, String status);
 }

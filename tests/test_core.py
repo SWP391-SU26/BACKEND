@@ -4,8 +4,8 @@ import uuid
 
 from src.config import AppSettings
 from src.embeddings import HashingEmbeddingProvider
-from src.rag_pipeline import RAGPipeline
-from src.storage import SQLiteStore
+from src.rag_pipeline import OUT_OF_SCOPE_MESSAGE, RAGPipeline
+from src.storage import RetrievedChunk, SQLiteStore
 
 
 def test_ingest_and_answer_txt() -> None:
@@ -39,3 +39,61 @@ def test_ingest_and_answer_txt() -> None:
         assert answer.sources
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+
+def test_extractive_answer_uses_previous_question_for_follow_up(tmp_path: Path) -> None:
+    settings = AppSettings(
+        raw_dir=tmp_path,
+        processed_dir=tmp_path,
+        db_path=tmp_path / "test.sqlite3",
+        generation_provider="extractive",
+    )
+    pipeline = RAGPipeline(settings, SQLiteStore(settings.db_path), HashingEmbeddingProvider())
+    contexts = [
+        RetrievedChunk(
+            chunk_id="chunk-1",
+            document_id="doc-1",
+            filename="math.pdf",
+            subject="Math",
+            chapter="Ratios",
+            page=2,
+            content=(
+                "Mot hinh chu nhat co chieu rong bang 2/3 chieu dai va kem chieu dai 15m. "
+                "Thong tin quang cao khong lien quan den bai toan."
+            ),
+            score=0.9,
+        )
+    ]
+
+    answer = pipeline._generate_answer(
+        "Giải thích thêm",
+        contexts,
+        [],
+        conversation_history=[
+            {"role": "user", "content": "Chieu rong bang bao nhieu phan chieu dai?"},
+            {"role": "assistant", "content": "Chieu rong bang 2/3 chieu dai."},
+        ],
+    )
+
+    assert "2/3" in answer
+    assert "Thong tin quang cao" not in answer
+    assert pipeline._extractive_question(
+        "Thủ đô của Pháp là gì?",
+        [{"role": "user", "content": "Chieu rong bang bao nhieu phan chieu dai?"}],
+    ) == "Thủ đô của Pháp là gì?"
+    assert pipeline._generate_extractive_answer(
+        "Thủ đô của Pháp là gì?",
+        [
+            RetrievedChunk(
+                chunk_id="chunk-2",
+                document_id="doc-2",
+                filename="history.pdf",
+                subject="History",
+                chapter="France",
+                page=1,
+                content="Nuoc Phap co nhieu bien dong trong lich su hien dai.",
+                score=0.9,
+            )
+        ],
+        [],
+    ) == OUT_OF_SCOPE_MESSAGE

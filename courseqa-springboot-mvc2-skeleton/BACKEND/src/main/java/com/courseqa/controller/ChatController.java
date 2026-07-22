@@ -2,10 +2,13 @@ package com.courseqa.controller;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -13,9 +16,11 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import com.courseqa.security.JwtPrincipal;
 
@@ -85,6 +90,14 @@ public class ChatController {
         chatService.deleteSession(sessionId, principal.userId()); return ApiResponse.ok(null);
     }
 
+    @PatchMapping("/sessions/{sessionId}/pin")
+    public ApiResponse<ChatDto.SessionResponse> pinSession(
+            @PathVariable UUID sessionId,
+            @RequestBody ChatDto.PinRequest request,
+            @AuthenticationPrincipal JwtPrincipal principal) {
+        return ApiResponse.ok(chatService.pinSession(sessionId, principal.userId(), request.isPinned()));
+    }
+
     /**
      * POST /api/chat/sessions/{sessionId}/ask
      * Hỏi câu hỏi (gọi Python AI Engine)
@@ -108,6 +121,45 @@ public class ChatController {
     ChatDto.AskResponse response = chatService.askQuestion(sessionId, request.getQuestion(), request.getAnswerMode());
 
     return ResponseEntity.ok(ApiResponse.ok(response));
+    }
+
+    @PostMapping(value = "/sessions/{sessionId}/ask/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter askQuestionStream(
+            @PathVariable UUID sessionId,
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @Valid @RequestBody AskQuestionRequest request) {
+        chatService.requireSessionOwner(sessionId, principal.userId());
+        SseEmitter emitter = new SseEmitter(0L);
+        CompletableFuture.runAsync(() -> {
+            long startedAt = System.currentTimeMillis();
+            try {
+                ChatDto.AskResponse response = chatService.askQuestion(
+                        sessionId, request.getQuestion(), "RAG", false,
+                        stage -> sendEvent(emitter, stage, Map.of(
+                                "stage", stage,
+                                "elapsedMs", System.currentTimeMillis() - startedAt)));
+                sendEvent(emitter, "COMPLETED", Map.of(
+                        "stage", "COMPLETED",
+                        "elapsedMs", System.currentTimeMillis() - startedAt,
+                        "response", response));
+                emitter.complete();
+            } catch (RuntimeException exception) {
+                sendEvent(emitter, "ERROR", Map.of(
+                        "stage", "ERROR",
+                        "message", exception.getMessage() == null ? "Chat processing failed." : exception.getMessage(),
+                        "elapsedMs", System.currentTimeMillis() - startedAt));
+                emitter.complete();
+            }
+        });
+        return emitter;
+    }
+
+    private void sendEvent(SseEmitter emitter, String name, Object data) {
+        try {
+            emitter.send(SseEmitter.event().name(name).data(data));
+        } catch (java.io.IOException exception) {
+            throw new IllegalStateException("Chat stream was disconnected.", exception);
+        }
     }
 
     /**

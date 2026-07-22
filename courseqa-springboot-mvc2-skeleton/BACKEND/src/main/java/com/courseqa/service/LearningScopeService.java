@@ -28,6 +28,7 @@ public class LearningScopeService {
 
     public List<LearningScopeDto.SemesterScope> scope(UUID userId, boolean admin) {
         Map<UUID, SemesterWorkspace> semesterById = semesters.findAll().stream()
+                .filter(semester -> semester.getDeletedAt() == null)
                 .collect(java.util.stream.Collectors.toMap(SemesterWorkspace::getSemesterWorkspaceId, Function.identity()));
         Map<UUID, LearningScopeDto.SemesterScope> result = new LinkedHashMap<>();
 
@@ -35,8 +36,9 @@ public class LearningScopeService {
             SemesterWorkspace semester = semesterById.get(course.getSemesterWorkspaceId());
             if (!visible(course, semester)) return;
             List<CourseDocument> courseDocuments = documents.findByCourseIdOrderByUploadedAtDesc(course.getCourseId());
-            courseDocuments = courseDocuments.stream().filter(this::isSharedDocument).toList();
-            long processed = courseDocuments.stream().filter(doc -> "PROCESSED".equals(doc.getProcessingStatus())).count();
+            courseDocuments = courseDocuments.stream().filter(document -> document.getDeletedAt() == null)
+                    .filter(this::isSharedDocument).toList();
+            long processed = courseDocuments.stream().filter(this::isIndexed).count();
             if (processed == 0) return;
             CourseWorkspace workspace = workspaces.findByCourseIdOrderByCreatedAtDesc(course.getCourseId()).stream()
                     .filter(item -> Boolean.TRUE.equals(item.getIsActive())).findFirst().orElse(null);
@@ -67,6 +69,7 @@ public class LearningScopeService {
             chapterGroups.put(chapter.getChapterId(), group); response.chapters.add(group);
         }
         for (CourseDocument document : documents.findByCourseIdOrderByUploadedAtDesc(courseId).stream()
+                .filter(item -> item.getDeletedAt() == null)
                 .filter(this::isSharedDocument).toList()) {
             List<DocumentChapterRange> documentRanges = ranges.findByDocumentIdOrderByPageStartAsc(document.getDocumentId());
             for (DocumentChapterRange range : documentRanges) {
@@ -85,7 +88,8 @@ public class LearningScopeService {
         SemesterWorkspace semester = semesters.findById(course.getSemesterWorkspaceId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Semester not found."));
         if (!visible(course, semester)
-                || !documents.existsByCourseIdAndProcessingStatus(courseId, "PROCESSED")) {
+                || !documents.existsByCourseIdAndProcessingStatusAndIndexingStatusAndDeletedAtIsNull(
+                        courseId, "PROCESSED", "INDEXED")) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This course is not currently available.");
         }
         return course;
@@ -94,7 +98,7 @@ public class LearningScopeService {
     public SemesterWorkspace requireAccessibleSemester(UUID semesterId) {
         SemesterWorkspace semester = semesters.findById(semesterId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Semester not found."));
-        if (!"ACTIVE".equals(semester.getStatus())) {
+        if (semester.getDeletedAt() != null || !"ACTIVE".equals(semester.getStatus())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This semester is not currently available.");
         }
         return semester;
@@ -104,7 +108,8 @@ public class LearningScopeService {
         SemesterWorkspace semester = requireAccessibleSemester(semesterId);
         return courses.findBySemesterWorkspaceIdOrderByCreatedAtDesc(semesterId).stream()
                 .filter(course -> visible(course, semester))
-                .filter(course -> documents.existsByCourseIdAndProcessingStatus(course.getCourseId(), "PROCESSED"))
+                .filter(course -> documents.existsByCourseIdAndProcessingStatusAndIndexingStatusAndDeletedAtIsNull(
+                        course.getCourseId(), "PROCESSED", "INDEXED"))
                 .toList();
     }
 
@@ -118,6 +123,8 @@ public class LearningScopeService {
 
     private boolean visible(Course course, SemesterWorkspace semester) {
         return semester != null
+                && semester.getDeletedAt() == null
+                && course.getDeletedAt() == null
                 && Boolean.TRUE.equals(course.getIsActive())
                 && !"ARCHIVED".equals(course.getStatus())
                 && "ACTIVE".equals(semester.getStatus());
@@ -125,7 +132,13 @@ public class LearningScopeService {
 
     private boolean isSharedDocument(CourseDocument document) {
         return (document.getDocumentScope() == null || "COURSE".equals(document.getDocumentScope()))
-                && (document.getReviewStatus() == null || "APPROVED".equals(document.getReviewStatus()));
+                && (document.getReviewStatus() == null || "APPROVED".equals(document.getReviewStatus()))
+                && isIndexed(document);
+    }
+
+    private boolean isIndexed(CourseDocument document) {
+        return "PROCESSED".equals(document.getProcessingStatus())
+                && "INDEXED".equals(document.getIndexingStatus());
     }
 
     private void addUnclassified(List<LearningScopeDto.Material> output, CourseDocument document, List<DocumentChapterRange> ranges) {

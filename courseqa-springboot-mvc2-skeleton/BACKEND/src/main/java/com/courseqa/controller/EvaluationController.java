@@ -7,6 +7,7 @@ import com.courseqa.model.entity.EvaluationDataset;
 import com.courseqa.model.entity.EvaluationQuestion;
 import com.courseqa.model.entity.Experiment;
 import com.courseqa.model.entity.ExperimentResult;
+import com.courseqa.model.entity.ExperimentMetricAggregate;
 import com.courseqa.security.JwtPrincipal;
 import com.courseqa.service.EvaluationService;
 import jakarta.validation.Valid;
@@ -87,7 +88,9 @@ public class EvaluationController {
             @AuthenticationPrincipal JwtPrincipal principal,
             @Valid @RequestBody CreateExperimentRequest request) {
         Experiment experiment = evaluationService.createExperiment(request.datasetId, request.experimentName,
-                request.experimentType, request.llmModel, request.configJson, principal.userId());
+                request.experimentType, request.llmModel, request.embeddingModelId,
+                request.chunkingStrategy, request.topK, request.similarityThreshold,
+                request.randomSeed, request.configJson, principal.userId());
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(experiment));
     }
 
@@ -115,6 +118,11 @@ public class EvaluationController {
     @GetMapping("/experiments/{experimentId}/results")
     public ResponseEntity<ApiResponse<List<ExperimentResult>>> getResults(@PathVariable UUID experimentId) {
         return ResponseEntity.ok(ApiResponse.ok(evaluationService.getResults(experimentId)));
+    }
+
+    @GetMapping("/experiments/{experimentId}/aggregates")
+    public ResponseEntity<ApiResponse<List<ExperimentMetricAggregate>>> getAggregates(@PathVariable UUID experimentId) {
+        return ResponseEntity.ok(ApiResponse.ok(evaluationService.getAggregates(experimentId)));
     }
 
     @GetMapping("/readiness")
@@ -156,6 +164,11 @@ public class EvaluationController {
         @NotBlank public String experimentName;
         @NotBlank public String experimentType;
         @NotBlank public String llmModel;
+        @NotNull public UUID embeddingModelId;
+        public String chunkingStrategy = "PARAGRAPH_700_120";
+        public Integer topK = 5;
+        public Double similarityThreshold = 0.25;
+        public Integer randomSeed = 42;
         public String configJson = "{}";
         public UUID createdBy;
     }

@@ -40,6 +40,7 @@ class DocumentServicePersonalTest {
     private final UserRepository users = mock(UserRepository.class);
     private final UserRoleRepository roles = mock(UserRoleRepository.class);
     private final SemesterWorkspaceRepository semesters = mock(SemesterWorkspaceRepository.class);
+    private final PersonalWorkspaceService personalWorkspaces = mock(PersonalWorkspaceService.class);
     private DocumentService service;
 
     @BeforeEach
@@ -57,7 +58,8 @@ class DocumentServicePersonalTest {
                 mock(DocumentChapterRangeRepository.class),
                 mock(DocumentChapterSuggestionRepository.class),
                 mock(JdbcTemplate.class),
-                mock(PersonalWorkspaceService.class),
+                personalWorkspaces,
+                mock(EmbeddingService.class),
                 "uploads",
                 "",
                 "",
@@ -80,6 +82,7 @@ class DocumentServicePersonalTest {
         document.setDocumentScope("PERSONAL");
         document.setReviewStatus("NOT_SUBMITTED");
         document.setProcessingStatus("PROCESSED");
+        document.setIndexingStatus("INDEXED");
 
         Course course = new Course();
         course.setCourseId(courseId);
@@ -123,5 +126,41 @@ class DocumentServicePersonalTest {
         assertEquals(courseWorkspaceId, chunk.getWorkspaceId());
         assertEquals(courseId, chunk.getCourseId());
         verify(chunks).saveAll(List.of(chunk));
+    }
+
+    @Test
+    void uploaderRestoresSharedDocumentAsUnsubmittedPersonalDocument() {
+        UUID ownerId = UUID.randomUUID();
+        UUID documentId = UUID.randomUUID();
+        UUID courseId = UUID.randomUUID();
+        UUID courseWorkspaceId = UUID.randomUUID();
+        UUID personalWorkspaceId = UUID.randomUUID();
+        CourseDocument document = new CourseDocument();
+        document.setDocumentId(documentId);
+        document.setUploadedBy(ownerId);
+        document.setWorkspaceId(courseWorkspaceId);
+        document.setCourseId(courseId);
+        document.setDocumentScope("COURSE");
+        document.setReviewStatus("APPROVED");
+        DocumentChunk chunk = new DocumentChunk();
+        chunk.setDocumentId(documentId);
+        CourseWorkspace personal = new CourseWorkspace();
+        personal.setWorkspaceId(personalWorkspaceId);
+        personal.setOwnerUserId(ownerId);
+
+        when(users.existsById(ownerId)).thenReturn(true);
+        when(documents.findById(documentId)).thenReturn(Optional.of(document));
+        when(chunks.findByDocumentIdOrderByChunkIndexAsc(documentId)).thenReturn(List.of(chunk));
+        when(personalWorkspaces.getOrCreate(ownerId)).thenReturn(personal);
+
+        service.deleteDocument(documentId, ownerId);
+        DocumentDto.DocumentResponse restored = service.restoreDocument(documentId, ownerId);
+
+        assertEquals("PERSONAL", restored.documentScope);
+        assertEquals("NOT_SUBMITTED", restored.reviewStatus);
+        assertEquals(personalWorkspaceId, restored.workspaceId);
+        assertEquals(null, restored.courseId);
+        assertEquals(personalWorkspaceId, chunk.getWorkspaceId());
+        assertEquals(null, chunk.getCourseId());
     }
 }

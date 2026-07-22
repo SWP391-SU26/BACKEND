@@ -3,6 +3,7 @@ package com.courseqa.service;
 import com.courseqa.exception.ResourceNotFoundException;
 import com.courseqa.model.dto.ChatDto;
 import com.courseqa.model.dto.LearningScopeDto;
+import com.courseqa.model.dto.PythonAiDto;
 import com.courseqa.model.entity.Course;
 import com.courseqa.model.entity.CourseDocument;
 import com.courseqa.model.entity.CourseWorkspace;
@@ -11,6 +12,8 @@ import com.courseqa.model.entity.EvaluationDatasetDocument;
 import com.courseqa.model.entity.EvaluationQuestion;
 import com.courseqa.model.entity.Experiment;
 import com.courseqa.model.entity.ExperimentResult;
+import com.courseqa.model.entity.ExperimentMetricAggregate;
+import com.courseqa.model.entity.EmbeddingModel;
 import com.courseqa.repository.CourseDocumentRepository;
 import com.courseqa.repository.CourseRepository;
 import com.courseqa.repository.CourseWorkspaceRepository;
@@ -19,11 +22,15 @@ import com.courseqa.repository.EvaluationDatasetRepository;
 import com.courseqa.repository.EvaluationQuestionRepository;
 import com.courseqa.repository.ExperimentRepository;
 import com.courseqa.repository.ExperimentResultRepository;
+import com.courseqa.repository.ExperimentMetricAggregateRepository;
+import com.courseqa.repository.EmbeddingModelRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.text.Normalizer;
@@ -64,6 +71,8 @@ public class EvaluationService {
     private final EvaluationQuestionRepository questions;
     private final ExperimentRepository experiments;
     private final ExperimentResultRepository results;
+    private final ExperimentMetricAggregateRepository aggregates;
+    private final EmbeddingModelRepository embeddingModels;
     private final CourseRepository courses;
     private final CourseDocumentRepository documents;
     private final CourseWorkspaceRepository workspaces;
@@ -80,6 +89,8 @@ public class EvaluationService {
             EvaluationQuestionRepository questions,
             ExperimentRepository experiments,
             ExperimentResultRepository results,
+            ExperimentMetricAggregateRepository aggregates,
+            EmbeddingModelRepository embeddingModels,
             CourseRepository courses,
             CourseDocumentRepository documents,
             CourseWorkspaceRepository workspaces,
@@ -93,6 +104,8 @@ public class EvaluationService {
         this.questions = questions;
         this.experiments = experiments;
         this.results = results;
+        this.aggregates = aggregates;
+        this.embeddingModels = embeddingModels;
         this.courses = courses;
         this.documents = documents;
         this.workspaces = workspaces;
@@ -120,9 +133,10 @@ public class EvaluationService {
         List<CourseDocument> selected = documents.findAllById(documentIds);
         if (selected.size() != documentIds.size()
                 || selected.stream().anyMatch(document -> !courseId.equals(document.getCourseId())
-                        || !"PROCESSED".equals(document.getProcessingStatus()))) {
+                        || !"PROCESSED".equals(document.getProcessingStatus())
+                        || !"INDEXED".equals(document.getIndexingStatus()))) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "All selected documents must be processed documents from the selected course.");
+                    "All selected documents must be processed and indexed documents from the selected course.");
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -239,7 +253,8 @@ public class EvaluationService {
     }
 
     public Experiment createExperiment(UUID datasetId, String name, String type, String llmModel,
-            String configJson, UUID createdBy) {
+            UUID embeddingModelId, String chunkingStrategy, Integer topK, Double similarityThreshold,
+            Integer randomSeed, String configJson, UUID createdBy) {
         EvaluationDataset dataset = requireDataset(datasetId);
         if ("INVALID".equals(dataset.getStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, defaultIfBlank(dataset.getValidationError(),
@@ -254,8 +269,29 @@ public class EvaluationService {
         experiment.setExperimentName(name.trim());
         experiment.setExperimentType(normalizedType);
         experiment.setLlmModel(llmModel.trim());
-        experiment.setTopK(5);
+        if (embeddingModelId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "embeddingModelId is required.");
+        }
+        EmbeddingModel embeddingModel = embeddingModels.findById(embeddingModelId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Embedding model not found."));
+        if (!EmbeddingService.PRODUCTION_MODEL.equalsIgnoreCase(embeddingModel.getModelName())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Current benchmark only supports " + EmbeddingService.PRODUCTION_MODEL + ".");
+        }
+        String strategy = chunkingStrategy == null ? "" : chunkingStrategy.trim().toUpperCase(Locale.ROOT);
+        if (!"PARAGRAPH_700_120".equals(strategy)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Current benchmark only supports PARAGRAPH_700_120 chunking.");
+        }
+        experiment.setEmbeddingModelId(embeddingModelId);
+        experiment.setChunkingStrategy(strategy);
+        experiment.setTopK(topK == null ? 5 : topK);
+        experiment.setSimilarityThreshold(similarityThreshold == null ? 0.25 : similarityThreshold);
+        experiment.setRandomSeed(randomSeed == null ? 42 : randomSeed);
         experiment.setTemperature(0.2);
+        experiment.setMetricStandard("OFFICIAL_RAGAS");
+        experiment.setEvaluatorConfigJson("{\"ragasVersion\":\"0.4.3\",\"judge\":\"gpt-4o-mini\","
+                + "\"embedding\":\"text-embedding-3-small\",\"concurrency\":2,\"maxRetries\":3}");
         experiment.setConfigJson(configJson == null || configJson.isBlank() ? "{}" : configJson);
         experiment.setCreatedBy(createdBy);
         experiment.setStatus("PENDING");
@@ -295,10 +331,16 @@ public class EvaluationService {
         return items;
     }
 
+    public List<ExperimentMetricAggregate> getAggregates(UUID experimentId) {
+        getExperiment(experimentId);
+        return aggregates.findByExperimentIdOrderByMetricNameAsc(experimentId);
+    }
+
     public synchronized Experiment startBenchmark(UUID experimentId) {
         Experiment experiment = getExperiment(experimentId);
-        if (Set.of("QUEUED", "RUNNING").contains(experiment.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "This experiment is already queued or running.");
+        if (!"PENDING".equals(experiment.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "An experiment is immutable after it has been queued. Create a new experiment to rerun it.");
         }
         Map<String, Object> readiness = readiness(experiment.getDatasetId(), experiment.getExperimentType());
         if (!Boolean.TRUE.equals(readiness.get("ready"))) {
@@ -313,6 +355,7 @@ public class EvaluationService {
         results.deleteByExperimentId(experimentId);
         experiment.setDatasetChecksum(dataset.getChecksum());
         experiment.setConfigJson(withBenchmarkProfile(experiment.getConfigJson(), getQuestions(dataset.getDatasetId()).size()));
+        freezeExperimentConfig(experiment, dataset);
         experiment.setStatus("QUEUED");
         experiment.setProgress(0);
         experiment.setSuccessCount(0);
@@ -356,13 +399,20 @@ public class EvaluationService {
         }
         List<CourseDocument> snapshot = getDatasetDocuments(datasetId);
         boolean validDocuments = !snapshot.isEmpty() && snapshot.stream().allMatch(document ->
-                dataset.getCourseId().equals(document.getCourseId()) && "PROCESSED".equals(document.getProcessingStatus()));
+                dataset.getCourseId().equals(document.getCourseId())
+                        && "PROCESSED".equals(document.getProcessingStatus())
+                        && "INDEXED".equals(document.getIndexingStatus()));
         addCheck(checks, blockers, "documents", validDocuments,
                 snapshot.size() + " processed document(s) are frozen in the snapshot.",
                 "Dataset needs at least one processed document snapshot.");
         int questionCount = questions.findByDatasetId(datasetId).size();
-        addCheck(checks, blockers, "questions", questionCount > 0,
-                questionCount + " benchmark question(s) are ready.", "Dataset has no benchmark questions.");
+        addCheck(checks, blockers, "questions", questionCount == 50,
+                "Exactly 50 benchmark questions are ready.",
+                "Official benchmark requires exactly 50 questions; current count is " + questionCount + ".");
+        int leakageCount = trainingLeakageCount(getQuestions(datasetId));
+        addCheck(checks, blockers, "trainingLeakage", leakageCount == 0,
+                "No benchmark question overlaps LoRA train/validation data.",
+                leakageCount + " benchmark question(s) overlap LoRA train/validation data.");
 
         Map<String, Object> model = modelReadiness();
         boolean modelReady = "FINE_TUNED".equals(type)
@@ -371,6 +421,10 @@ public class EvaluationService {
         addCheck(checks, blockers, "model", modelReady,
                 "Strict " + type + " generation is ready.",
                 "Strict " + type + " model is not ready. Check the Python model status.");
+        boolean evaluatorReady = booleanValue(model, "openai_configured", "openaiConfigured");
+        addCheck(checks, blockers, "officialRagas", evaluatorReady,
+                "OpenAI evaluator is configured for Official RAGAS.",
+                "OPENAI_API_KEY is required for Official RAGAS evaluation.");
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("datasetId", datasetId);
@@ -427,6 +481,14 @@ public class EvaluationService {
         }
         List<ExperimentResult> ragResults = getResults(ragExperimentId);
         List<ExperimentResult> fineResults = getResults(fineExperimentId);
+        if (!"OFFICIAL_RAGAS".equals(rag.getMetricStandard())
+                || !"OFFICIAL_RAGAS".equals(fine.getMetricStandard())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "LOCAL_PROXY experiments cannot be compared with Official RAGAS experiments.");
+        }
+        boolean officialRagas = !ragResults.isEmpty() && !fineResults.isEmpty()
+                && java.util.stream.Stream.concat(ragResults.stream(), fineResults.stream())
+                        .allMatch(result -> "SUCCESS".equals(result.getRagasStatus()));
         Map<UUID, ExperimentResult> fineByQuestion = fineResults.stream().collect(
                 java.util.stream.Collectors.toMap(ExperimentResult::getEvaluationQuestionId, Function.identity(),
                         (left, right) -> left));
@@ -487,13 +549,14 @@ public class EvaluationService {
         datasetMetadata.put("documentCount", snapshotDocumentIds(datasetId).size());
         datasetMetadata.put("checksum", rag.getDatasetChecksum());
         response.put("dataset", datasetMetadata);
-        response.put("metricStandard", "LOCAL_PROXY");
-        response.put("formulaVersion", "token-overlap-v1");
+        response.put("metricStandard", "OFFICIAL_RAGAS");
+        response.put("formulaVersion", "ragas-0.4.3");
         response.put("benchmarkProfile", ragProfile);
         response.put("methodology", Map.of(
-                "officialRagas", false,
-                "label", "RAGAS-style local proxy",
-                "sharedFormulaNotice", "Answer correctness, answer relevance and semantic similarity currently use the same token-overlap evidence."));
+                "officialRagas", officialRagas,
+                "label", officialRagas ? "Official RAGAS" : "Official RAGAS incomplete",
+                "evaluatorModel", "gpt-4o-mini",
+                "evaluatorEmbeddingModel", "text-embedding-3-small"));
         response.put("ragExperiment", experimentSummary(rag, ragResults, true));
         response.put("fineTunedExperiment", experimentSummary(fine, fineResults, false));
         response.put("perQuestion", perQuestion);
@@ -561,6 +624,11 @@ public class EvaluationService {
             failure = Math.max(1, failure);
             errorMessages.add(exception.getMessage());
         }
+        if (!isCancellationRequested(experimentId) && success > 0) {
+            List<String> ragasErrors = evaluateOfficialRagas(experiment);
+            failure += ragasErrors.size();
+            errorMessages.addAll(ragasErrors);
+        }
         if (!finishBenchmarkIfRunning(experimentId, success, failure, errorMessages)) return;
         log.info("Flow 5 benchmark {} ended with status {}, success={}, failure={}", experimentId,
                 failure == 0 ? "COMPLETED" : "FAILED", success, failure);
@@ -568,6 +636,110 @@ public class EvaluationService {
 
     private boolean isCancellationRequested(UUID experimentId) {
         return cancellationRequests.contains(experimentId);
+    }
+
+    private List<String> evaluateOfficialRagas(Experiment experiment) {
+        List<ExperimentResult> storedResults = results.findByExperimentId(experiment.getExperimentId()).stream()
+                .filter(result -> result.getErrorMessage() == null || result.getErrorMessage().isBlank())
+                .toList();
+        if (storedResults.isEmpty()) return List.of("RAGAS: no successful generated answers to evaluate.");
+
+        Map<UUID, EvaluationQuestion> questionById = new HashMap<>();
+        questions.findAllById(storedResults.stream().map(ExperimentResult::getEvaluationQuestionId).toList())
+                .forEach(question -> questionById.put(question.getEvaluationQuestionId(), question));
+        PythonAiDto.RagasBatchRequest request = new PythonAiDto.RagasBatchRequest();
+        request.evaluator_model = "gpt-4o-mini";
+        request.evaluator_embedding_model = "text-embedding-3-small";
+        request.items = storedResults.stream().map(result -> {
+            EvaluationQuestion question = questionById.get(result.getEvaluationQuestionId());
+            PythonAiDto.RagasEvaluationItem item = new PythonAiDto.RagasEvaluationItem();
+            item.request_id = result.getExperimentResultId().toString();
+            item.question = question.getQuestionText();
+            item.response = result.getGeneratedAnswer();
+            item.reference = question.getGroundTruthAnswer();
+            item.retrieved_contexts = contextStrings(result.getRetrievedContextJson());
+            item.experiment_type = experiment.getExperimentType();
+            return item;
+        }).toList();
+
+        List<String> errors = new ArrayList<>();
+        try {
+            PythonAiDto.RagasBatchResponse response = aiClientService.evaluateRagas(request);
+            Map<UUID, PythonAiDto.RagasEvaluationResult> byId = response.items.stream().collect(
+                    java.util.stream.Collectors.toMap(item -> UUID.fromString(item.request_id), Function.identity()));
+            for (ExperimentResult result : storedResults) {
+                PythonAiDto.RagasEvaluationResult metric = byId.get(result.getExperimentResultId());
+                if (metric == null || !"SUCCESS".equals(metric.status)) {
+                    String error = metric == null ? "Missing RAGAS result." : defaultIfBlank(metric.error, metric.status);
+                    result.setRagasStatus(metric == null ? "FAILED" : metric.status);
+                    result.setRagasError(error);
+                    errors.add("RAGAS " + result.getExperimentResultId() + ": " + error);
+                } else {
+                    result.setFaithfulness(metric.faithfulness);
+                    result.setAnswerRelevance(metric.answer_relevancy);
+                    result.setAnswerCorrectness(metric.answer_correctness);
+                    result.setContextPrecision(metric.context_precision);
+                    result.setContextRecall(metric.context_recall);
+                    result.setRagasStatus("SUCCESS");
+                    result.setRagasError(null);
+                }
+                result.setMetricStandard("OFFICIAL_RAGAS");
+                result.setEvaluatorModel(response.evaluator_model);
+                result.setEvaluatorEmbeddingModel(response.evaluator_embedding_model);
+                result.setRagasVersion(response.ragas_version);
+                results.save(result);
+            }
+        } catch (RuntimeException exception) {
+            for (ExperimentResult result : storedResults) {
+                result.setRagasStatus("FAILED");
+                result.setRagasError(exception.getMessage());
+                results.save(result);
+            }
+            errors.add("RAGAS batch: " + exception.getMessage());
+        }
+        rebuildAggregates(experiment.getExperimentId());
+        return errors;
+    }
+
+    private List<String> contextStrings(String json) {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            return objectMapper.readValue(json,
+                    objectMapper.getTypeFactory().constructCollectionType(List.class, String.class));
+        } catch (JsonProcessingException exception) {
+            return List.of();
+        }
+    }
+
+    private void rebuildAggregates(UUID experimentId) {
+        aggregates.deleteByExperimentId(experimentId);
+        List<ExperimentResult> values = results.findByExperimentId(experimentId);
+        saveAggregate(experimentId, "faithfulness", values.stream().map(ExperimentResult::getFaithfulness).toList());
+        saveAggregate(experimentId, "answer_relevancy", values.stream().map(ExperimentResult::getAnswerRelevance).toList());
+        saveAggregate(experimentId, "answer_correctness", values.stream().map(ExperimentResult::getAnswerCorrectness).toList());
+        saveAggregate(experimentId, "context_precision", values.stream().map(ExperimentResult::getContextPrecision).toList());
+        saveAggregate(experimentId, "context_recall", values.stream().map(ExperimentResult::getContextRecall).toList());
+        saveAggregate(experimentId, "latency_ms", values.stream()
+                .map(value -> value.getLatencyMs() == null ? null : value.getLatencyMs().doubleValue()).toList());
+    }
+
+    private void saveAggregate(UUID experimentId, String metricName, List<Double> rawValues) {
+        List<Double> values = rawValues.stream().filter(Objects::nonNull).toList();
+        ExperimentMetricAggregate aggregate = new ExperimentMetricAggregate();
+        aggregate.setExperimentId(experimentId);
+        aggregate.setMetricName(metricName);
+        aggregate.setSampleCount(values.size());
+        aggregate.setFailureCount(rawValues.size() - values.size());
+        aggregate.setCreatedAt(LocalDateTime.now());
+        if (!values.isEmpty()) {
+            double average = values.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+            aggregate.setAverageValue(round4(average));
+            aggregate.setMinValue(round4(values.stream().mapToDouble(Double::doubleValue).min().orElse(0)));
+            aggregate.setMaxValue(round4(values.stream().mapToDouble(Double::doubleValue).max().orElse(0)));
+            double variance = values.stream().mapToDouble(value -> Math.pow(value - average, 2)).average().orElse(0);
+            aggregate.setStandardDeviation(round4(Math.sqrt(variance)));
+        }
+        aggregates.save(aggregate);
     }
 
     private synchronized boolean markRunningIfQueued(UUID experimentId) {
@@ -619,19 +791,15 @@ public class EvaluationService {
         String generated = answer == null ? "" : defaultIfBlank(answer.answer, "");
         List<ChatDto.CitationItem> citations = answer == null || answer.citations == null
                 ? List.of() : answer.citations;
-        List<String> contexts = citations.stream().map(item -> defaultIfBlank(item.quoteText, ""))
-                .filter(value -> !value.isBlank()).toList();
-        double answerF1 = tokenF1(generated, question.getGroundTruthAnswer());
+        List<String> contexts = answer == null || answer.retrievedContexts == null
+                ? List.of()
+                : answer.retrievedContexts.stream().filter(value -> value != null && !value.isBlank()).toList();
         ExperimentResult result = baseResult(experiment, question, batchLatencyMs, effectiveLatencyMs, batchSize);
         result.setGeneratedAnswer(generated);
         result.setRetrievedContextJson(rag ? toJson(contexts) : null);
         result.setCitationsJson(rag ? toJson(citations) : null);
-        result.setFaithfulness(rag ? faithfulnessProxy(generated, contexts) : null);
-        result.setAnswerRelevance(answerF1);
-        result.setContextPrecision(rag ? contextPrecisionProxy(question.getGroundTruthAnswer(), contexts) : null);
-        result.setContextRecall(rag ? contextRecallProxy(question.getGroundTruthAnswer(), contexts) : null);
-        result.setAnswerCorrectness(answerF1);
-        result.setSemanticSimilarity(answerF1);
+        result.setMetricStandard("OFFICIAL_RAGAS");
+        result.setRagasStatus("PENDING");
         results.save(result);
     }
 
@@ -652,6 +820,8 @@ public class EvaluationService {
         result.setEffectiveLatencyMs(effectiveLatencyMs);
         result.setBatchSize(batchSize);
         result.setCost(BigDecimal.ZERO);
+        result.setMetricStandard(experiment.getMetricStandard());
+        result.setRagasStatus("NOT_EVALUATED");
         result.setCreatedAt(LocalDateTime.now());
         return result;
     }
@@ -692,6 +862,79 @@ public class EvaluationService {
         }
     }
 
+    private void freezeExperimentConfig(Experiment experiment, EvaluationDataset dataset) {
+        List<CourseDocument> snapshot = getDatasetDocuments(dataset.getDatasetId());
+        String embeddingRevision = snapshot.stream()
+                .map(CourseDocument::getIndexedModelVersion)
+                .filter(value -> value != null && !value.isBlank())
+                .distinct().sorted().reduce((left, right) -> left + "," + right)
+                .orElse("configured");
+        experiment.setEmbeddingModelVersion(embeddingRevision);
+        String adapterChecksum = fileChecksum(resolvePythonRoot()
+                .resolve("models/qwen-rag-lora/adapter_model.safetensors"));
+        experiment.setGenerationModelVersion(experiment.getLlmModel() + "@" + adapterChecksum);
+        String canonical = String.join("|",
+                dataset.getChecksum(),
+                String.valueOf(experiment.getEmbeddingModelId()),
+                experiment.getEmbeddingModelVersion(),
+                experiment.getChunkingStrategy(),
+                String.valueOf(experiment.getTopK()),
+                String.valueOf(experiment.getSimilarityThreshold()),
+                experiment.getGenerationModelVersion(),
+                String.valueOf(experiment.getRandomSeed()),
+                experiment.getMetricStandard(),
+                experiment.getEvaluatorConfigJson(),
+                experiment.getConfigJson());
+        experiment.setFrozenConfigHash(sha256(canonical.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private int trainingLeakageCount(List<EvaluationQuestion> benchmarkQuestions) {
+        Set<String> trainingQuestions = new HashSet<>();
+        Path dataDir = resolvePythonRoot().resolve("data/finetuning");
+        for (String filename : List.of("train.jsonl", "validation.jsonl")) {
+            Path path = dataDir.resolve(filename);
+            if (!Files.isRegularFile(path)) continue;
+            try {
+                for (String line : Files.readAllLines(path, StandardCharsets.UTF_8)) {
+                    if (line.isBlank()) continue;
+                    com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(line);
+                    for (com.fasterxml.jackson.databind.JsonNode message : root.path("messages")) {
+                        if ("user".equals(message.path("role").asText())) {
+                            trainingQuestions.add(normalizeQuestion(message.path("content").asText()));
+                        }
+                    }
+                }
+            } catch (IOException exception) {
+                throw new IllegalStateException("Cannot validate LoRA data leakage: " + exception.getMessage(), exception);
+            }
+        }
+        return (int) benchmarkQuestions.stream()
+                .map(EvaluationQuestion::getQuestionText)
+                .map(this::normalizeQuestion)
+                .filter(trainingQuestions::contains)
+                .count();
+    }
+
+    private String normalizeQuestion(String value) {
+        return Normalizer.normalize(defaultIfBlank(value, ""), Normalizer.Form.NFC)
+                .toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
+    }
+
+    private Path resolvePythonRoot() {
+        Path current = Path.of(System.getProperty("user.dir", ".")).toAbsolutePath().normalize();
+        Path candidate = current.resolve("../..").normalize();
+        return Files.isDirectory(candidate.resolve("data/finetuning")) ? candidate : current;
+    }
+
+    private String fileChecksum(Path path) {
+        if (!Files.isRegularFile(path)) return "missing";
+        try {
+            return sha256(Files.readAllBytes(path));
+        } catch (IOException exception) {
+            throw new IllegalStateException("Cannot checksum model artifact: " + path, exception);
+        }
+    }
+
     private EvaluationDataset freezeDataset(UUID datasetId) {
         EvaluationDataset dataset = requireDataset(datasetId);
         if ("FROZEN".equals(dataset.getStatus()) && dataset.getChecksum() != null) return dataset;
@@ -716,6 +959,16 @@ public class EvaluationService {
         summary.put("name", experiment.getExperimentName());
         summary.put("status", experiment.getStatus());
         summary.put("llmModel", experiment.getLlmModel());
+        summary.put("embeddingModelId", experiment.getEmbeddingModelId());
+        summary.put("embeddingModelVersion", experiment.getEmbeddingModelVersion());
+        summary.put("chunkingStrategy", experiment.getChunkingStrategy());
+        summary.put("topK", experiment.getTopK());
+        summary.put("similarityThreshold", experiment.getSimilarityThreshold());
+        summary.put("randomSeed", experiment.getRandomSeed());
+        summary.put("generationModelVersion", experiment.getGenerationModelVersion());
+        summary.put("metricStandard", experiment.getMetricStandard());
+        summary.put("evaluatorConfig", parseJsonCollection(experiment.getEvaluatorConfigJson()));
+        summary.put("frozenConfigHash", experiment.getFrozenConfigHash());
         summary.put("startedAt", experiment.getStartedAt());
         summary.put("completedAt", experiment.getCompletedAt());
         summary.put("benchmarkProfile", benchmarkProfile(experiment));
@@ -777,6 +1030,10 @@ public class EvaluationService {
         for (String key : keys) if (Boolean.TRUE.equals(values.get(key))) return true;
         Object runtime = values.get("runtime");
         if (runtime instanceof Map<?, ?> nested) {
+            for (String key : keys) if (Boolean.TRUE.equals(nested.get(key))) return true;
+        }
+        Object details = values.get("details");
+        if (details instanceof Map<?, ?> nested) {
             for (String key : keys) if (Boolean.TRUE.equals(nested.get(key))) return true;
         }
         return false;

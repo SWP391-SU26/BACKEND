@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import com.courseqa.model.dto.ChatDto;
 import com.courseqa.model.dto.PythonAiDto;
+import com.courseqa.model.dto.RagDto;
 import com.courseqa.model.entity.ChatMessage;
 import com.courseqa.model.entity.ChatSession;
 import com.courseqa.model.entity.Course;
@@ -31,6 +32,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 class ChatServiceScopeTest {
     private final ChatSessionRepository sessions = mock(ChatSessionRepository.class);
@@ -46,13 +48,14 @@ class ChatServiceScopeTest {
     private final CourseDocumentRepository documents = mock(CourseDocumentRepository.class);
     private final LearningScopeService learningScope = mock(LearningScopeService.class);
     private final PersonalWorkspaceService personalWorkspaces = mock(PersonalWorkspaceService.class);
+    private final JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
     private ChatService service;
 
     @BeforeEach
     void setUp() {
         service = new ChatService(sessions, sessionDocuments, messages, workspaces, ai, citations, retrieval,
                 mock(CourseMembershipRepository.class), roles, courses, semesters, documents, learningScope,
-                personalWorkspaces, new QuestionScopeGuard());
+                personalWorkspaces, new QuestionScopeGuard(), jdbcTemplate);
         when(sessions.save(any(ChatSession.class))).thenAnswer(invocation -> {
             ChatSession session = invocation.getArgument(0);
             if (session.getChatSessionId() == null) session.setChatSessionId(UUID.randomUUID());
@@ -163,7 +166,8 @@ class ChatServiceScopeTest {
         when(roles.findByUserIdAndIsActiveTrue(userId)).thenReturn(List.of());
         when(learningScope.requireAccessibleCourse(courseId, userId, false)).thenReturn(course(courseId, semesterId));
         when(learningScope.requireActiveWorkspace(courseId)).thenReturn(workspace(UUID.randomUUID(), courseId));
-        when(documents.findByCourseIdAndProcessingStatusOrderByUploadedAtDesc(courseId, "PROCESSED"))
+        when(documents.findByCourseIdAndProcessingStatusAndIndexingStatusAndDeletedAtIsNullOrderByUploadedAtDesc(
+                courseId, "PROCESSED", "INDEXED"))
                 .thenReturn(List.of(available));
         when(messages.save(any(ChatMessage.class))).thenAnswer(invocation -> {
             ChatMessage message = invocation.getArgument(0);
@@ -179,7 +183,7 @@ class ChatServiceScopeTest {
     }
 
     @Test
-    void fineTunedModeCallsTrainedModelWithoutDocumentRetrieval() {
+    void studentFineTunedModeIsForcedBackToGroundedRag() {
         UUID userId = UUID.randomUUID();
         UUID courseId = UUID.randomUUID();
         UUID semesterId = UUID.randomUUID();
@@ -199,7 +203,8 @@ class ChatServiceScopeTest {
         when(roles.findByUserIdAndIsActiveTrue(userId)).thenReturn(List.of());
         when(learningScope.requireAccessibleCourse(courseId, userId, false)).thenReturn(course(courseId, semesterId));
         when(learningScope.requireActiveWorkspace(courseId)).thenReturn(workspace(UUID.randomUUID(), courseId));
-        when(documents.findByCourseIdAndProcessingStatusOrderByUploadedAtDesc(courseId, "PROCESSED"))
+        when(documents.findByCourseIdAndProcessingStatusAndIndexingStatusAndDeletedAtIsNullOrderByUploadedAtDesc(
+                courseId, "PROCESSED", "INDEXED"))
                 .thenReturn(List.of(available));
         when(messages.save(any(ChatMessage.class))).thenAnswer(invocation -> {
             ChatMessage message = invocation.getArgument(0);
@@ -207,14 +212,49 @@ class ChatServiceScopeTest {
             return message;
         });
         when(ai.callChatFinetuned(any(), any())).thenReturn(modelResponse);
+        RagDto.RetrievalResponse noAnswer = new RagDto.RetrievalResponse();
+        noAnswer.answerable = false;
+        noAnswer.results = List.of();
+        noAnswer.noAnswerReason = "No grounded context.";
+        when(retrieval.retrieve(any())).thenReturn(noAnswer);
 
         ChatDto.AskResponse response = service.askQuestion(sessionId,
                 "Triết học Mác - Lênin là gì?", "FINE_TUNED");
 
-        assertEquals("FINE_TUNED", response.generationMode);
-        assertEquals("Câu trả lời từ data đã train.", response.answer);
-        verify(retrieval, never()).retrieve(any());
-        verify(ai).callChatFinetuned(any(), any());
+        assertEquals("SCOPE_GUARD", response.generationMode);
+        verify(retrieval).retrieve(any());
+        verify(ai, never()).callChatFinetuned(any(), any());
+    }
+
+    @Test
+    void administratorCannotPinAnotherUsersSession() {
+        UUID sessionId = UUID.randomUUID();
+        ChatSession foreign = new ChatSession();
+        foreign.setChatSessionId(sessionId);
+        foreign.setUserId(UUID.randomUUID());
+        foreign.setIsActive(true);
+        when(sessions.findById(sessionId)).thenReturn(java.util.Optional.of(foreign));
+
+        assertThrows(ResponseStatusException.class,
+                () -> service.pinSession(sessionId, UUID.randomUUID(), true));
+        verify(sessions, never()).save(any());
+    }
+
+    @Test
+    void ownerCanPinAndUnpinSession() {
+        UUID userId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        ChatSession owned = new ChatSession();
+        owned.setChatSessionId(sessionId);
+        owned.setUserId(userId);
+        owned.setIsActive(true);
+        owned.setScopeType("PERSONAL");
+        when(sessions.findById(sessionId)).thenReturn(java.util.Optional.of(owned));
+
+        ChatDto.SessionResponse pinned = service.pinSession(sessionId, userId, true);
+        assertEquals(true, pinned.getIsPinned());
+        ChatDto.SessionResponse unpinned = service.pinSession(sessionId, userId, false);
+        assertEquals(false, unpinned.getIsPinned());
     }
 
     private Course course(UUID courseId, UUID semesterId) {
@@ -238,6 +278,7 @@ class ChatServiceScopeTest {
         document.setDocumentId(documentId);
         document.setCourseId(courseId);
         document.setProcessingStatus(status);
+        if ("PROCESSED".equals(status)) document.setIndexingStatus("INDEXED");
         return document;
     }
 }

@@ -25,6 +25,88 @@ public class PythonAiDto {
         public String question;
         public List<GenerateContext> contexts;
         public Boolean strict;
+        public List<ConversationMessage> conversation_history;
+    }
+
+    public static class ConversationMessage {
+        public String role;
+        public String content;
+
+        public ConversationMessage() { }
+
+        public ConversationMessage(String role, String content) {
+            this.role = role;
+            this.content = content;
+        }
+    }
+
+    public static class QueryRewriteRequest {
+        public String question;
+        public List<ConversationMessage> conversation_history;
+    }
+
+    public static class QueryRewriteResponse {
+        public String rewritten_query;
+        public Boolean used_history;
+        public String mode;
+    }
+
+    public static class EmbeddingBatchRequest {
+        public List<String> texts;
+    }
+
+    public static class EmbeddingBatchResponse {
+        public String provider;
+        public String model;
+        public String revision;
+        public Integer dimension;
+        public List<List<Double>> vectors;
+    }
+
+    public static class EmbeddingQueryRequest {
+        public String text;
+    }
+
+    public static class EmbeddingQueryResponse {
+        public String provider;
+        public String model;
+        public String revision;
+        public Integer dimension;
+        public List<Double> vector;
+    }
+
+    public static class RagasEvaluationItem {
+        public String request_id;
+        public String question;
+        public String response;
+        public String reference;
+        public List<String> retrieved_contexts;
+        public String experiment_type;
+    }
+
+    public static class RagasBatchRequest {
+        public List<RagasEvaluationItem> items;
+        public String evaluator_model;
+        public String evaluator_embedding_model;
+    }
+
+    public static class RagasEvaluationResult {
+        public String request_id;
+        public String status;
+        public String error;
+        public Double faithfulness;
+        public Double answer_relevancy;
+        public Double answer_correctness;
+        public Double context_precision;
+        public Double context_recall;
+    }
+
+    public static class RagasBatchResponse {
+        public Boolean official_ragas;
+        public String ragas_version;
+        public String evaluator_model;
+        public String evaluator_embedding_model;
+        public List<RagasEvaluationResult> items;
     }
 
     public static class GenerateContext {

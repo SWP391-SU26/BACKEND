@@ -73,6 +73,24 @@ public class ExperimentResult {
     @Column(name = "error_message", columnDefinition = "NVARCHAR(MAX)")
     private String errorMessage;
 
+    @Column(name = "ragas_status")
+    private String ragasStatus;
+
+    @Column(name = "ragas_error", columnDefinition = "NVARCHAR(MAX)")
+    private String ragasError;
+
+    @Column(name = "metric_standard")
+    private String metricStandard;
+
+    @Column(name = "evaluator_model")
+    private String evaluatorModel;
+
+    @Column(name = "evaluator_embedding_model")
+    private String evaluatorEmbeddingModel;
+
+    @Column(name = "ragas_version")
+    private String ragasVersion;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
@@ -146,6 +164,24 @@ public class ExperimentResult {
 
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+
+    public String getRagasStatus() { return ragasStatus; }
+    public void setRagasStatus(String ragasStatus) { this.ragasStatus = ragasStatus; }
+
+    public String getRagasError() { return ragasError; }
+    public void setRagasError(String ragasError) { this.ragasError = ragasError; }
+
+    public String getMetricStandard() { return metricStandard; }
+    public void setMetricStandard(String metricStandard) { this.metricStandard = metricStandard; }
+
+    public String getEvaluatorModel() { return evaluatorModel; }
+    public void setEvaluatorModel(String evaluatorModel) { this.evaluatorModel = evaluatorModel; }
+
+    public String getEvaluatorEmbeddingModel() { return evaluatorEmbeddingModel; }
+    public void setEvaluatorEmbeddingModel(String evaluatorEmbeddingModel) { this.evaluatorEmbeddingModel = evaluatorEmbeddingModel; }
+
+    public String getRagasVersion() { return ragasVersion; }
+    public void setRagasVersion(String ragasVersion) { this.ragasVersion = ragasVersion; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

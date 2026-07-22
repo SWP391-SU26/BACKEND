@@ -53,13 +53,16 @@ class EvaluationControllerTest {
         request.experimentName = "Strict RAG";
         request.experimentType = "RAG";
         request.llmModel = "qwen-rag-lora";
+        request.embeddingModelId = UUID.randomUUID();
         request.createdBy = UUID.randomUUID();
         when(evaluationService.createExperiment(eq(datasetId), eq("Strict RAG"), eq("RAG"),
-                eq("qwen-rag-lora"), eq("{}"), eq(userId))).thenReturn(new Experiment());
+                eq("qwen-rag-lora"), eq(request.embeddingModelId), eq("PARAGRAPH_700_120"),
+                eq(5), eq(0.25), eq(42), eq("{}"), eq(userId))).thenReturn(new Experiment());
 
         new EvaluationController(evaluationService).createExperiment(principal, request);
 
-        verify(evaluationService).createExperiment(datasetId, "Strict RAG", "RAG", "qwen-rag-lora", "{}", userId);
+        verify(evaluationService).createExperiment(datasetId, "Strict RAG", "RAG", "qwen-rag-lora",
+                request.embeddingModelId, "PARAGRAPH_700_120", 5, 0.25, 42, "{}", userId);
     }
 
     @Test

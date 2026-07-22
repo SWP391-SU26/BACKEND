@@ -55,6 +55,8 @@ public static class CreateEmbeddingModelRequest {
 
     public static class PrepareEmbeddingsResponse {
         public UUID embeddingModelId;
+        public String modelName;
+        public String modelVersion;
         public int totalChunks;
         public int createdEmbeddings;
         public int skippedExisting;
@@ -68,6 +70,7 @@ public static class CreateEmbeddingModelRequest {
         public List<UUID> documentIds;
         public UUID semesterId;
         public String scopeType;
+        public String originalQueryText;
         public String queryText;
         public UUID embeddingModelId;
         public Integer topK;
@@ -147,6 +150,7 @@ public static class CreateEmbeddingModelRequest {
         public UUID retrievalQueryId;
         public UUID embeddingModelId;
         public String embeddingModelName;
+        public String retrievalMode;
         public Boolean answerable;
         public String noAnswerReason;
         public List<RetrievedChunk> results;

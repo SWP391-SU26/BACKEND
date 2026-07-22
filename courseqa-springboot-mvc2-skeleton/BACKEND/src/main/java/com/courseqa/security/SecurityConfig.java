@@ -1,6 +1,7 @@
 package com.courseqa.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
 import org.springframework.context.annotation.Bean;
@@ -25,17 +26,20 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/forgot-password").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/error").permitAll()
                         .requestMatchers("/api/auth/users/**").hasRole("ADMIN")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/semester-workspaces/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.GET, "/api/courses", "/api/courses/workspaces").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/courses", "/api/courses/workspaces", "/api/courses/trash").hasRole("ADMIN")
                         .requestMatchers("/api/courses/*/members", "/api/courses/*/publish-checklist").hasRole("ADMIN")
                         .requestMatchers("/api/documents/*/chapter-suggestions").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/documents/personal", "/api/documents/*/submission").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/documents/*/restore").authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/api/documents/*/submission").authenticated()
+                        .requestMatchers(HttpMethod.DELETE, "/api/documents/*/permanent").authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/api/documents/*").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/documents/review-queue").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PATCH, "/api/documents/*/review").hasRole("ADMIN")

@@ -83,6 +83,7 @@ public class CourseDto {
         public String status;
         public Boolean isActive;
         public LocalDateTime createdAt;
+        public LocalDateTime deletedAt;
 
         public static CourseResponse fromEntity(Course course) {
             CourseResponse response = new CourseResponse();
@@ -95,6 +96,7 @@ public class CourseDto {
             response.status = course.getStatus();
             response.isActive = course.getIsActive();
             response.createdAt = course.getCreatedAt();
+            response.deletedAt = course.getDeletedAt();
             return response;
         }
     }

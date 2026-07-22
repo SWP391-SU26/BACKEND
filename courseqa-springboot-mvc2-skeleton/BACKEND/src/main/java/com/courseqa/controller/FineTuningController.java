@@ -85,7 +85,8 @@ public class FineTuningController {
             request.getName(), request.getResearcherId());
 
         Experiment experiment = evaluationService.createExperiment(request.getDatasetId(), request.getName(),
-                "FINE_TUNED", request.getLlmModel(), request.getConfigJson(), principal.userId());
+                "FINE_TUNED", request.getLlmModel(), request.getEmbeddingModelId(),
+                "PARAGRAPH_700_120", 5, 0.25, 42, request.getConfigJson(), principal.userId());
 
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(experiment));
     }
@@ -109,6 +110,9 @@ public class FineTuningController {
 
         @NotBlank(message = "configJson is required and cannot be empty")
         private String configJson;
+
+        @NotNull(message = "embeddingModelId is required")
+        private UUID embeddingModelId;
 
         public CreateExperimentRecordRequest() {}
 
@@ -159,5 +163,8 @@ public class FineTuningController {
         public void setConfigJson(String configJson) {
             this.configJson = configJson;
         }
+
+        public UUID getEmbeddingModelId() { return embeddingModelId; }
+        public void setEmbeddingModelId(UUID embeddingModelId) { this.embeddingModelId = embeddingModelId; }
     }
 }

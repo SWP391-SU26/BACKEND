@@ -85,13 +85,18 @@ class LocalLoraGenerator:
         )
         self._warmed_up = True
 
-    def generate(self, question: str, contexts: list[RetrievedChunk]) -> str:
-        answer, _included = self.generate_batch(
-            [(question, contexts)],
-            max_new_tokens=self.max_new_tokens,
-            max_input_tokens=None,
+    def generate(
+        self,
+        question: str,
+        contexts: list[RetrievedChunk],
+        conversation_history: list[dict[str, str]] | None = None,
+    ) -> str:
+        messages, _included = self._build_rag_messages(
+            question, contexts, None, conversation_history or []
+        )
+        return self._generate_messages_batch(
+            [messages], max_new_tokens=self.max_new_tokens, max_input_tokens=None
         )[0]
-        return answer
 
     def generate_batch(
         self,
@@ -101,7 +106,7 @@ class LocalLoraGenerator:
         max_input_tokens: int | None,
     ) -> list[tuple[str, list[RetrievedChunk]]]:
         prepared = [
-            self._build_rag_messages(question, contexts, max_input_tokens)
+            self._build_rag_messages(question, contexts, max_input_tokens, [])
             for question, contexts in items
         ]
         messages = [item[0] for item in prepared]
@@ -146,6 +151,7 @@ class LocalLoraGenerator:
         question: str,
         contexts: list[RetrievedChunk],
         max_input_tokens: int | None,
+        conversation_history: list[dict[str, str]] | None = None,
     ) -> tuple[list[dict[str, str]], list[RetrievedChunk]]:
         system = (
             "Bạn là trợ lý học tập. Chỉ trả lời dựa trên tài liệu context. "
@@ -159,8 +165,14 @@ class LocalLoraGenerator:
                 f"[{item.filename}, trang {item.page or '?'}]\n{item.content}"
                 for item in selected
             )
+            history = [
+                {"role": item["role"], "content": item["content"]}
+                for item in (conversation_history or [])[-6:]
+                if item.get("role") in {"user", "assistant"} and item.get("content")
+            ]
             return [
                 {"role": "system", "content": system},
+                *history,
                 {
                     "role": "user",
                     "content": f"Câu hỏi: {question}\n\nContext:\n{context_text}",

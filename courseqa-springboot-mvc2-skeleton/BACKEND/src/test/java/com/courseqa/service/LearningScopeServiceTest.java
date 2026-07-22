@@ -80,7 +80,8 @@ class LearningScopeServiceTest {
     @Test
     void courseWithoutProcessedDocumentReceivesForbidden() {
         Fixture fixture = fixture("DRAFT", "ACTIVE", true);
-        when(documents.existsByCourseIdAndProcessingStatus(fixture.courseId, "PROCESSED"))
+        when(documents.existsByCourseIdAndProcessingStatusAndIndexingStatusAndDeletedAtIsNull(
+                fixture.courseId, "PROCESSED", "INDEXED"))
                 .thenReturn(false);
 
         ResponseStatusException error = assertThrows(ResponseStatusException.class,
@@ -101,7 +102,8 @@ class LearningScopeServiceTest {
         when(semester.getStatus()).thenReturn(semesterStatus);
         when(courses.findById(courseId)).thenReturn(Optional.of(course));
         when(semesters.findById(semesterId)).thenReturn(Optional.of(semester));
-        when(documents.existsByCourseIdAndProcessingStatus(courseId, "PROCESSED")).thenReturn(true);
+        when(documents.existsByCourseIdAndProcessingStatusAndIndexingStatusAndDeletedAtIsNull(
+                courseId, "PROCESSED", "INDEXED")).thenReturn(true);
         return new Fixture(courseId, course);
     }
 

@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 // DTOs for chat session, ask request, answer response, citations.
 // TODO: Add request/response DTO classes here.
@@ -96,6 +97,8 @@ public class ChatDto {
         public String generationMode;
         public UUID retrievalQueryId;
         public List<CitationItem> citations;
+        @JsonIgnore
+        public List<String> retrievedContexts;
 
         public AskResponse(UUID chatSessionId,
                            UUID userMessageId,
@@ -153,7 +156,12 @@ public class ChatDto {
         private Boolean isActive;
         private LocalDateTime startedAt;
         private LocalDateTime updatedAt;
+        private Boolean isPinned;
+        private LocalDateTime pinnedAt;
     }
+
+    @Data
+    public static class PinRequest { private boolean pinned; }
 
     @Data
     @Builder

@@ -83,8 +83,22 @@ public class CourseController {
     }
 
     @DeleteMapping("/{courseId}")
-    public ApiResponse<Void> deleteCourse(@PathVariable UUID courseId) {
-        flow2Service.archiveCourse(courseId);
+    public ApiResponse<Void> deleteCourse(@PathVariable UUID courseId, @AuthenticationPrincipal JwtPrincipal principal) {
+        flow2Service.archiveCourse(courseId, principal.userId());
+        return ApiResponse.ok(null);
+    }
+
+    @GetMapping("/trash")
+    public ApiResponse<List<CourseDto.CourseResponse>> trash() { return ApiResponse.ok(flow2Service.trash()); }
+
+    @PostMapping("/{courseId}/restore")
+    public ApiResponse<CourseDto.CourseResponse> restore(@PathVariable UUID courseId) {
+        return ApiResponse.ok(flow2Service.restoreCourse(courseId));
+    }
+
+    @DeleteMapping("/{courseId}/permanent")
+    public ApiResponse<Void> permanent(@PathVariable UUID courseId, @AuthenticationPrincipal JwtPrincipal principal) {
+        flow2Service.permanentlyDeleteCourse(courseId, principal.userId());
         return ApiResponse.ok(null);
     }
 

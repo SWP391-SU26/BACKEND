@@ -12,8 +12,10 @@ public class ExperimentDto {
         public String experimentType = "RAG";
         public String llmModel = "simple-local-answerer";
         public UUID embeddingModelId;
-        public String chunkingStrategy = "fixed_1200_150";
+        public String chunkingStrategy = "PARAGRAPH_700_120";
         public Integer topK = 5;
+        public Double similarityThreshold = 0.25;
+        public Integer randomSeed = 42;
         public Double temperature = 0.2;
         public String fineTunedModelName;
         public String configJson;

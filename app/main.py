@@ -4,6 +4,7 @@ import shutil
 import sys
 import importlib.util
 import json
+import unicodedata
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -63,10 +64,44 @@ class GenerateContext(BaseModel):
     page: int | None = None
     content: str
 
+
+class ConversationMessage(BaseModel):
+    role: str
+    content: str
+
 class GenerateRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
     contexts: list[GenerateContext]
     strict: bool = False
+    conversation_history: list[ConversationMessage] = Field(default_factory=list, max_length=6)
+
+
+class EmbeddingBatchRequest(BaseModel):
+    texts: list[str] = Field(min_length=1, max_length=128)
+
+
+class EmbeddingQueryRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=8000)
+
+
+class QueryRewriteRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+    conversation_history: list[ConversationMessage] = Field(default_factory=list, max_length=6)
+
+
+class RagasEvaluationItem(BaseModel):
+    request_id: str = Field(min_length=1, max_length=100)
+    question: str
+    response: str
+    reference: str
+    retrieved_contexts: list[str] = Field(default_factory=list)
+    experiment_type: str = "RAG"
+
+
+class RagasBatchRequest(BaseModel):
+    items: list[RagasEvaluationItem] = Field(min_length=1, max_length=50)
+    evaluator_model: str = "gpt-4o-mini"
+    evaluator_embedding_model: str = "text-embedding-3-small"
 
 class GenerateSource(BaseModel):
     chunk_id: str
@@ -177,6 +212,23 @@ def select_sources_for_answer(answer: str, sources: list[dict[str, Any]]) -> lis
 pipeline, store = build_pipeline()
 benchmark_runner = BenchmarkRunner(pipeline, store)
 job_manager = BackgroundJobManager(max_workers=1)
+
+
+def embedding_metadata(vectors: list[list[float]]) -> dict[str, Any]:
+    settings = load_settings()
+    snapshot = None
+    if settings.model_cache_dir:
+        cached = pipeline.embedding_provider.model
+        from src.embeddings import find_cached_snapshot
+
+        path = find_cached_snapshot(settings.model_cache_dir, cached, "modules.json")
+        snapshot = path.name if path else None
+    return {
+        "provider": pipeline.embedding_provider.name,
+        "model": pipeline.embedding_provider.model,
+        "revision": snapshot or "configured",
+        "dimension": len(vectors[0]) if vectors else 0,
+    }
 
 app = FastAPI(
     title="RAG Chatbot API",
@@ -326,6 +378,71 @@ def chat(request: ChatRequest) -> ChatResponse:
         retrieved=retrieved,
     )
 
+@app.post("/internal/embeddings/batch")
+def embed_batch(request: EmbeddingBatchRequest) -> dict[str, Any]:
+    texts = [text.strip() for text in request.texts]
+    if any(not text for text in texts):
+        raise HTTPException(status_code=400, detail="Embedding texts must not be blank.")
+    try:
+        vectors = pipeline.embedding_provider.embed_texts(texts)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Embedding model is unavailable: {exc}") from exc
+    return {**embedding_metadata(vectors), "vectors": vectors}
+
+
+@app.post("/internal/embeddings/query")
+def embed_query(request: EmbeddingQueryRequest) -> dict[str, Any]:
+    try:
+        vector = pipeline.embedding_provider.embed_query(request.text.strip())
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Embedding model is unavailable: {exc}") from exc
+    return {**embedding_metadata([vector]), "vector": vector}
+
+
+@app.post("/internal/queries/rewrite")
+def rewrite_query(request: QueryRewriteRequest) -> dict[str, Any]:
+    question = request.question.strip()
+    normalized = unicodedata.normalize("NFD", question)
+    normalized = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+    normalized = " ".join(tokenize(normalized.replace("đ", "d").replace("Đ", "D")))
+    follow_up_markers = {
+        "giai thich them", "noi ro hon", "vi sao", "tai sao", "no la gi",
+        "no co tac dung gi", "cai nay", "phan nay", "the con", "them vi du",
+    }
+    needs_context = any(marker in normalized for marker in follow_up_markers)
+    previous_questions = [
+        item.content.strip()
+        for item in request.conversation_history
+        if item.role == "user" and item.content.strip()
+    ]
+    if not needs_context or not previous_questions:
+        return {"rewritten_query": question, "used_history": False, "mode": "UNCHANGED"}
+    # Retrieval should stay anchored to the prior knowledge question. The original
+    # follow-up and full history are still sent to generation separately.
+    rewritten = previous_questions[-1]
+    return {"rewritten_query": rewritten, "used_history": True, "mode": "CONTEXTUAL"}
+
+
+@app.post("/internal/evaluations/ragas/batch")
+def evaluate_ragas_batch(request: RagasBatchRequest) -> dict[str, Any]:
+    from src.ragas_evaluator import evaluate_batch
+
+    settings = load_settings()
+    if not settings.openai_api_key:
+        raise HTTPException(status_code=503, detail="OPENAI_API_KEY is required for official RAGAS.")
+    try:
+        return evaluate_batch(
+            [item.model_dump() for item in request.items],
+            api_key=settings.openai_api_key,
+            evaluator_model=request.evaluator_model,
+            evaluator_embedding_model=request.evaluator_embedding_model,
+            concurrency=2,
+            max_retries=3,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Official RAGAS evaluation failed: {exc}") from exc
+
+
 @app.post("/api/generate", response_model=GenerateResponse)
 def generate_answer(request: GenerateRequest) -> GenerateResponse:
     from src.rag_pipeline import OUT_OF_SCOPE_MESSAGE, location_label
@@ -370,6 +487,7 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
             contexts,
             sources_dict_list,
             strict=request.strict,
+            conversation_history=[item.model_dump() for item in request.conversation_history],
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Không thể tạo câu trả lời: {exc}") from exc
@@ -615,11 +733,21 @@ def dashboard_comparison() -> dict[str, Any]:
 
 @app.get("/api/evaluation/capabilities")
 def evaluation_capabilities() -> dict[str, Any]:
+    settings = load_settings()
+    enabled = bool(settings.openai_api_key)
     return {
-        "official_ragas_enabled": False,
-        "reason": (
-            "Dự án không sử dụng API trả phí hoặc LLM judge đủ mạnh để chạy RAGAS chính thức."
-        ),
+        "official_ragas_enabled": enabled,
+        "ragas_version": "0.4.3",
+        "judge_model": "gpt-4o-mini",
+        "evaluator_embedding_model": "text-embedding-3-small",
+        "reason": None if enabled else "OPENAI_API_KEY is required for Official RAGAS.",
+        "official_metrics": [
+            "faithfulness",
+            "answer_relevancy",
+            "answer_correctness",
+            "context_precision",
+            "context_recall",
+        ],
         "local_metrics": [
             "answer_token_f1",
             "source_hit_rate",

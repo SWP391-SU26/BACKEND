@@ -27,6 +27,11 @@ public class DocumentDto {
         public String originalFilename;
         public String fileType;
         public String processingStatus;
+        public String indexingStatus;
+        public UUID indexedEmbeddingModelId;
+        public String indexedModelVersion;
+        public LocalDateTime indexedAt;
+        public String indexError;
         public Integer totalPages;
         public String errorMessage;
         public String storageProvider;
@@ -41,6 +46,8 @@ public class DocumentDto {
         public LocalDateTime reviewedAt;
         public String rejectionReason;
         public boolean canDelete;
+        public LocalDateTime deletedAt;
+        public UUID deletedBy;
 
         public static DocumentResponse fromEntity(CourseDocument document) {
             DocumentResponse response = new DocumentResponse();
@@ -53,6 +60,11 @@ public class DocumentDto {
             response.originalFilename = document.getOriginalFilename();
             response.fileType = document.getFileType();
             response.processingStatus = document.getProcessingStatus();
+            response.indexingStatus = document.getIndexingStatus();
+            response.indexedEmbeddingModelId = document.getIndexedEmbeddingModelId();
+            response.indexedModelVersion = document.getIndexedModelVersion();
+            response.indexedAt = document.getIndexedAt();
+            response.indexError = document.getIndexError();
             response.totalPages = document.getTotalPages();
             response.errorMessage = document.getErrorMessage();
             response.storageProvider = document.getStorageProvider();
@@ -66,6 +78,8 @@ public class DocumentDto {
             response.reviewedBy = document.getReviewedBy();
             response.reviewedAt = document.getReviewedAt();
             response.rejectionReason = document.getRejectionReason();
+            response.deletedAt = document.getDeletedAt();
+            response.deletedBy = document.getDeletedBy();
             return response;
         }
     }

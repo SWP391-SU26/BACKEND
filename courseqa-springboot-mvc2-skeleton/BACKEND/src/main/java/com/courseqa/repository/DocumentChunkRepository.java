@@ -15,4 +15,6 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, UU
     List<DocumentChunk> findByDocumentIdInOrderByCreatedAtAsc(List<UUID> documentIds);
 
     void deleteByDocumentId(UUID documentId);
+
+    long countByDocumentId(UUID documentId);
 }

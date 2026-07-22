@@ -27,8 +27,17 @@ public class SemesterWorkspaceController {
             @PathVariable UUID id, @RequestBody SemesterDto.StatusRequest request) {
         return ApiResponse.ok(service.status(id, request));
     }
-    @DeleteMapping("/{id}") public ApiResponse<Void> archive(@PathVariable UUID id) {
-        service.archive(id); return ApiResponse.ok(null);
+    @DeleteMapping("/{id}") public ApiResponse<Void> archive(
+            @PathVariable UUID id, @AuthenticationPrincipal JwtPrincipal principal) {
+        service.archive(id, principal.userId()); return ApiResponse.ok(null);
+    }
+    @GetMapping("/trash") public ApiResponse<List<SemesterDto.Response>> trash() { return ApiResponse.ok(service.trash()); }
+    @PostMapping("/{id}/restore") public ApiResponse<SemesterDto.Response> restore(@PathVariable UUID id) {
+        return ApiResponse.ok(service.restore(id));
+    }
+    @DeleteMapping("/{id}/permanent") public ApiResponse<Void> permanent(
+            @PathVariable UUID id, @AuthenticationPrincipal JwtPrincipal principal) {
+        service.permanentlyDelete(id, principal.userId()); return ApiResponse.ok(null);
     }
     @GetMapping("/{id}/courses") public ApiResponse<List<CourseDto.CourseResponse>> courses(@PathVariable UUID id) {
         return ApiResponse.ok(service.courses(id));

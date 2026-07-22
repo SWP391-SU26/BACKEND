@@ -1,12 +1,16 @@
 package com.courseqa.service;
 
 import com.courseqa.model.dto.RagDto;
+import com.courseqa.model.dto.PythonAiDto;
 import com.courseqa.model.entity.ChunkEmbedding;
 import com.courseqa.model.entity.DocumentChunk;
 import com.courseqa.model.entity.EmbeddingModel;
 import com.courseqa.repository.ChunkEmbeddingRepository;
 import com.courseqa.repository.DocumentChunkRepository;
 import com.courseqa.repository.EmbeddingModelRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.text.Normalizer;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -23,7 +27,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class EmbeddingService {
-    private static final int DEFAULT_DIMENSION = 128;
+    public static final String PRODUCTION_MODEL = "BAAI/bge-m3";
+    private static final int DEFAULT_DIMENSION = 1024;
+    private static final int EMBEDDING_BATCH_SIZE = 32;
     private static final Set<String> SEARCH_STOPWORDS = Set.of(
             "trong", "tai", "lieu", "document", "file", "co", "khong", "cua", "cho",
             "voi", "hay", "la", "tu", "mot", "cac", "nhung", "nay", "do", "duoc",
@@ -33,15 +39,21 @@ public class EmbeddingService {
     private final EmbeddingModelRepository embeddingModelRepository;
     private final DocumentChunkRepository documentChunkRepository;
     private final ChunkEmbeddingRepository chunkEmbeddingRepository;
+    private final AIClientService aiClientService;
+    private final ObjectMapper objectMapper;
 
     public EmbeddingService(
             EmbeddingModelRepository embeddingModelRepository,
             DocumentChunkRepository documentChunkRepository,
-            ChunkEmbeddingRepository chunkEmbeddingRepository
+            ChunkEmbeddingRepository chunkEmbeddingRepository,
+            AIClientService aiClientService,
+            ObjectMapper objectMapper
     ) {
         this.embeddingModelRepository = embeddingModelRepository;
         this.documentChunkRepository = documentChunkRepository;
         this.chunkEmbeddingRepository = chunkEmbeddingRepository;
+        this.aiClientService = aiClientService;
+        this.objectMapper = objectMapper;
     }
 
     public List<RagDto.EmbeddingModelResponse> getEmbeddingModels() {
@@ -86,27 +98,40 @@ public class EmbeddingService {
 
         int created = 0;
         int skipped = 0;
+        String modelVersion = "configured";
+        List<DocumentChunk> missing = new ArrayList<>();
         for (DocumentChunk chunk : chunks) {
-            boolean exists = chunkEmbeddingRepository
-                    .findByChunkIdAndEmbeddingModelId(chunk.getChunkId(), model.getEmbeddingModelId())
-                    .isPresent();
-            if (exists) {
+            if (chunkEmbeddingRepository.findByChunkIdAndEmbeddingModelId(
+                    chunk.getChunkId(), model.getEmbeddingModelId()).isPresent()) {
                 skipped++;
-                continue;
+            } else {
+                missing.add(chunk);
             }
+        }
 
-            ChunkEmbedding embedding = new ChunkEmbedding();
-            embedding.setChunkId(chunk.getChunkId());
-            embedding.setEmbeddingModelId(model.getEmbeddingModelId());
-            embedding.setEmbeddingJson(toJsonVector(createHashedVector(chunk.getContent(), model.getDimension())));
-            embedding.setDimension(model.getDimension());
-            embedding.setCreatedAt(LocalDateTime.now());
-            chunkEmbeddingRepository.save(embedding);
-            created++;
+        for (int offset = 0; offset < missing.size(); offset += EMBEDDING_BATCH_SIZE) {
+            List<DocumentChunk> batch = missing.subList(offset, Math.min(offset + EMBEDDING_BATCH_SIZE, missing.size()));
+            PythonAiDto.EmbeddingBatchRequest embeddingRequest = new PythonAiDto.EmbeddingBatchRequest();
+            embeddingRequest.texts = batch.stream().map(DocumentChunk::getContent).toList();
+            PythonAiDto.EmbeddingBatchResponse response = aiClientService.embedBatch(embeddingRequest);
+            validateEmbeddingResponse(response, batch.size(), model);
+            modelVersion = defaultString(response.revision, "configured");
+            for (int index = 0; index < batch.size(); index++) {
+                ChunkEmbedding embedding = new ChunkEmbedding();
+                embedding.setChunkId(batch.get(index).getChunkId());
+                embedding.setEmbeddingModelId(model.getEmbeddingModelId());
+                embedding.setEmbeddingJson(toJsonVector(response.vectors.get(index)));
+                embedding.setDimension(response.dimension);
+                embedding.setCreatedAt(LocalDateTime.now());
+                chunkEmbeddingRepository.save(embedding);
+                created++;
+            }
         }
 
         RagDto.PrepareEmbeddingsResponse response = new RagDto.PrepareEmbeddingsResponse();
         response.embeddingModelId = model.getEmbeddingModelId();
+        response.modelName = model.getModelName();
+        response.modelVersion = modelVersion;
         response.totalChunks = chunks.size();
         response.createdEmbeddings = created;
         response.skippedExisting = skipped;
@@ -119,8 +144,7 @@ public class EmbeddingService {
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Embedding model not found."));
         }
 
-        return embeddingModelRepository.findByIsActiveTrueOrderByCreatedAtDesc().stream()
-                .findFirst()
+        return embeddingModelRepository.findByModelNameIgnoreCase(PRODUCTION_MODEL)
                 .orElseGet(this::createDefaultModel);
     }
 
@@ -142,7 +166,16 @@ public class EmbeddingService {
     }
 
     public double[] embedText(String text, int dimension) {
-        return createHashedVector(text, dimension);
+        PythonAiDto.EmbeddingQueryRequest request = new PythonAiDto.EmbeddingQueryRequest();
+        request.text = text;
+        PythonAiDto.EmbeddingQueryResponse response = aiClientService.embedQuery(request);
+        if (response == null || response.vector == null || response.vector.isEmpty()) {
+            throw new IllegalStateException("Python embedding service returned an empty query vector.");
+        }
+        if (!PRODUCTION_MODEL.equalsIgnoreCase(response.model)) {
+            throw new IllegalStateException("Expected " + PRODUCTION_MODEL + " but Python returned " + response.model + ".");
+        }
+        return response.vector.stream().mapToDouble(Double::doubleValue).toArray();
     }
 
     public double cosineVectorScore(double[] left, double[] right) {
@@ -186,79 +219,51 @@ public class EmbeddingService {
             return new double[0];
         }
 
-        String trimmed = embeddingJson.trim();
-        if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) {
+        try {
+            List<Double> values = objectMapper.readValue(embeddingJson, new TypeReference<List<Double>>() { });
+            return values.stream().mapToDouble(Double::doubleValue).toArray();
+        } catch (JsonProcessingException exception) {
             return new double[0];
         }
-
-        String body = trimmed.substring(1, trimmed.length() - 1).trim();
-        if (body.isEmpty()) {
-            return new double[0];
-        }
-
-        String[] rawValues = body.split(",");
-        List<Double> values = new ArrayList<>(rawValues.length);
-        for (String rawValue : rawValues) {
-            try {
-                values.add(Double.parseDouble(rawValue.trim()));
-            } catch (NumberFormatException ignored) {
-                return new double[0];
-            }
-        }
-
-        double[] vector = new double[values.size()];
-        for (int index = 0; index < values.size(); index++) {
-            vector[index] = values.get(index);
-        }
-        return vector;
     }
 
     private EmbeddingModel createDefaultModel() {
         EmbeddingModel model = new EmbeddingModel();
-        model.setModelName("keyword-hash-128");
-        model.setProvider("Local Demo");
+        model.setModelName(PRODUCTION_MODEL);
+        model.setProvider("sentence-transformers");
         model.setDimension(DEFAULT_DIMENSION);
         model.setIsLocal(true);
-        model.setDescription("Deterministic keyword hashing model for skeleton RAG preparation.");
-        model.setConfigJson("{}");
+        model.setDescription("Production multilingual embedding model served by the Python AI service.");
+        model.setConfigJson("{\"normalized\":true}");
         model.setIsActive(true);
         model.setCreatedAt(LocalDateTime.now());
         return embeddingModelRepository.save(model);
     }
 
-    private double[] createHashedVector(String text, int dimension) {
-        int safeDimension = Math.max(1, dimension);
-        double[] vector = new double[safeDimension];
-        for (String token : tokenize(text)) {
-            int index = Math.floorMod(token.hashCode(), safeDimension);
-            vector[index] += 1.0;
+    private String toJsonVector(List<Double> vector) {
+        try {
+            return objectMapper.writeValueAsString(vector);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Cannot serialize embedding vector.", exception);
         }
-
-        double norm = 0.0;
-        for (double value : vector) {
-            norm += value * value;
-        }
-        norm = Math.sqrt(norm);
-        if (norm == 0.0) {
-            return vector;
-        }
-
-        for (int index = 0; index < vector.length; index++) {
-            vector[index] = vector[index] / norm;
-        }
-        return vector;
     }
 
-    private String toJsonVector(double[] vector) {
-        StringBuilder json = new StringBuilder("[");
-        for (int index = 0; index < vector.length; index++) {
-            if (index > 0) {
-                json.append(',');
-            }
-            json.append(String.format(Locale.US, "%.6f", vector[index]));
+    private void validateEmbeddingResponse(PythonAiDto.EmbeddingBatchResponse response, int expected,
+            EmbeddingModel model) {
+        if (response == null || response.vectors == null || response.vectors.size() != expected) {
+            throw new IllegalStateException("Python embedding service returned an incomplete batch.");
         }
-        json.append(']');
-        return json.toString();
+        if (!PRODUCTION_MODEL.equalsIgnoreCase(response.model)) {
+            throw new IllegalStateException("Expected " + PRODUCTION_MODEL + " but Python returned " + response.model + ".");
+        }
+        int dimension = response.dimension == null ? 0 : response.dimension;
+        if (dimension <= 0 || response.vectors.stream().anyMatch(vector -> vector == null || vector.size() != dimension)) {
+            throw new IllegalStateException("Python embedding vectors have inconsistent dimensions.");
+        }
+        if (!Integer.valueOf(dimension).equals(model.getDimension())) {
+            model.setDimension(dimension);
+            embeddingModelRepository.save(model);
+        }
     }
 
     private Map<String, Long> termCounts(String text) {

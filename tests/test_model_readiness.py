@@ -43,7 +43,7 @@ def test_strict_rag_does_not_use_extractive_fallback(monkeypatch, tmp_path: Path
 def test_strict_rag_uses_deterministic_generator(monkeypatch, tmp_path: Path) -> None:
     settings = AppSettings(lora_adapter_dir=tmp_path, generation_provider="extractive")
     pipeline = RAGPipeline(settings, DummyStore(), DummyEmbedding())
-    generator = SimpleNamespace(generate=lambda question, contexts: "deterministic answer")
+    generator = SimpleNamespace(generate=lambda question, contexts, history: "deterministic answer")
     monkeypatch.setattr(pipeline, "_get_local_generator", lambda: generator)
     assert pipeline._generate_answer("Question", [SimpleNamespace()], [], strict=True) == "deterministic answer"
 

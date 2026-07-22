@@ -109,13 +109,14 @@ class RAGPipeline:
         contexts: list[RetrievedChunk],
         sources: list[dict[str, Any]],
         strict: bool = False,
+        conversation_history: list[dict[str, str]] | None = None,
     ) -> str:
         provider = self.settings.generation_provider.lower().strip()
         if strict or provider in {"auto", "lora", "local"}:
             generator = self._get_local_generator()
             if generator:
                 try:
-                    answer = generator.generate(question, contexts)
+                    answer = generator.generate(question, contexts, conversation_history or [])
                     if answer:
                         return answer
                 except Exception as exc:
@@ -124,14 +125,39 @@ class RAGPipeline:
                         raise RuntimeError(f"Local LoRA generation failed: {exc}") from exc
         if (strict or provider in {"auto", "openai"}) and self.settings.openai_api_key:
             try:
-                return self._generate_with_openai(question, contexts)
+                return self._generate_with_openai(question, contexts, conversation_history or [])
             except Exception as exc:
                 if strict:
                     raise RuntimeError(f"OpenAI generation failed: {exc}") from exc
-                return self._generate_extractive_answer(question, contexts, sources)
+                return self._generate_extractive_answer(
+                    self._extractive_question(question, conversation_history), contexts, sources
+                )
         if strict:
             raise RuntimeError(self.local_generator_error or "No strict generation model is ready.")
-        return self._generate_extractive_answer(question, contexts, sources)
+        return self._generate_extractive_answer(
+            self._extractive_question(question, conversation_history), contexts, sources
+        )
+
+    def _extractive_question(
+        self,
+        question: str,
+        conversation_history: list[dict[str, str]] | None,
+    ) -> str:
+        normalized = self._normalize_for_summary(question).replace("đ", "d")
+        follow_up_markers = {
+            "giai thich them", "noi ro hon", "vi sao", "tai sao", "no la gi",
+            "no co tac dung gi", "cai nay", "phan nay", "the con", "them vi du",
+        }
+        is_follow_up = any(marker in normalized for marker in follow_up_markers)
+        if not is_follow_up:
+            return question
+
+        previous_questions = [
+            item.get("content", "").strip()
+            for item in conversation_history or []
+            if item.get("role") == "user" and item.get("content", "").strip()
+        ]
+        return previous_questions[-1] if previous_questions else question
 
     def _get_local_generator(self):
         if self.local_generator is not None:
@@ -219,7 +245,12 @@ class RAGPipeline:
             raise RuntimeError(self.local_generator_error or "Local LoRA model chưa sẵn sàng.")
         return generator.generate_without_context(question)
 
-    def _generate_with_openai(self, question: str, contexts: list[RetrievedChunk]) -> str:
+    def _generate_with_openai(
+        self,
+        question: str,
+        contexts: list[RetrievedChunk],
+        conversation_history: list[dict[str, str]],
+    ) -> str:
         from openai import OpenAI
 
         client = OpenAI(api_key=self.settings.openai_api_key)
@@ -234,11 +265,17 @@ class RAGPipeline:
             "Luôn trích dẫn nguồn theo dạng [Tên tài liệu, trang/chương]. "
             "Không tự bịa kiến thức ngoài tài liệu. Trả lời bằng tiếng Việt rõ ràng, dễ hiểu."
         )
+        history = [
+            {"role": item["role"], "content": item["content"]}
+            for item in conversation_history[-6:]
+            if item.get("role") in {"user", "assistant"} and item.get("content")
+        ]
         response = client.chat.completions.create(
             model=self.settings.openai_chat_model,
             temperature=0.1,
             messages=[
                 {"role": "system", "content": system_prompt},
+                *history,
                 {
                     "role": "user",
                     "content": f"Context:\n{context_text}\n\nCâu hỏi: {question}",
@@ -260,35 +297,51 @@ class RAGPipeline:
             return self._generate_summary_answer(contexts)
 
         query_terms = set(tokenize(question))
+        normalized_question = self._normalize_for_summary(question).replace("đ", "d")
         candidates: list[tuple[float, str, RetrievedChunk]] = []
         for chunk in contexts:
             for sentence in split_sentences(chunk.content):
                 terms = set(tokenize(sentence))
                 if not terms:
                     continue
+                normalized_sentence = self._normalize_for_summary(sentence).replace("đ", "d")
+                if "thu do" in normalized_question and "thu do" not in normalized_sentence:
+                    continue
                 overlap = len(query_terms & terms) / max(1, len(query_terms))
+                if overlap <= 0:
+                    continue
                 score = overlap + (chunk.score * 0.25)
                 candidates.append((score, sentence, chunk))
 
         candidates.sort(key=lambda item: item[0], reverse=True)
-        selected_candidates = [(score, sentence, chunk) for score, sentence, chunk in candidates[:4] if score > 0]
+        selected_candidates = candidates[:1]
         if not selected_candidates:
             return OUT_OF_SCOPE_MESSAGE
 
-        selected = [sentence for _score, sentence, _chunk in selected_candidates]
+        selected: list[str] = []
         selected_chunks: list[RetrievedChunk] = []
         seen_chunk_ids: set[str] = set()
-        for _score, _sentence, chunk in selected_candidates:
+        seen_text: set[str] = set()
+        for _score, sentence, chunk in selected_candidates:
+            excerpt = " ".join(sentence.split())
+            if len(excerpt) > 280:
+                excerpt = excerpt[:277].rsplit(" ", 1)[0].rstrip(" ,;:") + "..."
+            excerpt_key = " ".join(tokenize(excerpt))
+            if not excerpt_key or excerpt_key in seen_text:
+                continue
+            seen_text.add(excerpt_key)
+            selected.append(excerpt)
             if chunk.chunk_id in seen_chunk_ids:
                 continue
             seen_chunk_ids.add(chunk.chunk_id)
             selected_chunks.append(chunk)
 
-        source_text = "; ".join(
-            f"[{source['filename']}, {source['location']}]" for source in build_sources(selected_chunks)[:3]
-        )
-        body = " ".join(selected)
-        return f"Dựa trên tài liệu, {body}\n\nNguồn: {source_text}"
+        if not selected:
+            return OUT_OF_SCOPE_MESSAGE
+        if len(selected) == 1:
+            return f"Theo tài liệu: {selected[0]}"
+        body = "\n".join(f"- {item}" for item in selected)
+        return f"Theo tài liệu:\n{body}"
 
     def _generate_list_answer(self, question: str, contexts: list[RetrievedChunk]) -> str:
         selected_chunks: list[RetrievedChunk] = []

@@ -42,6 +42,27 @@ public class Experiment {
     @Column(name = "temperature")
     private Double temperature;
 
+    @Column(name = "similarity_threshold")
+    private Double similarityThreshold;
+
+    @Column(name = "embedding_model_version")
+    private String embeddingModelVersion;
+
+    @Column(name = "generation_model_version")
+    private String generationModelVersion;
+
+    @Column(name = "random_seed")
+    private Integer randomSeed;
+
+    @Column(name = "metric_standard")
+    private String metricStandard;
+
+    @Column(name = "evaluator_config_json", columnDefinition = "NVARCHAR(MAX)")
+    private String evaluatorConfigJson;
+
+    @Column(name = "frozen_config_hash")
+    private String frozenConfigHash;
+
     @Column(name = "fine_tuned_model_name")
     private String fineTunedModelName;
 
@@ -115,6 +136,27 @@ public class Experiment {
 
     public Double getTemperature() { return temperature; }
     public void setTemperature(Double temperature) { this.temperature = temperature; }
+
+    public Double getSimilarityThreshold() { return similarityThreshold; }
+    public void setSimilarityThreshold(Double similarityThreshold) { this.similarityThreshold = similarityThreshold; }
+
+    public String getEmbeddingModelVersion() { return embeddingModelVersion; }
+    public void setEmbeddingModelVersion(String embeddingModelVersion) { this.embeddingModelVersion = embeddingModelVersion; }
+
+    public String getGenerationModelVersion() { return generationModelVersion; }
+    public void setGenerationModelVersion(String generationModelVersion) { this.generationModelVersion = generationModelVersion; }
+
+    public Integer getRandomSeed() { return randomSeed; }
+    public void setRandomSeed(Integer randomSeed) { this.randomSeed = randomSeed; }
+
+    public String getMetricStandard() { return metricStandard; }
+    public void setMetricStandard(String metricStandard) { this.metricStandard = metricStandard; }
+
+    public String getEvaluatorConfigJson() { return evaluatorConfigJson; }
+    public void setEvaluatorConfigJson(String evaluatorConfigJson) { this.evaluatorConfigJson = evaluatorConfigJson; }
+
+    public String getFrozenConfigHash() { return frozenConfigHash; }
+    public void setFrozenConfigHash(String frozenConfigHash) { this.frozenConfigHash = frozenConfigHash; }
 
     public String getFineTunedModelName() { return fineTunedModelName; }
     public void setFineTunedModelName(String fineTunedModelName) { this.fineTunedModelName = fineTunedModelName; }

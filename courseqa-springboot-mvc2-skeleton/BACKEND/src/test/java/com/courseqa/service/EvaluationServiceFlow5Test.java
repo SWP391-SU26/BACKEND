@@ -24,6 +24,8 @@ import com.courseqa.repository.EvaluationDatasetRepository;
 import com.courseqa.repository.EvaluationQuestionRepository;
 import com.courseqa.repository.ExperimentRepository;
 import com.courseqa.repository.ExperimentResultRepository;
+import com.courseqa.repository.ExperimentMetricAggregateRepository;
+import com.courseqa.repository.EmbeddingModelRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +46,8 @@ class EvaluationServiceFlow5Test {
     @Mock EvaluationQuestionRepository questions;
     @Mock ExperimentRepository experiments;
     @Mock ExperimentResultRepository results;
+    @Mock ExperimentMetricAggregateRepository aggregates;
+    @Mock EmbeddingModelRepository embeddingModels;
     @Mock CourseRepository courses;
     @Mock CourseDocumentRepository documents;
     @Mock CourseWorkspaceRepository workspaces;
@@ -54,7 +58,8 @@ class EvaluationServiceFlow5Test {
 
     @BeforeEach
     void setUp() {
-        service = new EvaluationService(datasets, datasetDocuments, questions, experiments, results, courses,
+        service = new EvaluationService(datasets, datasetDocuments, questions, experiments, results,
+                aggregates, embeddingModels, courses,
                 documents, workspaces, scopes, chatService, aiClientService, Runnable::run, new ObjectMapper());
     }
 
@@ -75,6 +80,7 @@ class EvaluationServiceFlow5Test {
             document.setDocumentId(id);
             document.setCourseId(courseId);
             document.setProcessingStatus("PROCESSED");
+            document.setIndexingStatus("INDEXED");
             return document;
         }).toList();
         when(scopes.requireAccessibleCourse(courseId, userId, true)).thenReturn(course);
@@ -225,8 +231,8 @@ class EvaluationServiceFlow5Test {
         Map<String, Object> fineSummary = (Map<String, Object>) report.get("fineTunedExperiment");
         Map<String, Object> row = ((List<Map<String, Object>>) report.get("perQuestion")).get(0);
 
-        assertEquals("LOCAL_PROXY", report.get("metricStandard"));
-        assertEquals("token-overlap-v1", report.get("formulaVersion"));
+        assertEquals("OFFICIAL_RAGAS", report.get("metricStandard"));
+        assertEquals("ragas-0.4.3", report.get("formulaVersion"));
         assertEquals("Research snapshot", metadata.get("name"));
         assertEquals(1, metadata.get("questionCount"));
         assertNull(fineSummary.get("faithfulness"));
@@ -242,6 +248,7 @@ class EvaluationServiceFlow5Test {
         value.setExperimentName(type + " run");
         value.setExperimentType(type);
         value.setDatasetChecksum("checksum");
+        value.setMetricStandard("OFFICIAL_RAGAS");
         value.setStatus("COMPLETED");
         value.setSuccessCount(1);
         value.setFailureCount(0);
@@ -260,6 +267,8 @@ class EvaluationServiceFlow5Test {
         value.setAnswerRelevance(correctness);
         value.setSemanticSimilarity(correctness);
         value.setLatencyMs(1000);
+        value.setMetricStandard("OFFICIAL_RAGAS");
+        value.setRagasStatus("SUCCESS");
         return value;
     }
 }

@@ -61,6 +61,12 @@ public class ChatSession {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    @Column(name = "is_pinned")
+    private Boolean isPinned;
+
+    @Column(name = "pinned_at")
+    private LocalDateTime pinnedAt;
+
     public ChatSession() { }
 
     public UUID getChatSessionId() { return chatSessionId; }
@@ -104,6 +110,10 @@ public class ChatSession {
 
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+    public Boolean getIsPinned() { return isPinned; }
+    public void setIsPinned(Boolean isPinned) { this.isPinned = isPinned; }
+    public LocalDateTime getPinnedAt() { return pinnedAt; }
+    public void setPinnedAt(LocalDateTime pinnedAt) { this.pinnedAt = pinnedAt; }
 
 }
 

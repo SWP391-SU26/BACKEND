@@ -23,6 +23,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 class Flow2ServiceTest {
     private final CourseRepository courses = mock(CourseRepository.class);
@@ -38,7 +39,9 @@ class Flow2ServiceTest {
                 mock(CourseMembershipRepository.class),
                 documents,
                 mock(ChapterRepository.class),
-                mock(UserRepository.class));
+                mock(UserRepository.class),
+                mock(JdbcTemplate.class),
+                mock(DocumentService.class));
     }
 
     @Test
@@ -64,7 +67,8 @@ class Flow2ServiceTest {
         Course course = mock(Course.class);
         when(course.getStatus()).thenReturn("DRAFT");
         when(courses.findById(courseId)).thenReturn(Optional.of(course));
-        when(documents.existsByCourseIdAndProcessingStatus(courseId, "PROCESSED")).thenReturn(true);
+        when(documents.existsByCourseIdAndProcessingStatusAndIndexingStatusAndDeletedAtIsNull(
+                courseId, "PROCESSED", "INDEXED")).thenReturn(true);
         when(courses.save(course)).thenReturn(course);
         CourseDto.UpdateCourseRequest request = new CourseDto.UpdateCourseRequest();
         request.isActive = true;
@@ -89,7 +93,8 @@ class Flow2ServiceTest {
         when(courses.findByIsActiveTrueAndStatusNotOrderByCreatedAtDesc("ARCHIVED"))
                 .thenReturn(List.of(course));
         when(semesters.findById(semesterId)).thenReturn(Optional.of(semester));
-        when(documents.existsByCourseIdAndProcessingStatus(courseId, "PROCESSED")).thenReturn(true);
+        when(documents.existsByCourseIdAndProcessingStatusAndIndexingStatusAndDeletedAtIsNull(
+                courseId, "PROCESSED", "INDEXED")).thenReturn(true);
 
         List<CourseDto.CourseResponse> result = service.getMyCourses(UUID.randomUUID());
 

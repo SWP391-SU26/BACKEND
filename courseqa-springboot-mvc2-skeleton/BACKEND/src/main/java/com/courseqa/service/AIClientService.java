@@ -27,6 +27,7 @@ public class AIClientService {
     private static final int MAX_RETRIES = 3;
     private static final int BENCHMARK_BATCH_TIMEOUT_SECONDS = 60;
     private static final int MODEL_WARMUP_TIMEOUT_SECONDS = 180;
+    private static final int EMBEDDING_TIMEOUT_SECONDS = 180;
 
     @Value("${python.ai.service.benchmark-timeout-seconds:1800}")
     private int benchmarkTimeoutSeconds;
@@ -143,6 +144,39 @@ public class AIClientService {
             PythonAiDto.ChatFinetunedBatchRequest request) {
         return callBenchmarkBatch("/ai/chat-finetuned-batch", request,
                 PythonAiDto.ChatFinetunedBatchResponse.class);
+    }
+
+    public PythonAiDto.EmbeddingBatchResponse embedBatch(PythonAiDto.EmbeddingBatchRequest request) {
+        return callInternal("/internal/embeddings/batch", request,
+                PythonAiDto.EmbeddingBatchResponse.class, EMBEDDING_TIMEOUT_SECONDS);
+    }
+
+    public PythonAiDto.EmbeddingQueryResponse embedQuery(PythonAiDto.EmbeddingQueryRequest request) {
+        return callInternal("/internal/embeddings/query", request,
+                PythonAiDto.EmbeddingQueryResponse.class, EMBEDDING_TIMEOUT_SECONDS);
+    }
+
+    public PythonAiDto.QueryRewriteResponse rewriteQuery(PythonAiDto.QueryRewriteRequest request) {
+        return callInternal("/internal/queries/rewrite", request,
+                PythonAiDto.QueryRewriteResponse.class, CHAT_TIMEOUT_SECONDS);
+    }
+
+    public PythonAiDto.RagasBatchResponse evaluateRagas(PythonAiDto.RagasBatchRequest request) {
+        return callInternal("/internal/evaluations/ragas/batch", request,
+                PythonAiDto.RagasBatchResponse.class, benchmarkTimeoutSeconds);
+    }
+
+    private <T> T callInternal(String path, Object request, Class<T> responseType, int timeoutSeconds) {
+        log.info("Calling Python AI Engine {}", path);
+        return webClient.post()
+                .uri(pythonAiServiceUrl + path)
+                .bodyValue(request)
+                .retrieve()
+                .bodyToMono(responseType)
+                .timeout(Duration.ofSeconds(timeoutSeconds))
+                .retryWhen(Retry.max(1).filter(this::isConnectionFailure))
+                .onErrorMap(this::handleError)
+                .block();
     }
 
     private <T> T callBenchmarkBatch(String path, Object request, Class<T> responseType) {

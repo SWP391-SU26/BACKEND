@@ -70,6 +70,11 @@ public class DocumentController {
         return ApiResponse.ok(documentService.getMyDocuments(principal.userId()));
     }
 
+    @GetMapping("/trash")
+    public ApiResponse<List<DocumentDto.DocumentResponse>> getTrash(@AuthenticationPrincipal JwtPrincipal principal) {
+        return ApiResponse.ok(documentService.getTrash(principal.userId()));
+    }
+
     @PostMapping("/{documentId}/submission")
     public ApiResponse<DocumentDto.DocumentResponse> submitForReview(
             @PathVariable UUID documentId,
@@ -147,6 +152,27 @@ public class DocumentController {
     ) {
         documentService.deleteDocument(documentId, principal.userId());
         return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/{documentId}/restore")
+    public ApiResponse<DocumentDto.DocumentResponse> restoreDocument(
+            @PathVariable UUID documentId, @AuthenticationPrincipal JwtPrincipal principal) {
+        return ApiResponse.ok(documentService.restoreDocument(documentId, principal.userId()));
+    }
+
+    @DeleteMapping("/{documentId}/permanent")
+    public ApiResponse<Void> permanentlyDeleteDocument(
+            @PathVariable UUID documentId, @AuthenticationPrincipal JwtPrincipal principal) {
+        documentService.permanentlyDeleteDocument(documentId, principal.userId());
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/{documentId}/reindex")
+    public ApiResponse<DocumentDto.DocumentResponse> reindexDocument(
+            @PathVariable UUID documentId,
+            @AuthenticationPrincipal JwtPrincipal principal
+    ) {
+        return ApiResponse.ok(documentService.reindexDocument(documentId, principal.userId()));
     }
 
     @GetMapping("/{documentId}/file")

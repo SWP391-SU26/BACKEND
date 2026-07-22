@@ -64,6 +64,21 @@ public class CourseDocument {
     @Column(name = "processing_status")
     private String processingStatus;
 
+    @Column(name = "indexing_status")
+    private String indexingStatus;
+
+    @Column(name = "indexed_embedding_model_id")
+    private UUID indexedEmbeddingModelId;
+
+    @Column(name = "indexed_model_version")
+    private String indexedModelVersion;
+
+    @Column(name = "indexed_at")
+    private LocalDateTime indexedAt;
+
+    @Column(name = "index_error", columnDefinition = "NVARCHAR(MAX)")
+    private String indexError;
+
     @Column(name = "total_pages")
     private Integer totalPages;
 
@@ -99,6 +114,24 @@ public class CourseDocument {
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
+    @Column(name = "deleted_by")
+    private UUID deletedBy;
+
+    @Column(name = "deleted_scope")
+    private String deletedScope;
+
+    @Column(name = "deleted_review_status")
+    private String deletedReviewStatus;
+
+    @Column(name = "deleted_course_id")
+    private UUID deletedCourseId;
+
+    @Column(name = "deleted_workspace_id")
+    private UUID deletedWorkspaceId;
 
     public CourseDocument() { }
 
@@ -153,6 +186,21 @@ public class CourseDocument {
     public String getProcessingStatus() { return processingStatus; }
     public void setProcessingStatus(String processingStatus) { this.processingStatus = processingStatus; }
 
+    public String getIndexingStatus() { return indexingStatus; }
+    public void setIndexingStatus(String indexingStatus) { this.indexingStatus = indexingStatus; }
+
+    public UUID getIndexedEmbeddingModelId() { return indexedEmbeddingModelId; }
+    public void setIndexedEmbeddingModelId(UUID indexedEmbeddingModelId) { this.indexedEmbeddingModelId = indexedEmbeddingModelId; }
+
+    public String getIndexedModelVersion() { return indexedModelVersion; }
+    public void setIndexedModelVersion(String indexedModelVersion) { this.indexedModelVersion = indexedModelVersion; }
+
+    public LocalDateTime getIndexedAt() { return indexedAt; }
+    public void setIndexedAt(LocalDateTime indexedAt) { this.indexedAt = indexedAt; }
+
+    public String getIndexError() { return indexError; }
+    public void setIndexError(String indexError) { this.indexError = indexError; }
+
     public Integer getTotalPages() { return totalPages; }
     public void setTotalPages(Integer totalPages) { this.totalPages = totalPages; }
 
@@ -188,5 +236,18 @@ public class CourseDocument {
 
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+
+    public LocalDateTime getDeletedAt() { return deletedAt; }
+    public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
+    public UUID getDeletedBy() { return deletedBy; }
+    public void setDeletedBy(UUID deletedBy) { this.deletedBy = deletedBy; }
+    public String getDeletedScope() { return deletedScope; }
+    public void setDeletedScope(String deletedScope) { this.deletedScope = deletedScope; }
+    public String getDeletedReviewStatus() { return deletedReviewStatus; }
+    public void setDeletedReviewStatus(String deletedReviewStatus) { this.deletedReviewStatus = deletedReviewStatus; }
+    public UUID getDeletedCourseId() { return deletedCourseId; }
+    public void setDeletedCourseId(UUID deletedCourseId) { this.deletedCourseId = deletedCourseId; }
+    public UUID getDeletedWorkspaceId() { return deletedWorkspaceId; }
+    public void setDeletedWorkspaceId(UUID deletedWorkspaceId) { this.deletedWorkspaceId = deletedWorkspaceId; }
 
 }

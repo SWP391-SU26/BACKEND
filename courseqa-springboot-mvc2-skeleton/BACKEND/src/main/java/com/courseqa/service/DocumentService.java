@@ -73,6 +73,7 @@ public class DocumentService {
     private final Path previewRoot;
     private final Cloudinary cloudinary;
     private final PersonalWorkspaceService personalWorkspaceService;
+    private final EmbeddingService embeddingService;
 
     public DocumentService(
             CourseDocumentRepository courseDocumentRepository,
@@ -88,6 +89,7 @@ public class DocumentService {
             DocumentChapterSuggestionRepository documentChapterSuggestionRepository,
             JdbcTemplate jdbcTemplate,
             PersonalWorkspaceService personalWorkspaceService,
+            EmbeddingService embeddingService,
             @Value("${app.upload-dir:uploads}") String uploadDir,
             @Value("${cloudinary.cloud-name:}") String cloudinaryCloudName,
             @Value("${cloudinary.api-key:}") String cloudinaryApiKey,
@@ -106,6 +108,7 @@ public class DocumentService {
         this.documentChapterSuggestionRepository = documentChapterSuggestionRepository;
         this.jdbcTemplate = jdbcTemplate;
         this.personalWorkspaceService = personalWorkspaceService;
+        this.embeddingService = embeddingService;
         this.uploadRoot = Path.of(uploadDir).toAbsolutePath().normalize();
         this.previewRoot = this.uploadRoot.resolve("previews").normalize();
         this.cloudinary = createCloudinary(cloudinaryCloudName, cloudinaryApiKey, cloudinaryApiSecret);
@@ -231,6 +234,7 @@ public class DocumentService {
             }
             document.setFileSizeBytes(file.getSize());
             document.setProcessingStatus("PROCESSING");
+            document.setIndexingStatus("PENDING");
             document.setDocumentScope(request.courseId == null ? "PERSONAL" : "COURSE");
             document.setReviewStatus(request.courseId == null ? "NOT_SUBMITTED" : "APPROVED");
             document.setLanguage("vi");
@@ -268,7 +272,7 @@ public class DocumentService {
 
     public List<DocumentDto.DocumentResponse> getMyDocuments(UUID userId) {
         requireRequester(userId);
-        return courseDocumentRepository.findByUploadedByOrderByUploadedAtDesc(userId).stream()
+        return courseDocumentRepository.findByUploadedByAndDeletedAtIsNullOrderByUploadedAtDesc(userId).stream()
                 .map(document -> toResponse(document, userId))
                 .toList();
     }
@@ -276,6 +280,7 @@ public class DocumentService {
     public List<DocumentDto.DocumentResponse> getReviewQueue(UUID adminId) {
         requireAdmin(adminId);
         return courseDocumentRepository.findByReviewStatusOrderBySubmittedAtAsc("PENDING").stream()
+                .filter(document -> document.getDeletedAt() == null)
                 .map(document -> toResponse(document, adminId))
                 .toList();
     }
@@ -283,8 +288,8 @@ public class DocumentService {
     @Transactional
     public DocumentDto.DocumentResponse submitForReview(UUID documentId, UUID courseId, UUID userId) {
         CourseDocument document = requireOwnedDocument(documentId, userId);
-        if (!"PROCESSED".equals(document.getProcessingStatus())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only processed documents can be submitted.");
+        if (!"PROCESSED".equals(document.getProcessingStatus()) || !"INDEXED".equals(document.getIndexingStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Only processed and indexed documents can be submitted.");
         }
         if (!"PERSONAL".equals(document.getDocumentScope())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "This document is already shared with a course.");
@@ -325,6 +330,9 @@ public class DocumentService {
         requireAdmin(adminId);
         CourseDocument document = courseDocumentRepository.findById(documentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
+        if (document.getDeletedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found.");
+        }
         if (!"PERSONAL".equals(document.getDocumentScope()) || !"PENDING".equals(document.getReviewStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "This document is not waiting for review.");
         }
@@ -385,6 +393,7 @@ public class DocumentService {
                     .toList();
 
         return documents.stream()
+                .filter(document -> document.getDeletedAt() == null)
                 .map(document -> toResponse(document, requesterId))
                 .toList();
     }
@@ -409,6 +418,7 @@ public class DocumentService {
             courseDocumentRepository.findByWorkspaceIdOrderByUploadedAtDesc(workspaceId);
 
         return documents.stream()
+                .filter(document -> document.getDeletedAt() == null)
                 .filter(document -> isAdmin(requesterId) || requesterId.equals(document.getUploadedBy()) || isApprovedCourseDocument(document))
                 .map(document -> toResponse(document, requesterId))
                 .toList();
@@ -435,15 +445,102 @@ public class DocumentService {
 
     @Transactional
     public void deleteDocument(UUID documentId, UUID requesterId) {
-        CourseDocument document = getAccessibleDocument(documentId, requesterId);
-        boolean admin = isAdmin(requesterId);
-        boolean deletablePersonal = requesterId.equals(document.getUploadedBy())
-                && "PERSONAL".equals(document.getDocumentScope())
-                && List.of("NOT_SUBMITTED", "REJECTED").contains(document.getReviewStatus());
-        if (!admin && !deletablePersonal) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "Only unsubmitted or rejected personal documents can be deleted by their owner.");
+        requireRequester(requesterId);
+        CourseDocument document = courseDocumentRepository.findById(documentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
+        if (document.getDeletedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Document is already in trash.");
         }
+        boolean admin = isAdmin(requesterId);
+        boolean uploader = requesterId.equals(document.getUploadedBy());
+        if (!admin && !uploader) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only an administrator or the uploader can move this document to trash.");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        document.setDeletedScope(document.getDocumentScope());
+        document.setDeletedReviewStatus(document.getReviewStatus());
+        document.setDeletedCourseId(document.getCourseId());
+        document.setDeletedWorkspaceId(document.getWorkspaceId());
+        document.setDeletedAt(now);
+        document.setDeletedBy(requesterId);
+        document.setUpdatedAt(now);
+        courseDocumentRepository.save(document);
+        deactivateCourseWithoutDocuments(document.getCourseId());
+    }
+
+    public List<DocumentDto.DocumentResponse> getTrash(UUID requesterId) {
+        requireRequester(requesterId);
+        List<CourseDocument> documents = isAdmin(requesterId)
+                ? courseDocumentRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc()
+                : courseDocumentRepository.findByUploadedByAndDeletedAtIsNotNullOrderByDeletedAtDesc(requesterId);
+        return documents.stream().map(document -> toResponse(document, requesterId)).toList();
+    }
+
+    @Transactional
+    public DocumentDto.DocumentResponse restoreDocument(UUID documentId, UUID requesterId) {
+        requireRequester(requesterId);
+        CourseDocument document = courseDocumentRepository.findById(documentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
+        if (document.getDeletedAt() == null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Document is not in trash.");
+        }
+        boolean admin = isAdmin(requesterId);
+        if (!admin && !requesterId.equals(document.getUploadedBy())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This document belongs to another user.");
+        }
+
+        if (!admin && "COURSE".equals(document.getDeletedScope())) {
+            CourseWorkspace personalWorkspace = personalWorkspaceService.getOrCreate(requesterId);
+            moveDocument(document, personalWorkspace.getWorkspaceId(), null);
+            document.setDocumentScope("PERSONAL");
+            document.setReviewStatus("NOT_SUBMITTED");
+            document.setTargetCourseId(null);
+            document.setSubmittedAt(null);
+            document.setReviewedBy(null);
+            document.setReviewedAt(null);
+            document.setRejectionReason(null);
+        } else {
+            document.setWorkspaceId(document.getDeletedWorkspaceId());
+            document.setCourseId(document.getDeletedCourseId());
+            document.setDocumentScope(document.getDeletedScope());
+            document.setReviewStatus(document.getDeletedReviewStatus());
+            moveDocument(document, document.getWorkspaceId(), document.getCourseId());
+            if (document.getCourseId() != null) {
+                courseRepository.findById(document.getCourseId()).ifPresent(course -> {
+                    course.setIsActive(false);
+                    course.setStatus("DRAFT");
+                    course.setUpdatedAt(LocalDateTime.now());
+                    courseRepository.save(course);
+                });
+            }
+        }
+        document.setDeletedAt(null);
+        document.setDeletedBy(null);
+        document.setUpdatedAt(LocalDateTime.now());
+        return toResponse(courseDocumentRepository.save(document), requesterId);
+    }
+
+    @Transactional
+    public void permanentlyDeleteDocument(UUID documentId, UUID requesterId) {
+        requireRequester(requesterId);
+        CourseDocument document = courseDocumentRepository.findById(documentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
+        if (document.getDeletedAt() == null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Move the document to trash before permanent deletion.");
+        }
+        if (!isAdmin(requesterId) && !requesterId.equals(document.getUploadedBy())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This document belongs to another user.");
+        }
+        Map<String, Long> dependencies = documentDependencies(documentId);
+        if (dependencies.values().stream().anyMatch(count -> count > 0)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Document still has dependencies: " + dependencies);
+        }
+        hardDeleteDocument(document);
+    }
+
+    private void hardDeleteDocument(CourseDocument document) {
+        UUID documentId = document.getDocumentId();
         UUID courseId = document.getCourseId();
         Path previewPath = previewRoot.resolve(documentId + ".pdf").normalize();
         Path originalPath = null;
@@ -473,13 +570,7 @@ public class DocumentService {
         courseDocumentRepository.delete(document);
         courseDocumentRepository.flush();
 
-        if (courseId != null && !courseDocumentRepository.existsByCourseIdAndProcessingStatus(courseId, "PROCESSED")) {
-            courseRepository.findById(courseId).ifPresent(course -> {
-                course.setIsActive(false);
-                course.setUpdatedAt(LocalDateTime.now());
-                courseRepository.save(course);
-            });
-        }
+        deactivateCourseWithoutDocuments(courseId);
 
         if (isCloudStored(document)) {
             destroyCloudinaryAsset(document.getCloudinaryPublicId());
@@ -488,6 +579,67 @@ public class DocumentService {
             deleteStoredFile(originalPath, uploadRoot);
         }
         deleteStoredFile(previewPath, previewRoot);
+    }
+
+    private Map<String, Long> documentDependencies(UUID documentId) {
+        long chatSessions = jdbcTemplate.queryForObject("""
+                SELECT COUNT(DISTINCT cs.chat_session_id) FROM chat_sessions cs
+                LEFT JOIN chat_session_documents csd ON csd.chat_session_id = cs.chat_session_id
+                LEFT JOIN retrieval_queries rq ON rq.chat_session_id = cs.chat_session_id
+                LEFT JOIN retrieval_results rr ON rr.retrieval_query_id = rq.retrieval_query_id
+                LEFT JOIN answer_citations ac ON ac.assistant_message_id IN
+                    (SELECT message_id FROM chat_messages WHERE chat_session_id = cs.chat_session_id)
+                WHERE csd.document_id = ? OR rr.document_id = ? OR ac.document_id = ?
+                """, Long.class, documentId, documentId, documentId);
+        long datasets = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM evaluation_dataset_documents WHERE document_id = ?", Long.class, documentId);
+        long experiments = jdbcTemplate.queryForObject("""
+                SELECT COUNT(DISTINCT e.experiment_id) FROM experiments e
+                JOIN evaluation_dataset_documents edd ON edd.dataset_id = e.dataset_id
+                WHERE edd.document_id = ?
+                """, Long.class, documentId);
+        return new java.util.LinkedHashMap<>(Map.of(
+                "chatSessions", chatSessions, "frozenDatasets", datasets, "experiments", experiments));
+    }
+
+    private void moveDocument(CourseDocument document, UUID workspaceId, UUID courseId) {
+        document.setWorkspaceId(workspaceId);
+        document.setCourseId(courseId);
+        document.setChapterId(null);
+        List<DocumentChunk> chunks = documentChunkRepository.findByDocumentIdOrderByChunkIndexAsc(document.getDocumentId());
+        chunks.forEach(chunk -> {
+            chunk.setWorkspaceId(workspaceId);
+            chunk.setCourseId(courseId);
+            chunk.setChapterId(null);
+        });
+        documentChunkRepository.saveAll(chunks);
+    }
+
+    private void deactivateCourseWithoutDocuments(UUID courseId) {
+        if (courseId != null && !courseDocumentRepository
+                .existsByCourseIdAndProcessingStatusAndIndexingStatusAndDeletedAtIsNull(
+                        courseId, "PROCESSED", "INDEXED")) {
+            courseRepository.findById(courseId).ifPresent(course -> {
+                course.setIsActive(false);
+                course.setUpdatedAt(LocalDateTime.now());
+                courseRepository.save(course);
+            });
+        }
+    }
+
+    @Transactional
+    public DocumentDto.DocumentResponse reindexDocument(UUID documentId, UUID requesterId) {
+        CourseDocument document = getAccessibleDocument(documentId, requesterId);
+        if (!isAdmin(requesterId) && !requesterId.equals(document.getUploadedBy())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only an admin or the uploader can reindex this document.");
+        }
+        if (!"PROCESSED".equals(document.getProcessingStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Document must be processed before indexing.");
+        }
+        indexDocument(document);
+        return toResponse(document, requesterId);
     }
 
     public StoredDocumentFile getStoredFile(UUID documentId, UUID requesterId) {
@@ -683,13 +835,59 @@ public class DocumentService {
             document.setErrorMessage(null);
             document.setUpdatedAt(LocalDateTime.now());
             courseDocumentRepository.save(document);
+
+            if (chunks.isEmpty()) {
+                document.setIndexingStatus("FAILED");
+                document.setIndexError("No text chunks are available for embedding.");
+                courseDocumentRepository.save(document);
+                return;
+            }
+            indexDocument(document);
         } catch (Exception exception) {
+            if ("PROCESSED".equals(document.getProcessingStatus())) {
+                document.setIndexingStatus("FAILED");
+                document.setIndexError(exception.getMessage());
+                document.setUpdatedAt(LocalDateTime.now());
+                courseDocumentRepository.save(document);
+                return;
+            }
             document.setProcessingStatus("FAILED");
+            document.setIndexingStatus("FAILED");
             document.setErrorMessage(exception.getMessage());
+            document.setIndexError("Indexing was not started because extraction failed.");
             document.setUpdatedAt(LocalDateTime.now());
             courseDocumentRepository.save(document);
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Document processing failed: " + exception.getMessage());
         }
+    }
+
+    private void indexDocument(CourseDocument document) {
+        document.setIndexingStatus("EMBEDDING");
+        document.setIndexError(null);
+        document.setUpdatedAt(LocalDateTime.now());
+        courseDocumentRepository.save(document);
+        try {
+            com.courseqa.model.dto.RagDto.PrepareEmbeddingsRequest request =
+                    new com.courseqa.model.dto.RagDto.PrepareEmbeddingsRequest();
+            request.documentId = document.getDocumentId();
+            com.courseqa.model.dto.RagDto.PrepareEmbeddingsResponse response =
+                    embeddingService.prepareEmbeddings(request);
+            long chunkCount = documentChunkRepository.countByDocumentId(document.getDocumentId());
+            long indexedCount = response.createdEmbeddings + response.skippedExisting;
+            if (chunkCount == 0 || indexedCount != chunkCount || response.totalChunks != chunkCount) {
+                throw new IllegalStateException("Only " + indexedCount + "/" + chunkCount + " chunks were indexed.");
+            }
+            document.setIndexingStatus("INDEXED");
+            document.setIndexedEmbeddingModelId(response.embeddingModelId);
+            document.setIndexedModelVersion(response.modelVersion);
+            document.setIndexedAt(LocalDateTime.now());
+            document.setIndexError(null);
+        } catch (RuntimeException exception) {
+            document.setIndexingStatus("FAILED");
+            document.setIndexError(exception.getMessage());
+        }
+        document.setUpdatedAt(LocalDateTime.now());
+        courseDocumentRepository.save(document);
     }
 
     private List<DocumentPage> savePages(UUID documentId, List<ExtractedPage> extractedPages) {
@@ -928,6 +1126,10 @@ public class DocumentService {
         CourseDocument document = courseDocumentRepository.findById(documentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
 
+        if (document.getDeletedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found.");
+        }
+
         if (isAdmin(requesterId) || requesterId.equals(document.getUploadedBy())) {
             return document;
         }
@@ -941,11 +1143,13 @@ public class DocumentService {
         if (courseId == null) return false;
         return courseRepository.findById(courseId)
                 .filter(course -> Boolean.TRUE.equals(course.getIsActive()))
+                .filter(course -> course.getDeletedAt() == null)
                 .filter(course -> !"ARCHIVED".equals(course.getStatus()))
                 .filter(course -> semesterWorkspaceRepository.findById(course.getSemesterWorkspaceId())
-                        .map(semester -> "ACTIVE".equals(semester.getStatus()))
+                        .map(semester -> semester.getDeletedAt() == null && "ACTIVE".equals(semester.getStatus()))
                         .orElse(false))
-                .filter(course -> courseDocumentRepository.existsByCourseIdAndProcessingStatus(courseId, "PROCESSED"))
+                .filter(course -> courseDocumentRepository.existsByCourseIdAndProcessingStatusAndIndexingStatusAndDeletedAtIsNull(
+                        courseId, "PROCESSED", "INDEXED"))
                 .isPresent();
     }
 
@@ -974,6 +1178,9 @@ public class DocumentService {
         requireRequester(userId);
         CourseDocument document = courseDocumentRepository.findById(documentId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
+        if (document.getDeletedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found.");
+        }
         if (!userId.equals(document.getUploadedBy())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This document belongs to another user.");
         }
@@ -1005,9 +1212,7 @@ public class DocumentService {
 
     private DocumentDto.DocumentResponse toResponse(CourseDocument document, UUID requesterId) {
         DocumentDto.DocumentResponse response = DocumentDto.DocumentResponse.fromEntity(document);
-        response.canDelete = isAdmin(requesterId) || (requesterId != null && requesterId.equals(document.getUploadedBy())
-                && "PERSONAL".equals(document.getDocumentScope())
-                && List.of("NOT_SUBMITTED", "REJECTED").contains(document.getReviewStatus()));
+        response.canDelete = isAdmin(requesterId) || (requesterId != null && requesterId.equals(document.getUploadedBy()));
         return response;
     }
 

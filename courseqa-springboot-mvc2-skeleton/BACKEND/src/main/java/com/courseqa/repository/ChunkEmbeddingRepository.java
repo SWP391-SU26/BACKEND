@@ -11,4 +11,8 @@ public interface ChunkEmbeddingRepository extends JpaRepository<ChunkEmbedding, 
     Optional<ChunkEmbedding> findByChunkIdAndEmbeddingModelId(UUID chunkId, UUID embeddingModelId);
 
     List<ChunkEmbedding> findByEmbeddingModelIdAndChunkIdIn(UUID embeddingModelId, Collection<UUID> chunkIds);
+
+    long countByEmbeddingModelIdAndChunkIdIn(UUID embeddingModelId, Collection<UUID> chunkIds);
+
+    void deleteByEmbeddingModelIdAndChunkIdIn(UUID embeddingModelId, Collection<UUID> chunkIds);
 }

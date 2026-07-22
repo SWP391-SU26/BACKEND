@@ -83,26 +83,25 @@ public class RetrievalService {
         Map<UUID, ChunkEmbedding> embeddingsByChunkId = loadEmbeddingsByChunkId(model, workspaceChunks);
 
         if (embeddingsByChunkId.isEmpty()) {
-            workspaceChunks.stream()
-                    .map(DocumentChunk::getWorkspaceId)
-                    .filter(java.util.Objects::nonNull)
-                    .distinct()
-                    .forEach(workspaceId -> prepareMissingWorkspaceEmbeddings(workspaceId, model));
-            embeddingsByChunkId = loadEmbeddingsByChunkId(model, workspaceChunks);
-        }
-
-        if (embeddingsByChunkId.isEmpty()) {
             return noPreparedEmbeddingsResponse(model);
         }
 
-        double[] queryVector = embeddingService.embedText(request.queryText, model.getDimension());
+        boolean lexicalFallback = false;
+        double[] queryVector;
+        try {
+            queryVector = embeddingService.embedText(request.queryText, model.getDimension());
+        } catch (RuntimeException exception) {
+            lexicalFallback = true;
+            queryVector = new double[0];
+        }
         Map<UUID, CourseDocument> documentsById = loadDocumentsById(workspaceChunks);
         Map<UUID, ChunkEmbedding> preparedEmbeddingsByChunkId = embeddingsByChunkId;
+        double[] scoringQueryVector = queryVector;
         List<ScoredChunk> scoredCandidates = workspaceChunks.stream()
                 .map(chunk -> scoreChunk(
                         chunk,
                         preparedEmbeddingsByChunkId.get(chunk.getChunkId()),
-                        queryVector,
+                        scoringQueryVector,
                         request.queryText,
                         documentsById.get(chunk.getDocumentId()))
                 )
@@ -160,7 +159,8 @@ public class RetrievalService {
 
         boolean shouldPersist = request.chatSessionId != null && request.userMessageId != null;
         RetrievalQuery query = shouldPersist
-                ? saveRetrievalQuery(request, model, topK, threshold, scoredChunks, noAnswerReason, startedAt)
+                ? saveRetrievalQuery(request, model, topK, threshold, scoredChunks, noAnswerReason,
+                        startedAt, lexicalFallback)
                 : null;
 
         List<RagDto.RetrievedChunk> results = toRetrievedChunks(scoredChunks, query);
@@ -168,7 +168,8 @@ public class RetrievalService {
         RagDto.RetrievalResponse response = new RagDto.RetrievalResponse();
         response.retrievalQueryId = query == null ? null : query.getRetrievalQueryId();
         response.embeddingModelId = model.getEmbeddingModelId();
-        response.embeddingModelName = model.getModelName();
+        response.embeddingModelName = lexicalFallback ? "lexical" : model.getModelName();
+        response.retrievalMode = lexicalFallback ? "LEXICAL_FALLBACK" : "BGE_M3";
         response.answerable = !results.isEmpty();
         response.noAnswerReason = results.isEmpty() ? noAnswerReason : null;
         response.results = results;
@@ -179,6 +180,7 @@ public class RetrievalService {
         RagDto.RetrievalResponse response = new RagDto.RetrievalResponse();
         response.embeddingModelId = model.getEmbeddingModelId();
         response.embeddingModelName = model.getModelName();
+        response.retrievalMode = "BGE_M3";
         response.answerable = false;
         response.noAnswerReason = "No chunks exist in this workspace.";
         response.results = List.of();
@@ -189,6 +191,7 @@ public class RetrievalService {
         RagDto.RetrievalResponse response = new RagDto.RetrievalResponse();
         response.embeddingModelId = model.getEmbeddingModelId();
         response.embeddingModelName = model.getModelName();
+        response.retrievalMode = "BGE_M3";
         response.answerable = false;
         response.noAnswerReason = "No prepared embeddings could be created for this workspace.";
         response.results = List.of();
@@ -218,7 +221,10 @@ public class RetrievalService {
         return chunks.stream()
                 .filter(chunk -> {
                     CourseDocument document = documents.get(chunk.getDocumentId());
-                    return document != null && "PROCESSED".equals(document.getProcessingStatus());
+                    return document != null
+                            && document.getDeletedAt() == null
+                            && "PROCESSED".equals(document.getProcessingStatus())
+                            && "INDEXED".equals(document.getIndexingStatus());
                 })
                 .toList();
     }
@@ -577,7 +583,8 @@ public class RetrievalService {
             double threshold,
             List<ScoredChunk> scoredChunks,
             String noAnswerReason,
-            Instant startedAt
+            Instant startedAt,
+            boolean lexicalFallback
     ) {
         RetrievalQuery query = new RetrievalQuery();
         query.setChatSessionId(request.chatSessionId);
@@ -585,11 +592,12 @@ public class RetrievalService {
         query.setWorkspaceId(request.workspaceId);
         query.setSemesterWorkspaceId(request.semesterId);
         query.setScopeType(request.scopeType == null || request.scopeType.isBlank() ? "COURSE" : request.scopeType);
-        query.setQueryText(request.queryText.trim());
+        query.setQueryText(request.originalQueryText == null || request.originalQueryText.isBlank()
+                ? request.queryText.trim() : request.originalQueryText.trim());
         query.setRewrittenQuery(request.queryText.trim());
         query.setEmbeddingModelId(model.getEmbeddingModelId());
         query.setTopK(topK);
-        query.setSimilarityMetric("embedding_cosine");
+        query.setSimilarityMetric(lexicalFallback ? "lexical_fallback" : "bge_m3_cosine");
         query.setSimilarityThreshold(threshold);
         query.setIsAnswerable(!scoredChunks.isEmpty());
         query.setNoAnswerReason(scoredChunks.isEmpty() ? noAnswerReason : null);
