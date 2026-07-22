@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.courseqa.model.dto.ChatDto;
+import com.courseqa.model.dto.PythonAiDto;
 import com.courseqa.model.entity.ChatMessage;
 import com.courseqa.model.entity.ChatSession;
 import com.courseqa.model.entity.Course;
@@ -175,6 +176,45 @@ class ChatServiceScopeTest {
         assertEquals("GREETING", response.generationMode);
         verify(retrieval, never()).retrieve(any());
         verify(ai, never()).callGenerate(any(), any());
+    }
+
+    @Test
+    void fineTunedModeCallsTrainedModelWithoutDocumentRetrieval() {
+        UUID userId = UUID.randomUUID();
+        UUID courseId = UUID.randomUUID();
+        UUID semesterId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        ChatSession session = new ChatSession();
+        session.setChatSessionId(sessionId);
+        session.setUserId(userId);
+        session.setCourseId(courseId);
+        session.setSemesterWorkspaceId(semesterId);
+        session.setScopeType("COURSE");
+        session.setIsActive(true);
+        session.setSessionTitle("New conversation");
+        CourseDocument available = document(UUID.randomUUID(), courseId, "PROCESSED");
+        PythonAiDto.ChatFinetunedResponse modelResponse = new PythonAiDto.ChatFinetunedResponse();
+        modelResponse.answer = "Câu trả lời từ data đã train.";
+        when(sessions.findById(sessionId)).thenReturn(java.util.Optional.of(session));
+        when(roles.findByUserIdAndIsActiveTrue(userId)).thenReturn(List.of());
+        when(learningScope.requireAccessibleCourse(courseId, userId, false)).thenReturn(course(courseId, semesterId));
+        when(learningScope.requireActiveWorkspace(courseId)).thenReturn(workspace(UUID.randomUUID(), courseId));
+        when(documents.findByCourseIdAndProcessingStatusOrderByUploadedAtDesc(courseId, "PROCESSED"))
+                .thenReturn(List.of(available));
+        when(messages.save(any(ChatMessage.class))).thenAnswer(invocation -> {
+            ChatMessage message = invocation.getArgument(0);
+            message.setMessageId(UUID.randomUUID());
+            return message;
+        });
+        when(ai.callChatFinetuned(any(), any())).thenReturn(modelResponse);
+
+        ChatDto.AskResponse response = service.askQuestion(sessionId,
+                "Triết học Mác - Lênin là gì?", "FINE_TUNED");
+
+        assertEquals("FINE_TUNED", response.generationMode);
+        assertEquals("Câu trả lời từ data đã train.", response.answer);
+        verify(retrieval, never()).retrieve(any());
+        verify(ai).callChatFinetuned(any(), any());
     }
 
     private Course course(UUID courseId, UUID semesterId) {
