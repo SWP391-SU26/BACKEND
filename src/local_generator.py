@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import re
 from threading import Lock
 from typing import Sequence
 
 from .embeddings import find_cached_snapshot
+from .finetuning import FINETUNED_REFUSAL_MESSAGE, build_finetuning_system_prompt
 from .rag_pipeline import OUT_OF_SCOPE_MESSAGE
 from .storage import RetrievedChunk
 
@@ -18,6 +21,7 @@ class LocalLoraGenerator:
         adapter_dir: Path,
         cache_dir: Path,
         max_new_tokens: int = 180,
+        enforce_quality_gate: bool = True,
     ) -> None:
         import torch
         from peft import PeftModel
@@ -25,6 +29,19 @@ class LocalLoraGenerator:
 
         if not adapter_dir.exists():
             raise FileNotFoundError(f"Không tìm thấy LoRA adapter: {adapter_dir}")
+        manifest_path = adapter_dir / "training_manifest.json"
+        if enforce_quality_gate and not manifest_path.exists():
+            raise RuntimeError("LoRA adapter chưa có training_manifest.json nên chưa được xác minh chất lượng.")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
+        if enforce_quality_gate and not bool((manifest.get("quality_gate") or {}).get("passed")):
+            raise RuntimeError("LoRA adapter không đạt quality gate và bị chặn để tránh trả lời sai.")
+
+        manifest_base_model = str(manifest.get("base_model") or "").strip()
+        if manifest_base_model and manifest_base_model != base_model:
+            raise RuntimeError(
+                "Base model does not match the adapter: "
+                f"the manifest requires {manifest_base_model}, but runtime is configured for {base_model}."
+            )
 
         self.base_model = base_model
         self.adapter_dir = adapter_dir
@@ -41,7 +58,7 @@ class LocalLoraGenerator:
         base = self._load_base_model(AutoModelForCausalLM, torch, base_model, cache_dir)
         adapter = PeftModel.from_pretrained(base, adapter_dir)
         # Benchmark inference never switches adapters. Merging removes PEFT dispatch
-        # overhead and keeps just one FP16 model in GPU memory.
+        # overhead and keeps just one compact model in memory.
         self.model = adapter.merge_and_unload()
         self.model.to(self.device)
         self.model.eval()
@@ -51,7 +68,10 @@ class LocalLoraGenerator:
         return self._warmed_up
 
     def _load_base_model(self, model_cls, torch_module, base_model: str, cache_dir: Path):
-        dtype = torch_module.float16 if self.device == "cuda" else torch_module.float32
+        # This project is deployed on the same CPU that successfully trains in BF16.
+        # Keeping inference in BF16 prevents the 1.5B model from exhausting RAM once
+        # the Java and frontend services are running alongside Python.
+        dtype = torch_module.float16 if self.device == "cuda" else torch_module.bfloat16
         local_base = find_cached_snapshot(cache_dir, base_model, "config.json")
         if local_base:
             return model_cls.from_pretrained(
@@ -113,33 +133,91 @@ class LocalLoraGenerator:
         )
         return list(zip(answers, included_contexts))
 
-    def generate_without_context(self, question: str) -> str:
+    def generate_without_context(
+        self, question: str, allowed_sources: list[str] | None = None, strict: bool = True
+    ) -> str:
         return self.generate_without_context_batch(
-            [question], max_new_tokens=self.max_new_tokens, max_input_tokens=None
+            [question],
+            allowed_sources=[allowed_sources or []],
+            strict=strict,
+            max_new_tokens=self.max_new_tokens,
+            max_input_tokens=None,
         )[0]
 
     def generate_without_context_batch(
         self,
         questions: Sequence[str],
         *,
+        allowed_sources: Sequence[list[str]] | None = None,
+        strict: bool = True,
         max_new_tokens: int,
         max_input_tokens: int | None,
     ) -> list[str]:
-        messages = [
-            [
-                {
-                    "role": "system",
-                    "content": "Bạn là trợ lý học tập. Trả lời ngắn gọn, rõ ràng và chính xác bằng tiếng Việt.",
-                },
-                {"role": "user", "content": question},
-            ]
-            for question in questions
-        ]
-        return self._generate_messages_batch(
+        scopes = list(allowed_sources or [[] for _ in questions])
+        if len(scopes) != len(questions):
+            raise ValueError("allowed_sources must have the same length as questions.")
+        messages = [self._build_finetuned_messages(question, sources) for question, sources in zip(questions, scopes)]
+        answers = self._generate_messages_batch(
             messages,
             max_new_tokens=max_new_tokens,
             max_input_tokens=max_input_tokens,
         )
+        retry_indexes = [
+            index
+            for index, (question, answer) in enumerate(zip(questions, answers))
+            if self._looks_vietnamese(question) and self._contains_cjk(answer)
+        ]
+        if retry_indexes:
+            retry_messages = [
+                self._build_finetuned_messages(
+                    questions[index],
+                    scopes[index],
+                    retry_language=True,
+                )
+                for index in retry_indexes
+            ]
+            retry_answers = self._generate_messages_batch(
+                retry_messages,
+                max_new_tokens=max_new_tokens,
+                max_input_tokens=max_input_tokens,
+            )
+            for index, retry_answer in zip(retry_indexes, retry_answers):
+                answers[index] = (
+                    FINETUNED_REFUSAL_MESSAGE
+                    if self._contains_cjk(retry_answer)
+                    else retry_answer
+                )
+        return [answer.strip() or FINETUNED_REFUSAL_MESSAGE for answer in answers]
+
+    def _build_finetuned_messages(
+        self,
+        question: str,
+        sources: list[str],
+        retry_language: bool = False,
+    ) -> list[dict[str, str]]:
+        user_content = question
+        if retry_language:
+            user_content = (
+                "Hãy trả lời lại hoàn toàn bằng tiếng Việt, không dùng chữ Hán, tiếng Trung hoặc tiếng Anh. "
+                f"Câu hỏi: {question}"
+            )
+        return [
+            {"role": "system", "content": build_finetuning_system_prompt(sources)},
+            {"role": "user", "content": user_content},
+        ]
+
+    @staticmethod
+    def _contains_cjk(text: str) -> bool:
+        return bool(re.search(r"[\u3400-\u4dbf\u4e00-\u9fff]", text or ""))
+
+    @staticmethod
+    def _looks_vietnamese(text: str) -> bool:
+        normalized = (text or "").casefold()
+        if re.search(r"[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]", normalized):
+            return True
+        tokens = set(re.findall(r"[a-z]+", normalized))
+        vietnamese_markers = {"la", "gi", "triet", "hoc", "tai", "lieu", "nhu", "the", "nao", "vi", "sao", "hay"}
+        return len(tokens & vietnamese_markers) >= 2
 
     def _build_rag_messages(
         self,
@@ -201,11 +279,13 @@ class LocalLoraGenerator:
             for messages in messages_batch
         ]
         with self._inference_lock:
-            return self._generate_prompts_adaptive(
+            answers = self._generate_prompts_adaptive(
                 prompts,
                 max_new_tokens=max_new_tokens,
                 max_input_tokens=max_input_tokens,
             )
+            self._warmed_up = True
+            return answers
 
     def _generate_prompts_adaptive(
         self,
@@ -214,8 +294,6 @@ class LocalLoraGenerator:
         max_new_tokens: int,
         max_input_tokens: int | None,
     ) -> list[str]:
-        import torch
-
         try:
             return self._generate_prompt_batch(
                 prompts,
@@ -225,8 +303,13 @@ class LocalLoraGenerator:
         except Exception as exc:
             if not self._is_cuda_oom(exc) or len(prompts) == 1:
                 raise
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            try:
+                import torch
+
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except ImportError:
+                pass
             midpoint = max(1, len(prompts) // 2)
             return self._generate_prompts_adaptive(
                 prompts[:midpoint],
@@ -261,7 +344,8 @@ class LocalLoraGenerator:
                 **inputs,
                 max_new_tokens=max_new_tokens,
                 do_sample=False,
-                repetition_penalty=1.05,
+                repetition_penalty=1.15,
+                no_repeat_ngram_size=3,
                 use_cache=True,
                 pad_token_id=self.tokenizer.pad_token_id,
                 eos_token_id=self.tokenizer.eos_token_id,

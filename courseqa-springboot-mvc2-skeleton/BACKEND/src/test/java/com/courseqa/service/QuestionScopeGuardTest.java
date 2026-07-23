@@ -89,4 +89,75 @@ class QuestionScopeGuardTest {
         response.results = List.of(chunk);
         return response;
     }
+
+    @Test
+    void allowsGenericSummaryWhenRetrievalAlreadyContainsSelectedDocumentChunks() {
+        RagDto.RetrievalResponse retrieval = new RagDto.RetrievalResponse();
+        retrieval.answerable = true;
+        RagDto.RetrievedChunk chunk = new RagDto.RetrievedChunk();
+        chunk.content = "第７課 友達の家で";
+        retrieval.results = List.of(chunk);
+
+        assertTrue(guard.postRetrievalCheck("tóm tắt nội dung", retrieval).allowed());
+    }
+
+    @Test
+    void allowsVocabularySectionCommandAfterGroundedRetrieval() {
+        RagDto.RetrievalResponse retrieval = retrieval("ことば Từ vựng かいさつ こうばん バスてい");
+
+        assertTrue(guard.postRetrievalCheck("tổng hợp tất cả từ vựng", retrieval).allowed());
+    }
+
+    @Test
+    void refusesMeaningQuestionWhenDocumentOnlyContainsTheTerm() {
+        RagDto.RetrievalResponse retrieval = retrieval("かいさつ");
+
+        QuestionScopeGuard.GuardDecision decision = guard.postRetrievalCheck(
+                "かいさつ có nghĩa là gì?", retrieval);
+
+        assertEquals(QuestionScopeGuard.GuardAction.REFUSE, decision.action());
+    }
+
+    @Test
+    void allowsMeaningQuestionWhenDocumentContainsAnExplanation() {
+        RagDto.RetrievalResponse retrieval = retrieval("かいさつ: cổng soát vé");
+
+        assertTrue(guard.postRetrievalCheck("かいさつ có nghĩa là gì?", retrieval).allowed());
+    }
+
+    @Test
+    void allowsGenericJapaneseSummaryForAlreadySelectedDocument() {
+        RagDto.RetrievalResponse retrieval = retrieval("第７課 友達の家で");
+
+        assertTrue(guard.postRetrievalCheck("この資料をまとめてください", retrieval).allowed());
+    }
+
+    @Test
+    void allowsAParaphrasedQuestionWithStrongSemanticEvidence() {
+        RagDto.RetrievalResponse retrieval = retrieval(
+                "Thế giới quan định hướng mục đích sống và cách thức hoạt động của con người.");
+        retrieval.results.get(0).similarityScore = 0.72;
+
+        assertTrue(guard.postRetrievalCheck(
+                "Điều gì định hướng cách con người lựa chọn hành động?", retrieval).allowed());
+    }
+
+    @Test
+    void refusesAParaphrasedQuestionWhenSemanticEvidenceIsWeak() {
+        RagDto.RetrievalResponse retrieval = retrieval("Nội dung không liên quan.");
+        retrieval.results.get(0).similarityScore = 0.31;
+
+        assertEquals(QuestionScopeGuard.GuardAction.REFUSE,
+                guard.postRetrievalCheck("Cấu tạo của động cơ phản lực?", retrieval).action());
+    }
+
+    @Test
+    void refusesFragmentedKeywordMatchesWithoutARealQueryPhrase() {
+        RagDto.RetrievalResponse retrieval = retrieval(
+                "Quan điểm máy móc giải thích vận động cơ học; lực lượng phản động xuất hiện trong lịch sử.");
+        retrieval.results.get(0).similarityScore = 0.596;
+
+        assertEquals(QuestionScopeGuard.GuardAction.REFUSE,
+                guard.postRetrievalCheck("Cấu tạo của động cơ phản lực gồm những gì?", retrieval).action());
+    }
 }

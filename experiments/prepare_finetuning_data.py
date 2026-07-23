@@ -19,6 +19,7 @@ def main() -> None:
     parser.add_argument("--output-dir", default=None)
     parser.add_argument("--validation-ratio", type=float, default=0.2)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--retain-all-knowledge", action="store_true")
     args = parser.parse_args()
 
     settings = load_settings()
@@ -29,6 +30,7 @@ def main() -> None:
         output_dir=output_dir,
         validation_ratio=args.validation_ratio,
         seed=args.seed,
+        retain_all_knowledge=args.retain_all_knowledge,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

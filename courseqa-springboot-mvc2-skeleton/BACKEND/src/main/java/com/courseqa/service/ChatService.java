@@ -213,7 +213,8 @@ public class ChatService {
     }
 
     public ChatDto.AskResponse askQuestion(UUID sessionId, String question, String requestedAnswerMode) {
-        return askQuestion(sessionId, question, requestedAnswerMode, false);
+        String normalizedMode = normalizeAnswerMode(requestedAnswerMode);
+        return askQuestion(sessionId, question, normalizedMode, "FINE_TUNED".equals(normalizedMode));
     }
 
     public ChatDto.AskResponse askQuestion(UUID sessionId, String question, String requestedAnswerMode, boolean strict) {
@@ -252,7 +253,25 @@ public class ChatService {
         }
 
         if ("FINE_TUNED".equals(answerMode)) {
-            return answerWithFineTunedModel(sessionId, savedUserMessage, question, strict);
+            String scopeType = normalizedSessionScope(session);
+            if (!Set.of("DOCUMENTS", "PERSONAL").contains(scopeType)) {
+                return guardedResponse(
+                        sessionId,
+                        savedUserMessage,
+                        "Fine-tuning offline chỉ trả lời khi bạn chọn trực tiếp tài liệu đã dùng để huấn luyện model.",
+                        answerMode,
+                        retrieval.embeddingModelName,
+                        retrieval.retrievalQueryId
+                );
+            }
+            List<String> selectedFilenames = courseDocumentRepository.findAllById(resolvedScope.documentIds()).stream()
+                    .map(CourseDocument::getOriginalFilename)
+                    .filter(Objects::nonNull)
+                    .filter(filename -> !filename.isBlank())
+                    .distinct()
+                    .toList();
+            return answerWithFineTunedModel(
+                    sessionId, savedUserMessage, question, strict, selectedFilenames, retrieval.retrievalQueryId);
         }
 
         if (!Boolean.TRUE.equals(retrieval.answerable) || retrieval.results == null || retrieval.results.isEmpty()) {
@@ -347,19 +366,26 @@ public class ChatService {
             }
             prepared.add(new BenchmarkQuestionContext(question, userMessage, retrieval, guard));
         }
+        List<String> selectedFilenames = courseDocumentRepository.findAllById(resolvedScope.documentIds()).stream()
+                .map(CourseDocument::getOriginalFilename)
+                .filter(Objects::nonNull)
+                .filter(filename -> !filename.isBlank())
+                .distinct()
+                .toList();
         return "FINE_TUNED".equals(answerMode)
-                ? answerFineTunedEvaluationBatch(sessionId, prepared)
+                ? answerFineTunedEvaluationBatch(sessionId, prepared, selectedFilenames)
                 : answerRagEvaluationBatch(sessionId, prepared);
     }
 
     private List<ChatDto.AskResponse> answerFineTunedEvaluationBatch(
-            UUID sessionId, List<BenchmarkQuestionContext> prepared) {
+            UUID sessionId, List<BenchmarkQuestionContext> prepared, List<String> selectedFilenames) {
         PythonAiDto.ChatFinetunedBatchRequest request = new PythonAiDto.ChatFinetunedBatchRequest();
         request.strict = true;
         request.items = prepared.stream().filter(item -> item.guard().allowed()).map(item -> {
             PythonAiDto.ChatFinetunedBatchItem batchItem = new PythonAiDto.ChatFinetunedBatchItem();
             batchItem.request_id = item.userMessage().getMessageId().toString();
             batchItem.question = item.question();
+            batchItem.document_filenames = selectedFilenames;
             return batchItem;
         }).toList();
 
@@ -383,10 +409,12 @@ public class ChatService {
             if (result == null || result.error != null || result.answer == null || result.answer.isBlank()) {
                 throw new IllegalStateException("Fine-tuned batch did not return a valid answer for " + requestId);
             }
-            ChatMessage assistant = saveMessage(sessionId, "assistant", result.answer, "FINE_TUNED");
+            boolean outOfScope = Boolean.TRUE.equals(result.is_out_of_scope);
+            String generationMode = outOfScope ? "FINE_TUNED_SCOPE" : "FINE_TUNED";
+            ChatMessage assistant = saveMessage(sessionId, "assistant", result.answer, generationMode);
             answers.add(new ChatDto.AskResponse(
                     sessionId, item.userMessage().getMessageId(), assistant.getMessageId(), result.answer,
-                    "FINE_TUNED", "qwen-rag-lora", "FINE_TUNED", null, new ArrayList<>()));
+                    "FINE_TUNED", "qwen-study-lora-1.5b-v3", "FINE_TUNED", null, new ArrayList<>()));
         }
         return answers;
     }
@@ -487,8 +515,9 @@ public class ChatService {
     private String truncate(String value, int max) { return value.length() <= max ? value : value.substring(0, max).trim(); }
 
     private ChatDto.AskResponse answerWithFineTunedModel(UUID sessionId, ChatMessage savedUserMessage,
-            String question, boolean strict) {
-        return answerWithoutRetrieval(sessionId, savedUserMessage, question, "FINE_TUNED", "qwen-rag-lora", strict);
+            String question, boolean strict, List<String> selectedFilenames, UUID retrievalQueryId) {
+        return answerWithoutRetrieval(sessionId, savedUserMessage, question, "FINE_TUNED", "qwen-study-lora-1.5b-v3",
+                strict, selectedFilenames, retrievalQueryId);
     }
 
     private ChatDto.AskResponse answerWithoutRetrieval(
@@ -497,30 +526,41 @@ public class ChatService {
             String question,
             String responseMode,
             String modelName,
-            boolean strict
+            boolean strict,
+            List<String> selectedFilenames,
+            UUID retrievalQueryId
     ) {
         PythonAiDto.ChatFinetunedRequest request = new PythonAiDto.ChatFinetunedRequest();
         request.question = question;
         request.strict = strict;
+        request.document_filenames = selectedFilenames;
 
         String answer;
+        boolean outOfScope = false;
+        boolean modelReady = true;
         try {
             PythonAiDto.ChatFinetunedResponse response = aiClientService.callChatFinetuned(
                     request,
                     PythonAiDto.ChatFinetunedResponse.class
             );
             answer = response == null || response.answer == null || response.answer.isBlank()
-                    ? "The model did not return an answer."
+                    ? "Fine-tuned model không trả về nội dung hợp lệ."
                     : response.answer;
+            outOfScope = response != null && Boolean.TRUE.equals(response.is_out_of_scope);
+            modelReady = response == null || !Boolean.FALSE.equals(response.model_ready);
         } catch (Exception exception) {
             log.error("Python /ai/chat-finetuned failed for sessionId {}: {}", sessionId, exception.getMessage());
             if (strict) {
                 throw new IllegalStateException("Fine-tuned model is not ready: " + exception.getMessage(), exception);
             }
-            answer = "The fine-tuned model is not ready on this machine. Check the local model or switch back to RAG.";
+            answer = "Fine-tuned model chưa sẵn sàng do lỗi runtime nội bộ. Vui lòng kiểm tra trạng thái model và quality gate.";
+            modelReady = false;
         }
 
-        ChatMessage assistantMessage = saveMessage(sessionId, "assistant", answer, "FINE_TUNED");
+        String generationMode = !modelReady
+                ? "FINE_TUNED_NOT_READY"
+                : (outOfScope ? "FINE_TUNED_SCOPE" : "FINE_TUNED");
+        ChatMessage assistantMessage = saveMessage(sessionId, "assistant", answer, generationMode);
         return new ChatDto.AskResponse(
                 sessionId,
                 savedUserMessage.getMessageId(),
@@ -528,8 +568,8 @@ public class ChatService {
                 answer,
                 responseMode,
                 modelName,
-                "FINE_TUNED",
-                null,
+                generationMode,
+                retrievalQueryId,
                 new ArrayList<>()
         );
     }
@@ -557,26 +597,17 @@ public class ChatService {
         request.scopeType = normalizedSessionScope(session);
         request.queryText = question;
         request.embeddingModelId = session.getSelectedEmbeddingModelId();
-        request.topK = needsExpandedContext(question) ? 40 : 5;
+        request.topK = retrievalTopK(question);
         request.similarityThreshold = RetrievalService.DEFAULT_SIMILARITY_THRESHOLD;
         return retrievalService.retrieve(request);
     }
 
-    private boolean needsExpandedContext(String question) {
-        if (question == null || question.isBlank()) {
-            return false;
+    private int retrievalTopK(String question) {
+        QuestionIntentAnalyzer.QueryIntent intent = QuestionIntentAnalyzer.analyze(question);
+        if (intent.hasSection() || intent.summary() || intent.exhaustive()) {
+            return 40;
         }
-        String normalized = normalizeText(question);
-        return isSummaryQuestion(question)
-                || normalized.contains("tat ca")
-                || normalized.contains("toan bo")
-                || normalized.contains("liet ke")
-                || normalized.contains("danh sach")
-                || normalized.contains("tu vung")
-                || normalized.contains("ngu phap")
-                || normalized.contains("mau cau")
-                || normalized.contains("vi du")
-                || normalized.contains("bai tap");
+        return intent.requiresExpandedContext() ? 10 : 5;
     }
 
     private boolean isSummaryQuestion(String question) {
@@ -615,6 +646,7 @@ public class ChatService {
         context.filename = firstNonBlank(chunk.filename, chunk.documentTitle);
         context.page = chunk.pageStart;
         context.content = chunk.content;
+        context.score = chunk.similarityScore;
         return context;
     }
 

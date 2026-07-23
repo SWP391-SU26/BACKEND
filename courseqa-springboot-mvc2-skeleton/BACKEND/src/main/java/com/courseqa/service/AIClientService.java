@@ -31,6 +31,9 @@ public class AIClientService {
     @Value("${python.ai.service.benchmark-timeout-seconds:1800}")
     private int benchmarkTimeoutSeconds;
 
+    @Value("${python.ai.service.finetuned-timeout-seconds:180}")
+    private int finetunedTimeoutSeconds;
+
     public AIClientService(WebClient webClient) {
         this.webClient = webClient;
     }
@@ -75,15 +78,29 @@ public class AIClientService {
                 .block();
     }
 
+    public PythonAiDto.EmbedResponse callEmbed(PythonAiDto.EmbedRequest request) {
+        log.info("Calling Python AI Engine /api/embed for {} texts",
+                request.texts == null ? 0 : request.texts.size());
+        return webClient.post()
+                .uri(pythonAiServiceUrl + "/api/embed")
+                .bodyValue(request)
+                .retrieve()
+                .bodyToMono(PythonAiDto.EmbedResponse.class)
+                .timeout(Duration.ofSeconds(MODEL_WARMUP_TIMEOUT_SECONDS))
+                .retryWhen(Retry.max(1).filter(this::isConnectionFailure))
+                .onErrorMap(this::handleError)
+                .block();
+    }
+
     public <T> T callChatFinetuned(Object request, Class<T> responseType) {
         log.info("Calling Python AI Engine /ai/chat-finetuned");
 
         return webClient.post()
-                .uri(pythonAiServiceUrl + "/ai/chat-finetuned")  // ⚠️ not implemented in Python yet
+                .uri(pythonAiServiceUrl + "/ai/chat-finetuned")
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(responseType)
-                .timeout(Duration.ofSeconds(CHAT_TIMEOUT_SECONDS))
+                .timeout(Duration.ofSeconds(finetunedTimeoutSeconds))
                 .retryWhen(Retry.backoff(MAX_RETRIES, Duration.ofMillis(200))
                         .filter(throwable -> isRetryableError(throwable))
                         .doBeforeRetry(retrySignal ->

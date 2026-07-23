@@ -76,6 +76,27 @@ class SentenceTransformerEmbeddingProvider(EmbeddingProvider):
         return [vector.tolist() for vector in vectors]
 
 
+class FastEmbedEmbeddingProvider(EmbeddingProvider):
+    """CPU-friendly ONNX embeddings for fully offline runtime after first download."""
+
+    def __init__(self, model: str, cache_folder: str | None = None) -> None:
+        from fastembed import TextEmbedding
+
+        self.name = "fastembed-onnx"
+        self.model = model
+        self._model = TextEmbedding(model_name=model, cache_dir=cache_folder, threads=4)
+
+    def embed_texts(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        normalized: list[list[float]] = []
+        for vector in self._model.embed(texts, batch_size=32):
+            values = vector.tolist()
+            norm = math.sqrt(sum(value * value for value in values)) or 1.0
+            normalized.append([value / norm for value in values])
+        return normalized
+
+
 class OpenAIEmbeddingProvider(EmbeddingProvider):
     def __init__(self, model: str, api_key: str) -> None:
         from openai import OpenAI
@@ -97,6 +118,11 @@ def get_embedding_provider(settings: AppSettings) -> EmbeddingProvider:
         return OpenAIEmbeddingProvider(settings.embedding_model, settings.openai_api_key)
     if provider in {"sentence-transformers", "sentence_transformers", "hf"}:
         return SentenceTransformerEmbeddingProvider(
+            settings.embedding_model,
+            cache_folder=str(settings.model_cache_dir),
+        )
+    if provider in {"fastembed", "fastembed-onnx", "onnx"}:
+        return FastEmbedEmbeddingProvider(
             settings.embedding_model,
             cache_folder=str(settings.model_cache_dir),
         )

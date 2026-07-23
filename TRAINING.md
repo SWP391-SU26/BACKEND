@@ -77,7 +77,9 @@ CSV benchmark đầy đủ cũng dùng được:
 question,expected_answer,expected_source,expected_page,subject,is_out_of_scope,category
 ```
 
-Các dòng thiếu `question`, thiếu `expected_answer`, hoặc `is_out_of_scope=true` sẽ bị bỏ qua khi tạo dữ liệu train.
+Các dòng trong phạm vi phải có `question`, `expected_answer` và `expected_source`.
+Các dòng `is_out_of_scope=true` được giữ lại và tự gán câu trả lời từ chối chuẩn để model học không bịa.
+Mỗi bộ dữ liệu production cần tối thiểu 10 câu ngoài phạm vi và nên có 200-500 cặp hỏi đáp chất lượng cho mỗi môn.
 
 ## 4. Dry-run trước khi train
 
@@ -151,6 +153,16 @@ set LORA_ADAPTER_DIR=models\final-demo
 set LOCAL_MAX_NEW_TOKENS=40
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
 ```
+
+Trước khi cấu hình adapter vào `.env`, bắt buộc chạy behavioral quality gate:
+
+```cmd
+python experiments\validate_finetuned_adapter.py --adapter models\final-demo
+```
+
+Adapter chỉ được runtime nạp khi `training_manifest.json` có `quality_gate.passed=true`.
+Gate kiểm tra cả loss, quy mô dữ liệu, số câu refusal, F1 trên validation và refusal accuracy;
+adapter train xong nhưng trả lời kém sẽ bị chặn thay vì tự động đưa vào sử dụng.
 
 ## 7. Lưu ý khi share cho team
 

@@ -104,3 +104,35 @@ def test_rag_context_selection_respects_input_budget() -> None:
 
     assert len(included) < len(contexts)
     assert generator._message_token_count(messages) <= 448
+
+
+def test_vietnamese_finetuned_answer_is_retried_when_it_contains_chinese(monkeypatch) -> None:
+    generator = generator_without_model()
+    generated = iter([["Triết học是哲学。"], ["Triết học là hệ thống tri thức lý luận."]])
+    monkeypatch.setattr(generator, "_generate_messages_batch", lambda *_args, **_kwargs: next(generated))
+
+    answers = generator.generate_without_context_batch(
+        ["Triết học là gì?"],
+        allowed_sources=[["triethoc.pdf"]],
+        strict=True,
+        max_new_tokens=64,
+        max_input_tokens=448,
+    )
+
+    assert answers == ["Triết học là hệ thống tri thức lý luận."]
+
+
+def test_vietnamese_finetuned_answer_refuses_if_retry_still_contains_chinese(monkeypatch) -> None:
+    generator = generator_without_model()
+    generated = iter([["Triết học是哲学。"], ["哲学是知识。"]])
+    monkeypatch.setattr(generator, "_generate_messages_batch", lambda *_args, **_kwargs: next(generated))
+
+    answers = generator.generate_without_context_batch(
+        ["Triết học là gì?"],
+        allowed_sources=[["triethoc.pdf"]],
+        strict=True,
+        max_new_tokens=64,
+        max_input_tokens=448,
+    )
+
+    assert answers == ["Tôi chưa tìm thấy thông tin này trong tài liệu đã được huấn luyện."]
