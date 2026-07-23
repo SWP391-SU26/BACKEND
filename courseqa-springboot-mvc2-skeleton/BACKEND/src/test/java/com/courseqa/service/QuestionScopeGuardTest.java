@@ -38,6 +38,18 @@ class QuestionScopeGuardTest {
     }
 
     @Test
+    void allowsCjkQuestionWhenRetrievalAlreadyFoundContext() {
+        RagDto.RetrievalResponse retrieval = retrieval("""
+                これは日本語の教材です。人工知能は人間の知的活動を計算機で実現する技術分野です。
+                """);
+
+        QuestionScopeGuard.GuardDecision decision = guard.postRetrievalCheck(
+                "人工知能とは何ですか？", retrieval);
+
+        assertTrue(decision.allowed());
+    }
+
+    @Test
     void refusesWhenOnlyOneRiskyShortTokenIsGrounded() {
         RagDto.RetrievalResponse retrieval = retrieval("""
                 Trong tài liệu có một đoạn nhắc đến arg như average number trong ví dụ thống kê.
@@ -50,27 +62,18 @@ class QuestionScopeGuardTest {
     }
 
     @Test
-    void refusesBroadOutOfScopeEndUserQuestionsBeforeRetrieval() {
+    void refusesOnlyUniversalOutOfScopeRequestsBeforeRetrieval() {
         List<String> questions = List.of(
                 "tỉ số của arg và tbn là gì ?",
                 "Dự báo thời tiết Hà Nội ngày mai thế nào?",
                 "Giá Bitcoin hôm nay tăng hay giảm?",
-                "Viết code Java sắp xếp mảng giúp tôi",
-                "Dịch câu này sang tiếng Anh: tôi đang học bài",
                 "Lịch chiếu phim tối nay ở CGV có gì?",
                 "Kết quả xổ số miền Nam hôm nay là gì?",
                 "Tổng thống Mỹ hiện nay là ai?",
-                "Tư vấn mua laptop dưới 15 triệu nên chọn máy nào?",
-                "Lập thực đơn giảm cân 7 ngày cho tôi",
                 "Mật khẩu admin của hệ thống là gì?",
-                "Kể một câu chuyện cười ngắn đi",
-                "Tạo cho tôi một logo quán cà phê",
-                "Giải phương trình x^2 - 5x + 6 = 0",
                 "Triết học FC đá với Lênin FC tỉ số bao nhiêu?",
-                "Chủ nghĩa duy vật biện chứng có phải tên bài hát không?",
                 "Cho tôi mã giảm giá Shopee mới nhất",
                 "Hôm nay vàng SJC bao nhiêu một lượng?",
-                "Tôi bị đau đầu nên uống thuốc gì?",
                 "Đặt lịch nhắc tôi 8 giờ tối mai học bài"
         );
 
@@ -79,6 +82,40 @@ class QuestionScopeGuardTest {
 
             assertEquals(QuestionScopeGuard.GuardAction.REFUSE, decision.action(), question);
         }
+    }
+
+    @Test
+    void allowsDomainFlexibleStudyQuestionsToBeDecidedByRetrievalOrTrainedData() {
+        List<String> questions = List.of(
+                "Viết code Java sắp xếp mảng giúp tôi",
+                "Dịch câu này sang tiếng Anh: tôi đang học bài",
+                "Tư vấn mua laptop dưới 15 triệu nên chọn máy nào?",
+                "Lập thực đơn giảm cân 7 ngày cho tôi",
+                "Kể một câu chuyện cười ngắn đi",
+                "Tạo cho tôi một logo quán cà phê",
+                "Giải phương trình x^2 - 5x + 6 = 0",
+                "Chủ nghĩa duy vật biện chứng có phải tên bài hát không?",
+                "Tôi bị đau đầu nên uống thuốc gì?"
+        );
+
+        for (String question : questions) {
+            QuestionScopeGuard.GuardDecision decision = guard.preCheck(question);
+
+            assertTrue(decision.allowed(), question);
+        }
+    }
+
+    @Test
+    void refusesDomainFlexibleQuestionWhenRetrievedContextDoesNotGroundIt() {
+        RagDto.RetrievalResponse retrieval = retrieval("""
+                Triết học trong tiếng Hy Lạp cổ là philosophia, nghĩa là yêu mến sự thông thái.
+                Chủ nghĩa duy tâm cho rằng ý thức, tinh thần là cái có trước.
+                """);
+
+        QuestionScopeGuard.GuardDecision decision = guard.postRetrievalCheck(
+                "Dịch câu này sang tiếng Anh: tôi đang học bài", retrieval);
+
+        assertEquals(QuestionScopeGuard.GuardAction.REFUSE, decision.action());
     }
 
     private RagDto.RetrievalResponse retrieval(String content) {
