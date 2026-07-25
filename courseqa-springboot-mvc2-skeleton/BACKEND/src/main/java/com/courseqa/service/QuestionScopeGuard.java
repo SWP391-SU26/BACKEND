@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class QuestionScopeGuard {
+    private static final double STRONG_SEMANTIC_EVIDENCE = 0.68;
     public static final String REFUSE_MESSAGE =
             "Mình chỉ trả lời dựa trên tài liệu môn học đã chọn. "
                     + "Câu hỏi này chưa thấy liên quan đến tài liệu, bạn hỏi lại về nội dung trong tài liệu nhé.";
@@ -88,13 +89,32 @@ public class QuestionScopeGuard {
             return GuardDecision.refuse(REFUSE_MESSAGE);
         }
 
-        if (containsCjk(question)) {
+        // For an explicit document scope, retrieval has already constrained the
+        // context to the selected document IDs. Generic commands do not contain
+        // subject keywords that can overlap Japanese or other foreign-language
+        // content, so the selected document itself is sufficient grounding.
+        QuestionIntentAnalyzer.QueryIntent intent = QuestionIntentAnalyzer.analyze(question);
+        if ((!intent.asksMeaning() && containsCjk(question))
+                || isGenericDocumentSummary(question)
+                || (intent.hasSection() && !intent.asksMeaning())) {
             return GuardDecision.allow();
         }
 
         List<String> keyTerms = keyTerms(question);
         if (keyTerms.isEmpty()) {
             return GuardDecision.clarify(CLARIFY_MESSAGE);
+        }
+        if (intent.asksMeaning() && !hasMeaningEvidence(keyTerms, retrieval.results)) {
+            return GuardDecision.refuse(REFUSE_MESSAGE);
+        }
+        if (intent.asksMeaning() && containsCjk(question)) {
+            return GuardDecision.allow();
+        }
+        if (!intent.asksMeaning() && hasStrongSemanticEvidence(retrieval.results)) {
+            return GuardDecision.allow();
+        }
+        if (keyTerms.size() >= 2 && !hasDistinctivePhraseEvidence(question, retrieval.results)) {
+            return GuardDecision.refuse(REFUSE_MESSAGE);
         }
 
         List<String> contextTokens = retrieval.results.stream()
@@ -126,6 +146,61 @@ public class QuestionScopeGuard {
             return GuardDecision.refuse(REFUSE_MESSAGE);
         }
         return GuardDecision.allow();
+    }
+
+    private boolean hasMeaningEvidence(List<String> queryTerms, List<RagDto.RetrievedChunk> results) {
+        Set<String> querySet = new HashSet<>(queryTerms);
+        return results.stream().limit(3).anyMatch(chunk -> tokens(chunk.content).stream()
+                .filter(token -> !STOP_WORDS.contains(token) && !QUESTION_WORDS.contains(token))
+                .anyMatch(token -> !querySet.contains(token)));
+    }
+
+    private boolean hasStrongSemanticEvidence(List<RagDto.RetrievedChunk> results) {
+        return results.stream().limit(3)
+                .map(chunk -> chunk.similarityScore)
+                .filter(java.util.Objects::nonNull)
+                .anyMatch(score -> score >= STRONG_SEMANTIC_EVIDENCE);
+    }
+
+    private boolean hasDistinctivePhraseEvidence(String question, List<RagDto.RetrievedChunk> results) {
+        List<String> questionTokens = tokens(question);
+        if (questionTokens.size() < 2) {
+            return false;
+        }
+        Set<String> contextBigrams = new HashSet<>();
+        Set<String> contextTrigrams = new HashSet<>();
+        results.stream().limit(3).forEach(chunk -> {
+            List<String> contentTokens = tokens(chunk.content);
+            for (int index = 0; index + 2 <= contentTokens.size(); index++) {
+                contextBigrams.add(String.join(" ", contentTokens.subList(index, index + 2)));
+            }
+            for (int index = 0; index + 3 <= contentTokens.size(); index++) {
+                contextTrigrams.add(String.join(" ", contentTokens.subList(index, index + 3)));
+            }
+        });
+
+        for (int index = 0; index + 3 <= questionTokens.size(); index++) {
+            List<String> phraseTokens = questionTokens.subList(index, index + 3);
+            boolean allGeneric = phraseTokens.stream()
+                    .allMatch(token -> STOP_WORDS.contains(token) || QUESTION_WORDS.contains(token));
+            if (!allGeneric && contextTrigrams.contains(String.join(" ", phraseTokens))) {
+                return true;
+            }
+        }
+
+        int matchedBigrams = 0;
+        Set<String> counted = new HashSet<>();
+        for (int index = 0; index + 2 <= questionTokens.size(); index++) {
+            List<String> phraseTokens = questionTokens.subList(index, index + 2);
+            boolean allGeneric = phraseTokens.stream()
+                    .allMatch(token -> STOP_WORDS.contains(token) || QUESTION_WORDS.contains(token));
+            String phrase = String.join(" ", phraseTokens);
+            if (!allGeneric && contextBigrams.contains(phrase) && counted.add(phrase)) {
+                matchedBigrams++;
+            }
+        }
+        int requiredBigrams = questionTokens.size() >= 5 ? 2 : 1;
+        return matchedBigrams >= requiredBigrams;
     }
 
     List<String> keyTerms(String question) {
@@ -169,6 +244,23 @@ public class QuestionScopeGuard {
 
     private boolean hasRiskyShortTerm(List<String> keyTerms) {
         return keyTerms.stream().anyMatch(term -> term.length() <= 3);
+    }
+
+    private boolean isGenericDocumentSummary(String question) {
+        String normalized = String.join(" ", tokens(question));
+        return normalized.matches("^(tom tat|tong hop)( noi dung| tai lieu)?$")
+                || normalized.matches("^noi dung( chinh)?( cua tai lieu)?$")
+                || normalized.matches("^(summary|summarize)( document| file)?$")
+                || isGenericJapaneseSummary(question);
+    }
+
+    private boolean isGenericJapaneseSummary(String question) {
+        String value = question == null ? "" : question;
+        boolean summaryCommand = value.contains("まとめ") || value.contains("要約") || value.contains("概要");
+        boolean documentReference = value.contains("資料") || value.contains("文書")
+                || value.contains("ファイル") || value.contains("内容") || value.contains("これ")
+                || value.contains("この");
+        return summaryCommand && documentReference;
     }
 
     private boolean containsCjk(String value) {

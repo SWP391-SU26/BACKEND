@@ -27,6 +27,11 @@ def main() -> None:
     parser.add_argument("--output-dir", default=None)
     parser.add_argument("--validation-ratio", type=float, default=0.2)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--retain-all-knowledge",
+        action="store_true",
+        help="Train on every approved fact and validate on instruction/paraphrase variants.",
+    )
     parser.add_argument("--prepare-only", action="store_true", help="Only create train/validation JSONL.")
     parser.add_argument("--dry-run", action="store_true", help="Prepare data, validate config, then stop.")
     args = parser.parse_args()
@@ -45,6 +50,7 @@ def main() -> None:
         output_dir=dataset_dir,
         validation_ratio=args.validation_ratio,
         seed=args.seed,
+        retain_all_knowledge=args.retain_all_knowledge,
     )
 
     config = json.loads(base_config_path.read_text(encoding="utf-8"))

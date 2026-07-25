@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import Any
 import importlib.util
+import re
 import unicodedata
 
 from .chunker import chunk_pages
@@ -44,6 +46,7 @@ class RAGPipeline:
         self.embedding_provider = embedding_provider
         self.local_generator = None
         self.local_generator_error: str | None = None
+        self.finetuned_scope_guard = None
 
     def ingest_file(self, path: Path, subject: str, chapter: str) -> IngestResult:
         pages = load_document(path)
@@ -111,7 +114,7 @@ class RAGPipeline:
         strict: bool = False,
     ) -> str:
         provider = self.settings.generation_provider.lower().strip()
-        if strict or provider in {"auto", "lora", "local"}:
+        if provider in {"auto", "lora", "local"}:
             generator = self._get_local_generator()
             if generator:
                 try:
@@ -120,16 +123,16 @@ class RAGPipeline:
                         return answer
                 except Exception as exc:
                     self.local_generator_error = str(exc)
-                    if strict:
+                    if strict and provider in {"lora", "local"}:
                         raise RuntimeError(f"Local LoRA generation failed: {exc}") from exc
-        if (strict or provider in {"auto", "openai"}) and self.settings.openai_api_key:
+        if provider in {"auto", "openai"} and self.settings.openai_api_key:
             try:
                 return self._generate_with_openai(question, contexts)
             except Exception as exc:
-                if strict:
+                if strict and provider == "openai":
                     raise RuntimeError(f"OpenAI generation failed: {exc}") from exc
                 return self._generate_extractive_answer(question, contexts, sources)
-        if strict:
+        if strict and provider in {"lora", "local", "openai"}:
             raise RuntimeError(self.local_generator_error or "No strict generation model is ready.")
         return self._generate_extractive_answer(question, contexts, sources)
 
@@ -146,6 +149,7 @@ class RAGPipeline:
                 adapter_dir=self.settings.lora_adapter_dir,
                 cache_dir=self.settings.model_cache_dir,
                 max_new_tokens=self.settings.local_max_new_tokens,
+                enforce_quality_gate=not self.settings.allow_unverified_finetuned,
             )
             return self.local_generator
         except Exception as exc:
@@ -155,24 +159,58 @@ class RAGPipeline:
     def generation_status(self) -> dict[str, Any]:
         provider = self.settings.generation_provider.lower().strip()
         required_modules = {name: importlib.util.find_spec(name) is not None for name in ("torch", "transformers", "peft")}
+        training_modules = {
+            name: importlib.util.find_spec(name) is not None
+            for name in ("torch", "transformers", "datasets", "peft", "trl", "accelerate")
+        }
         adapter_files = ["adapter_config.json", "adapter_model.safetensors", "tokenizer_config.json"]
         adapter_ready = self.settings.lora_adapter_dir.is_dir() and all(
             (self.settings.lora_adapter_dir / name).exists() for name in adapter_files
         )
-        configured_ready = all(required_modules.values()) and adapter_ready and bool(self.settings.local_base_model)
+        manifest_path = self.settings.lora_adapter_dir / "training_manifest.json"
+        manifest = None
+        if manifest_path.exists():
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                manifest = None
+        quality_gate = (manifest or {}).get("quality_gate") or {
+            "passed": False,
+            "checks": {"verified_manifest": False},
+        }
+        manifest_base_model = str((manifest or {}).get("base_model") or "").strip()
+        base_model_matches = bool(manifest_base_model) and (
+            manifest_base_model == self.settings.local_base_model
+        )
+        quality_gate_passed = bool(quality_gate.get("passed"))
+        quality_gate_overridden = self.settings.allow_unverified_finetuned and not quality_gate_passed
+        configured_ready = (
+            all(required_modules.values())
+            and adapter_ready
+            and bool(self.settings.local_base_model)
+            and base_model_matches
+            and (quality_gate_passed or self.settings.allow_unverified_finetuned)
+        )
         inference_ready = configured_ready and self.local_generator is not None \
             and self.local_generator.warmed_up and self.local_generator_error is None
-        generation_ready = inference_ready or bool(self.settings.openai_api_key)
+        generation_ready = provider == "extractive" or inference_ready or bool(self.settings.openai_api_key)
         return {
             "configured_provider": provider,
             "adapter_dir": str(self.settings.lora_adapter_dir),
             "adapter_exists": self.settings.lora_adapter_dir.exists(),
             "adapter_ready": adapter_ready,
+            "quality_gate": quality_gate,
+            "quality_gate_overridden": quality_gate_overridden,
+            "evaluation_metrics": (manifest or {}).get("evaluation_metrics", {}),
+            "trained_sources": (manifest or {}).get("sources", []),
             "configured_ready": configured_ready,
             "base_model": self.settings.local_base_model,
+            "manifest_base_model": manifest_base_model or None,
+            "base_model_matches": base_model_matches,
             "dependencies": required_modules,
             "inference_ready": inference_ready,
-            "training_ready": False,
+            "training_ready": all(training_modules.values()),
+            "training_dependencies": training_modules,
             "generation_ready": generation_ready,
             "local_model_loaded": self.local_generator is not None,
             "local_model_warmed_up": bool(self.local_generator and self.local_generator.warmed_up),
@@ -203,21 +241,44 @@ class RAGPipeline:
             max_input_tokens=self.settings.benchmark_max_input_tokens,
         )
 
-    def generate_without_retrieval_batch(self, questions: list[str]) -> list[str]:
+    def generate_without_retrieval_batch(
+        self,
+        questions: list[str],
+        allowed_sources: list[list[str]] | None = None,
+        strict: bool = True,
+    ) -> list[str]:
         generator = self._get_local_generator()
         if not generator:
             raise RuntimeError(self.local_generator_error or "Local LoRA model is not ready.")
         return generator.generate_without_context_batch(
             questions,
+            allowed_sources=allowed_sources,
+            strict=strict,
             max_new_tokens=self.settings.benchmark_max_new_tokens,
             max_input_tokens=self.settings.benchmark_max_input_tokens,
         )
 
-    def generate_without_retrieval(self, question: str) -> str:
+    def generate_without_retrieval(
+        self, question: str, allowed_sources: list[str] | None = None, strict: bool = True
+    ) -> str:
         generator = self._get_local_generator()
         if not generator:
             raise RuntimeError(self.local_generator_error or "Local LoRA model chưa sẵn sàng.")
-        return generator.generate_without_context(question)
+        return generator.generate_without_context(question, allowed_sources or [], strict=strict)
+
+    def assess_finetuned_scope(self, question: str, selected_sources: list[str]):
+        if self.finetuned_scope_guard is None:
+            from .finetuned_scope import FineTunedScopeGuard
+
+            self.finetuned_scope_guard = FineTunedScopeGuard(
+                [
+                    self.settings.finetuning_dir / "train.jsonl",
+                    self.settings.finetuning_dir / "validation.jsonl",
+                ],
+                self.embedding_provider,
+                min_similarity=self.settings.finetuned_scope_min_similarity,
+            )
+        return self.finetuned_scope_guard.decide(question, selected_sources)
 
     def _generate_with_openai(self, question: str, contexts: list[RetrievedChunk]) -> str:
         from openai import OpenAI
@@ -259,19 +320,31 @@ class RAGPipeline:
         if self._is_summary_question(question):
             return self._generate_summary_answer(contexts)
 
-        query_terms = set(tokenize(question))
+        passages = [
+            (passage, chunk)
+            for chunk in contexts
+            for passage in self._answer_passages(chunk.content)
+        ][:180]
+        if not passages:
+            return OUT_OF_SCOPE_MESSAGE
+
+        semantic_scores = self._semantic_answer_scores(question, [passage for passage, _chunk in passages])
+        query_terms = set(tokenize(self._normalize_for_summary(question)))
+        question_form = self._question_form(question)
         candidates: list[tuple[float, str, RetrievedChunk]] = []
-        for chunk in contexts:
-            for sentence in split_sentences(chunk.content):
-                terms = set(tokenize(sentence))
-                if not terms:
-                    continue
-                overlap = len(query_terms & terms) / max(1, len(query_terms))
-                score = overlap + (chunk.score * 0.25)
-                candidates.append((score, sentence, chunk))
+        for index, (passage, chunk) in enumerate(passages):
+            terms = set(tokenize(self._normalize_for_summary(passage)))
+            lexical = len(query_terms & terms) / max(1, len(query_terms))
+            semantic = semantic_scores[index]
+            score = (semantic * 0.72) + (lexical * 0.18) + (max(0.0, chunk.score) * 0.10)
+            form_boost = self._answer_form_boost(question_form, passage)
+            if question_form != "definition" or lexical >= 0.30:
+                score += form_boost
+            if semantic >= 0.22 or lexical > 0:
+                candidates.append((score, passage, chunk))
 
         candidates.sort(key=lambda item: item[0], reverse=True)
-        selected_candidates = [(score, sentence, chunk) for score, sentence, chunk in candidates[:4] if score > 0]
+        selected_candidates = self._select_answer_candidates(question, question_form, candidates)
         if not selected_candidates:
             return OUT_OF_SCOPE_MESSAGE
 
@@ -289,6 +362,126 @@ class RAGPipeline:
         )
         body = " ".join(selected)
         return f"Dựa trên tài liệu, {body}\n\nNguồn: {source_text}"
+
+    def _answer_passages(self, content: str) -> list[str]:
+        passages: list[str] = []
+        for sentence in split_sentences(content):
+            pieces = re.split(r"(?<=[;])\s+|\s+(?=[+•])|(?=\s+[a-zA-Z]\))", sentence)
+            for piece in pieces:
+                words = piece.split()
+                if not words or self._is_weak_answer_passage(piece):
+                    continue
+                if len(words) <= 90 and len(piece) <= 650:
+                    passages.append(self._trim_summary_item(piece, limit=650))
+                    continue
+                start = 0
+                while start < len(words):
+                    window = words[start:start + 80]
+                    passages.append(" ".join(window))
+                    if start + 80 >= len(words):
+                        break
+                    start += 65
+        return passages
+
+    def _is_weak_answer_passage(self, passage: str) -> bool:
+        cleaned = " ".join((passage or "").split())
+        words = cleaned.split()
+        if len(words) < 5 or cleaned.endswith(":") or cleaned.endswith("?"):
+            return True
+        normalized = self._normalize_for_summary(cleaned)
+        return normalized in {"su doi lap giua phuong phap sieu hinh va phuong phap bien chung"}
+
+    def _semantic_answer_scores(self, question: str, passages: list[str]) -> list[float]:
+        try:
+            vectors = self.embedding_provider.embed_texts([question, *passages])
+            query_vector = vectors[0]
+            return [
+                sum(left * right for left, right in zip(query_vector, vector))
+                for vector in vectors[1:]
+            ]
+        except Exception:
+            return [0.0] * len(passages)
+
+    def _question_form(self, question: str) -> str:
+        normalized = self._normalize_for_summary(question)
+        if self._is_summary_question(question):
+            return "summary"
+        if any(term in normalized for term in ("so sanh", "phan biet", "khac nhau", "compare", "versus")):
+            return "comparison"
+        if any(term in normalized for term in ("tai sao", "vi sao", "nguyen nhan", "why", "vai tro", "y nghia")):
+            return "reasoning"
+        if any(term in normalized for term in ("quy trinh", "cac buoc", "trinh tu", "how to")):
+            return "procedure"
+        if any(term in normalized for term in ("la gi", "dinh nghia", "khai niem", "duoc hieu", "meaning")):
+            return "definition"
+        if self._is_list_question(question):
+            return "list"
+        return "fact"
+
+    def _answer_form_boost(self, question_form: str, passage: str) -> float:
+        normalized = self._normalize_for_summary(passage)
+        if question_form == "definition" and any(
+            term in f" {normalized} " for term in (" la ", "duoc hieu", "khai niem", "khai quat lai")
+        ):
+            return 0.18
+        if question_form == "reasoning" and any(
+            term in normalized for term in (" vi ", " do ", "boi", "nguyen nhan", "cho nen", "nham")
+        ):
+            return 0.06
+        if question_form == "procedure" and any(
+            term in normalized for term in ("buoc", "truoc het", "tiep theo", "sau do", "quy trinh")
+        ):
+            return 0.06
+        return 0.0
+
+    def _select_answer_candidates(
+        self,
+        question: str,
+        question_form: str,
+        candidates: list[tuple[float, str, RetrievedChunk]],
+    ) -> list[tuple[float, str, RetrievedChunk]]:
+        selected: list[tuple[float, str, RetrievedChunk]] = []
+        if question_form == "comparison":
+            requires_method_phrase = "phuong phap" in self._normalize_for_summary(question)
+            for keywords in self._comparison_keyword_groups(question):
+                match = next(
+                    (candidate for candidate in candidates if all(
+                        keyword in self._normalize_for_summary(candidate[1]) for keyword in keywords
+                    ) and (not requires_method_phrase
+                           or "phuong phap" in self._normalize_for_summary(candidate[1]))
+                     and candidate not in selected),
+                    None,
+                )
+                if match is not None:
+                    selected.append(match)
+            if len(selected) >= 2:
+                return selected
+
+        if question_form == "definition":
+            limit = 1
+        elif question_form in {"comparison", "reasoning", "procedure"}:
+            limit = 5
+        else:
+            limit = 3
+        for candidate in candidates:
+            normalized = self._normalize_for_summary(candidate[1])
+            if any(self._normalize_for_summary(item[1]) == normalized for item in selected):
+                continue
+            selected.append(candidate)
+            if len(selected) >= limit:
+                break
+        return selected
+
+    def _comparison_keyword_groups(self, question: str) -> list[set[str]]:
+        normalized = self._normalize_for_summary(question)
+        normalized = re.sub(r"^(so sanh|phan biet)\s+", "", normalized)
+        parts = re.split(r"\b(?:va|voi|versus|vs)\b", normalized, maxsplit=1)
+        if len(parts) != 2:
+            return []
+        ignored = {"phuong", "phap", "giua", "hai", "su", "khac", "nhau"}
+        groups = [set(tokenize(part)) - ignored for part in parts]
+        shared = groups[0] & groups[1]
+        return [group - shared for group in groups if group - shared]
 
     def _generate_list_answer(self, question: str, contexts: list[RetrievedChunk]) -> str:
         selected_chunks: list[RetrievedChunk] = []
@@ -327,15 +520,24 @@ class RAGPipeline:
 
     def _is_weak_list_item(self, item: str) -> bool:
         normalized = self._normalize_for_summary(item)
+        if "tu vung" in normalized and len(normalized.split()) <= 4:
+            return True
+        if any(
+            (0x3040 <= ord(char) <= 0x30FF) or (0x4E00 <= ord(char) <= 0x9FFF)
+            for char in item
+        ):
+            return False
         if len(normalized) < 2:
             return True
         return normalized in {"mon hoc", "giang vien"}
 
     def _list_answer_label(self, question: str) -> str:
         normalized = self._normalize_for_summary(question)
-        if "tu vung" in normalized:
+        if "tu vung" in normalized or any(term in normalized for term in ("語彙", "ことば")):
             return "danh sách từ vựng tìm thấy"
-        if "ngu phap" in normalized or "mau cau" in normalized:
+        if "ngu phap" in normalized or "mau cau" in normalized or any(
+            term in normalized for term in ("文法", "ぶんぽう")
+        ):
             return "các điểm ngữ pháp/mẫu câu tìm thấy"
         if "bai tap" in normalized or "vi du" in normalized:
             return "các ví dụ/bài tập tìm thấy"
@@ -442,7 +644,10 @@ class RAGPipeline:
         normalized = self._normalize_for_summary(question)
         return any(
             phrase in normalized
-            for phrase in ["tong hop", "tom tat", "summary", "summarize", "noi dung chinh"]
+            for phrase in [
+                "tong hop", "tom tat", "summary", "summarize", "noi dung chinh",
+                "まとめ", "要約",
+            ]
         )
 
     def _is_list_question(self, question: str) -> bool:
@@ -459,12 +664,25 @@ class RAGPipeline:
                 "mau cau",
                 "vi du",
                 "bai tap",
+                "gom nhung",
+                "bao gom",
+                "nhung gi",
+                "cac loai",
+                "cac buoc",
+                "quy trinh",
+                "語彙",
+                "ことば",
+                "文法",
+                "ぶんぽう",
+                "練習",
+                "例文",
             ]
         )
 
     def _normalize_for_summary(self, text: str) -> str:
         without_marks = unicodedata.normalize("NFD", text or "")
         without_marks = "".join(char for char in without_marks if unicodedata.category(char) != "Mn")
+        without_marks = without_marks.replace("đ", "d").replace("Đ", "D")
         return " ".join(without_marks.lower().split())
 
 

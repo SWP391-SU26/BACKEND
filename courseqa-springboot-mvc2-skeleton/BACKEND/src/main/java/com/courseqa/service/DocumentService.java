@@ -50,9 +50,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class DocumentService {
-    private static final int CHUNK_SIZE = 700;
-    private static final int CHUNK_OVERLAP = 120;
-    private static final String CHUNK_STRATEGY = "paragraph_700_120";
+    private static final int CHUNK_SIZE = 260;
+    private static final int CHUNK_OVERLAP = 50;
+    private static final String CHUNK_STRATEGY = "paragraph_260_50";
     private static final long PERSONAL_FILE_LIMIT = 20L * 1024 * 1024;
     private static final long PERSONAL_STORAGE_LIMIT = 200L * 1024 * 1024;
     private static final long PERSONAL_DOCUMENT_LIMIT = 20;
@@ -233,7 +233,7 @@ public class DocumentService {
             document.setProcessingStatus("PROCESSING");
             document.setDocumentScope(request.courseId == null ? "PERSONAL" : "COURSE");
             document.setReviewStatus(request.courseId == null ? "NOT_SUBMITTED" : "APPROVED");
-            document.setLanguage("vi");
+            document.setLanguage("und");
             document.setUploadedAt(now);
             document.setUpdatedAt(now);
 
@@ -679,6 +679,7 @@ public class DocumentService {
             List<DocumentChunk> chunks = saveChunks(document, pages);
 
             document.setTotalPages(pages.size());
+            document.setLanguage(detectDocumentLanguage(extractedPages));
             document.setProcessingStatus(chunks.isEmpty() ? "NO_TEXT" : "PROCESSED");
             document.setErrorMessage(null);
             document.setUpdatedAt(LocalDateTime.now());
@@ -690,6 +691,32 @@ public class DocumentService {
             courseDocumentRepository.save(document);
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Document processing failed: " + exception.getMessage());
         }
+    }
+
+    private String detectDocumentLanguage(List<ExtractedPage> pages) {
+        String sample = pages.stream()
+                .map(ExtractedPage::text)
+                .filter(text -> text != null && !text.isBlank())
+                .limit(20)
+                .reduce("", (left, right) -> left + " " + right);
+        if (sample.isBlank()) {
+            return "und";
+        }
+
+        long japanese = sample.codePoints().filter(codePoint ->
+                (codePoint >= 0x3040 && codePoint <= 0x30FF)
+                        || (codePoint >= 0x4E00 && codePoint <= 0x9FFF)).count();
+        long vietnamese = sample.codePoints().filter(codePoint ->
+                "ăâđêôơưĂÂĐÊÔƠƯáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ"
+                        .indexOf(codePoint) >= 0).count();
+
+        if (japanese >= 12 && japanese >= vietnamese * 2) {
+            return vietnamese >= 6 ? "ja-vi" : "ja";
+        }
+        if (vietnamese >= 4) {
+            return japanese >= 12 ? "vi-ja" : "vi";
+        }
+        return "und";
     }
 
     private List<DocumentPage> savePages(UUID documentId, List<ExtractedPage> extractedPages) {

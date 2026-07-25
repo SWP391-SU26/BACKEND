@@ -37,9 +37,25 @@ ALTER TABLE course_documents ALTER COLUMN document_scope NVARCHAR(20) NOT NULL;
 ALTER TABLE course_documents ALTER COLUMN review_status NVARCHAR(20) NOT NULL;
 GO
 
-IF NOT EXISTS (SELECT 1 FROM sys.default_constraints WHERE name = 'df_course_documents_scope')
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.default_constraints dc
+    JOIN sys.columns c
+      ON c.object_id = dc.parent_object_id
+     AND c.column_id = dc.parent_column_id
+    WHERE dc.parent_object_id = OBJECT_ID('course_documents')
+      AND c.name = 'document_scope'
+)
     ALTER TABLE course_documents ADD CONSTRAINT df_course_documents_scope DEFAULT 'COURSE' FOR document_scope;
-IF NOT EXISTS (SELECT 1 FROM sys.default_constraints WHERE name = 'df_course_documents_review_status')
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.default_constraints dc
+    JOIN sys.columns c
+      ON c.object_id = dc.parent_object_id
+     AND c.column_id = dc.parent_column_id
+    WHERE dc.parent_object_id = OBJECT_ID('course_documents')
+      AND c.name = 'review_status'
+)
     ALTER TABLE course_documents ADD CONSTRAINT df_course_documents_review_status DEFAULT 'APPROVED' FOR review_status;
 
 IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'chk_course_documents_scope')

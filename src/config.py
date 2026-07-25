@@ -40,6 +40,8 @@ class AppSettings:
     benchmark_batch_size: int = 4
     benchmark_max_new_tokens: int = 64
     benchmark_max_input_tokens: int = 448
+    finetuned_scope_min_similarity: float = 0.60
+    allow_unverified_finetuned: bool = False
 
 
 def load_settings() -> AppSettings:
@@ -48,6 +50,8 @@ def load_settings() -> AppSettings:
     adapter_value = Path(os.getenv("LORA_ADAPTER_DIR", LORA_ADAPTER_DIR))
     if not adapter_value.is_absolute():
         adapter_value = BASE_DIR / adapter_value
+    if not adapter_value.exists() and LORA_ADAPTER_DIR.exists():
+        adapter_value = LORA_ADAPTER_DIR
     return AppSettings(
         raw_dir=Path(os.getenv("RAW_DIR", RAW_DIR)),
         processed_dir=Path(os.getenv("PROCESSED_DIR", PROCESSED_DIR)),
@@ -71,6 +75,9 @@ def load_settings() -> AppSettings:
         benchmark_batch_size=max(1, int(os.getenv("BENCHMARK_BATCH_SIZE", "4"))),
         benchmark_max_new_tokens=max(1, int(os.getenv("BENCHMARK_MAX_NEW_TOKENS", "64"))),
         benchmark_max_input_tokens=max(64, int(os.getenv("BENCHMARK_MAX_INPUT_TOKENS", "448"))),
+        finetuned_scope_min_similarity=float(os.getenv("FINETUNED_SCOPE_MIN_SIMILARITY", "0.60")),
+        allow_unverified_finetuned=os.getenv("FINETUNING_ALLOW_UNVERIFIED", "false").strip().lower()
+        in {"1", "true", "yes", "on"},
     )
 
 
