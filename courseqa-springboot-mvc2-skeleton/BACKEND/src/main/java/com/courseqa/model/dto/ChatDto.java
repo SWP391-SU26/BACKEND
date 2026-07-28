@@ -93,6 +93,7 @@ public class ChatDto {
         public String answer;
         public String answerMode;
         public String modelName;
+        public String generationMode;
         public UUID retrievalQueryId;
         public List<CitationItem> citations;
 
@@ -125,6 +126,14 @@ public class ChatDto {
             this.retrievalQueryId = retrievalQueryId;
             this.citations = citations;
         }
+
+        public AskResponse(UUID chatSessionId, UUID userMessageId, UUID assistantMessageId,
+                           String answer, String answerMode, String modelName, String generationMode,
+                           UUID retrievalQueryId, List<CitationItem> citations) {
+            this(chatSessionId, userMessageId, assistantMessageId, answer, answerMode, modelName,
+                    retrievalQueryId, citations);
+            this.generationMode = generationMode;
+        }
     }
 
     @Data
@@ -135,8 +144,15 @@ public class ChatDto {
         private UUID chatSessionId;
         private UUID userId;
         private UUID workspaceId;
+        private UUID semesterId;
+        private UUID courseId;
+        private String scopeType;
+        private List<UUID> documentIds;
+        private String scopeLabel;
+        private String sessionTitle;
         private Boolean isActive;
         private LocalDateTime startedAt;
+        private LocalDateTime updatedAt;
     }
 
     @Data

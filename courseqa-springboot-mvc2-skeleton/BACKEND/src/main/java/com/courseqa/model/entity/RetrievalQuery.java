@@ -21,6 +21,12 @@ public class RetrievalQuery {
     @Column(name = "workspace_id")
     private UUID workspaceId;
 
+    @Column(name = "semester_workspace_id")
+    private UUID semesterWorkspaceId;
+
+    @Column(name = "scope_type")
+    private String scopeType;
+
     @Column(name = "query_text", columnDefinition = "NVARCHAR(MAX)")
     private String queryText;
 
@@ -64,6 +70,12 @@ public class RetrievalQuery {
 
     public UUID getWorkspaceId() { return workspaceId; }
     public void setWorkspaceId(UUID workspaceId) { this.workspaceId = workspaceId; }
+
+    public UUID getSemesterWorkspaceId() { return semesterWorkspaceId; }
+    public void setSemesterWorkspaceId(UUID value) { semesterWorkspaceId = value; }
+
+    public String getScopeType() { return scopeType; }
+    public void setScopeType(String value) { scopeType = value; }
 
     public String getQueryText() { return queryText; }
     public void setQueryText(String queryText) { this.queryText = queryText; }

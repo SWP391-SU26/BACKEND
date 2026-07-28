@@ -3,6 +3,9 @@ package com.courseqa.controller;
 import com.courseqa.model.dto.ApiResponse;
 import com.courseqa.model.entity.Experiment;
 import com.courseqa.service.FineTuningService;
+import com.courseqa.service.EvaluationService;
+import com.courseqa.security.JwtPrincipal;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -30,9 +33,11 @@ public class FineTuningController {
     private static final Logger log = LoggerFactory.getLogger(FineTuningController.class);
 
     private final FineTuningService fineTuningService;
+    private final EvaluationService evaluationService;
 
-    public FineTuningController(FineTuningService fineTuningService) {
+    public FineTuningController(FineTuningService fineTuningService, EvaluationService evaluationService) {
         this.fineTuningService = fineTuningService;
+        this.evaluationService = evaluationService;
     }
 
     /**
@@ -74,17 +79,13 @@ public class FineTuningController {
      */
     @PostMapping("/experiments")
     public ResponseEntity<ApiResponse<Experiment>> createExperimentRecord(
+            @AuthenticationPrincipal JwtPrincipal principal,
             @Valid @RequestBody CreateExperimentRecordRequest request) {
         log.info("POST /api/fine-tuning/experiments - name: {}, researcherId: {}", 
             request.getName(), request.getResearcherId());
 
-        Experiment experiment = fineTuningService.createExperimentRecord(
-                request.getName(),
-                request.getDatasetId(),
-                request.getResearcherId(),
-                request.getLlmModel(),
-                request.getConfigJson()
-        );
+        Experiment experiment = evaluationService.createExperiment(request.getDatasetId(), request.getName(),
+                "FINE_TUNED", request.getLlmModel(), request.getConfigJson(), principal.userId());
 
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(experiment));
     }
@@ -101,7 +102,6 @@ public class FineTuningController {
         @NotNull(message = "datasetId is required")
         private UUID datasetId;
 
-        @NotNull(message = "researcherId is required")
         private UUID researcherId;
 
         @NotBlank(message = "llmModel is required and cannot be empty")

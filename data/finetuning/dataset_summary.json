@@ -1,10 +1,27 @@
 {
-  "source_csv": "C:\\DEV\\SWP\\ground_truth_triethocmaclenin_100.csv",
-  "train_path": "C:\\DEV\\SWP\\BACKEND\\data\\finetuning\\train.jsonl",
-  "validation_path": "C:\\DEV\\SWP\\BACKEND\\data\\finetuning\\validation.jsonl",
-  "total_examples": 100,
-  "train_examples": 80,
-  "validation_examples": 20,
+  "source_csv": "D:\\swp-final\\BACKEND\\data\\ground_truth_triethocmaclenin_100.csv",
+  "train_path": "D:\\swp-final\\BACKEND\\data\\finetuning\\train.jsonl",
+  "validation_path": "D:\\swp-final\\BACKEND\\data\\finetuning\\validation.jsonl",
+  "total_examples": 112,
+  "train_examples": 112,
+  "validation_examples": 22,
   "validation_ratio": 0.2,
-  "seed": 42
+  "seed": 42,
+  "retain_all_knowledge": true,
+  "sources": [
+    "75770b9b-cdbf-4038-90e2-f25e1f4426fe_triethocmaclenin.pdf"
+  ],
+  "source_count": 1,
+  "in_scope_examples": 100,
+  "out_of_scope_examples": 12,
+  "dataset_fingerprint": "c4c4243fbb2c064579cd309ba7b84bebf0e19845a24a295a7e4cec4337944e6a",
+  "quality": {
+    "passed": true,
+    "issues": [],
+    "source_count": 1,
+    "refusal_examples": 12,
+    "duplicate_questions": 0,
+    "train_examples": 112,
+    "validation_examples": 22
+  }
 }

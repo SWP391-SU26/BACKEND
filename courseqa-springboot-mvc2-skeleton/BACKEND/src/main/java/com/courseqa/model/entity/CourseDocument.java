@@ -73,6 +73,27 @@ public class CourseDocument {
     @Column(name = "error_message", columnDefinition = "NVARCHAR(MAX)")
     private String errorMessage;
 
+    @Column(name = "document_scope")
+    private String documentScope;
+
+    @Column(name = "review_status")
+    private String reviewStatus;
+
+    @Column(name = "target_course_id")
+    private UUID targetCourseId;
+
+    @Column(name = "submitted_at")
+    private LocalDateTime submittedAt;
+
+    @Column(name = "reviewed_by")
+    private UUID reviewedBy;
+
+    @Column(name = "reviewed_at")
+    private LocalDateTime reviewedAt;
+
+    @Column(name = "rejection_reason", columnDefinition = "NVARCHAR(MAX)")
+    private String rejectionReason;
+
     @Column(name = "uploaded_at")
     private LocalDateTime uploadedAt;
 
@@ -140,6 +161,27 @@ public class CourseDocument {
 
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+
+    public String getDocumentScope() { return documentScope; }
+    public void setDocumentScope(String documentScope) { this.documentScope = documentScope; }
+
+    public String getReviewStatus() { return reviewStatus; }
+    public void setReviewStatus(String reviewStatus) { this.reviewStatus = reviewStatus; }
+
+    public UUID getTargetCourseId() { return targetCourseId; }
+    public void setTargetCourseId(UUID targetCourseId) { this.targetCourseId = targetCourseId; }
+
+    public LocalDateTime getSubmittedAt() { return submittedAt; }
+    public void setSubmittedAt(LocalDateTime submittedAt) { this.submittedAt = submittedAt; }
+
+    public UUID getReviewedBy() { return reviewedBy; }
+    public void setReviewedBy(UUID reviewedBy) { this.reviewedBy = reviewedBy; }
+
+    public LocalDateTime getReviewedAt() { return reviewedAt; }
+    public void setReviewedAt(LocalDateTime reviewedAt) { this.reviewedAt = reviewedAt; }
+
+    public String getRejectionReason() { return rejectionReason; }
+    public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }
 
     public LocalDateTime getUploadedAt() { return uploadedAt; }
     public void setUploadedAt(LocalDateTime uploadedAt) { this.uploadedAt = uploadedAt; }

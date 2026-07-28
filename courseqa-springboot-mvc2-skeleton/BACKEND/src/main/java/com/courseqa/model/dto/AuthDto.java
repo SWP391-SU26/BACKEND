@@ -24,6 +24,11 @@ public static class RegisterRequest {
         public String email;
     }
 
+    public static class ChangePasswordRequest {
+        public String currentPassword;
+        public String newPassword;
+    }
+
     public static class UpdateUserRoleRequest {
         public String roleName;
     }

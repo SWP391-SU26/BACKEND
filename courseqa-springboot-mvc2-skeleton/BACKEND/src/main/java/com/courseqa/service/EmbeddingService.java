@@ -1,5 +1,6 @@
 package com.courseqa.service;
 
+import com.courseqa.model.dto.PythonAiDto;
 import com.courseqa.model.dto.RagDto;
 import com.courseqa.model.entity.ChunkEmbedding;
 import com.courseqa.model.entity.DocumentChunk;
@@ -33,15 +34,18 @@ public class EmbeddingService {
     private final EmbeddingModelRepository embeddingModelRepository;
     private final DocumentChunkRepository documentChunkRepository;
     private final ChunkEmbeddingRepository chunkEmbeddingRepository;
+    private final AIClientService aiClientService;
 
     public EmbeddingService(
             EmbeddingModelRepository embeddingModelRepository,
             DocumentChunkRepository documentChunkRepository,
-            ChunkEmbeddingRepository chunkEmbeddingRepository
+            ChunkEmbeddingRepository chunkEmbeddingRepository,
+            AIClientService aiClientService
     ) {
         this.embeddingModelRepository = embeddingModelRepository;
         this.documentChunkRepository = documentChunkRepository;
         this.chunkEmbeddingRepository = chunkEmbeddingRepository;
+        this.aiClientService = aiClientService;
     }
 
     public List<RagDto.EmbeddingModelResponse> getEmbeddingModels() {
@@ -86,6 +90,7 @@ public class EmbeddingService {
 
         int created = 0;
         int skipped = 0;
+        List<DocumentChunk> missingChunks = new ArrayList<>();
         for (DocumentChunk chunk : chunks) {
             boolean exists = chunkEmbeddingRepository
                     .findByChunkIdAndEmbeddingModelId(chunk.getChunkId(), model.getEmbeddingModelId())
@@ -94,11 +99,16 @@ public class EmbeddingService {
                 skipped++;
                 continue;
             }
+            missingChunks.add(chunk);
+        }
 
+        List<double[]> preparedVectors = embedDocuments(missingChunks, model);
+        for (int index = 0; index < missingChunks.size(); index++) {
+            DocumentChunk chunk = missingChunks.get(index);
             ChunkEmbedding embedding = new ChunkEmbedding();
             embedding.setChunkId(chunk.getChunkId());
             embedding.setEmbeddingModelId(model.getEmbeddingModelId());
-            embedding.setEmbeddingJson(toJsonVector(createHashedVector(chunk.getContent(), model.getDimension())));
+            embedding.setEmbeddingJson(toJsonVector(preparedVectors.get(index)));
             embedding.setDimension(model.getDimension());
             embedding.setCreatedAt(LocalDateTime.now());
             chunkEmbeddingRepository.save(embedding);
@@ -145,6 +155,13 @@ public class EmbeddingService {
         return createHashedVector(text, dimension);
     }
 
+    public double[] embedText(String text, EmbeddingModel model) {
+        if (!usesSemanticProvider(model)) {
+            return createHashedVector(text, model.getDimension());
+        }
+        return callSemanticEmbeddings(List.of(text), model).get(0);
+    }
+
     public double cosineVectorScore(double[] left, double[] right) {
         if (left == null || right == null || left.length == 0 || right.length == 0 || left.length != right.length) {
             return 0.0;
@@ -167,18 +184,29 @@ public class EmbeddingService {
     public double exactTokenOverlapScore(String query, String content) {
         List<String> queryTokens = tokenize(query).stream()
                 .filter(this::isMeaningfulSearchToken)
+                .distinct()
                 .toList();
         if (queryTokens.isEmpty() || content == null || content.isBlank()) {
             return 0.0;
         }
 
         String normalizedContent = content.toLowerCase(Locale.ROOT);
+        int matched = 0;
+        boolean exactJapaneseTerm = false;
         for (String token : queryTokens) {
             if (normalizedContent.contains(token)) {
-                return containsJapanese(token) ? 0.95 : 0.75;
+                matched++;
+                exactJapaneseTerm = exactJapaneseTerm || containsJapanese(token);
             }
         }
-        return 0.0;
+        if (matched == 0) {
+            return 0.0;
+        }
+        if (exactJapaneseTerm) {
+            return 0.95;
+        }
+        double coverage = matched / (double) queryTokens.size();
+        return Math.min(0.90, 0.15 + (coverage * 0.70) + (matched >= 2 ? 0.05 : 0.0));
     }
 
     public double[] parseJsonVector(String embeddingJson) {
@@ -211,6 +239,46 @@ public class EmbeddingService {
             vector[index] = values.get(index);
         }
         return vector;
+    }
+
+    private List<double[]> embedDocuments(List<DocumentChunk> chunks, EmbeddingModel model) {
+        if (chunks.isEmpty()) return List.of();
+        if (!usesSemanticProvider(model)) {
+            return chunks.stream()
+                    .map(chunk -> createHashedVector(chunk.getContent(), model.getDimension()))
+                    .toList();
+        }
+        List<double[]> vectors = new ArrayList<>();
+        for (int start = 0; start < chunks.size(); start += 32) {
+            int end = Math.min(start + 32, chunks.size());
+            vectors.addAll(callSemanticEmbeddings(
+                    chunks.subList(start, end).stream().map(DocumentChunk::getContent).toList(), model));
+        }
+        return vectors;
+    }
+
+    private List<double[]> callSemanticEmbeddings(List<String> texts, EmbeddingModel model) {
+        PythonAiDto.EmbedRequest request = new PythonAiDto.EmbedRequest();
+        request.texts = texts;
+        PythonAiDto.EmbedResponse response = aiClientService.callEmbed(request);
+        if (response == null || response.vectors == null || response.vectors.size() != texts.size()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Offline multilingual embedding service returned an invalid response.");
+        }
+        if (response.dimension == null || response.dimension.intValue() != model.getDimension().intValue()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Embedding dimension does not match the configured model.");
+        }
+        return response.vectors.stream().map(values -> {
+            double[] vector = new double[values.size()];
+            for (int index = 0; index < values.size(); index++) vector[index] = values.get(index);
+            return vector;
+        }).toList();
+    }
+
+    private boolean usesSemanticProvider(EmbeddingModel model) {
+        String provider = model.getProvider() == null ? "" : model.getProvider().toLowerCase(Locale.ROOT);
+        return provider.contains("fastembed") || provider.contains("onnx");
     }
 
     private EmbeddingModel createDefaultModel() {

@@ -37,10 +37,10 @@ public class NoteService {
         return savedNote;
     }
 
-    public List<SavedNote> getNotes(UUID workspaceId) {
+    public List<SavedNote> getNotes(UUID workspaceId, UUID userId) {
         log.info("Fetching notes for workspaceId: {}", workspaceId);
 
-        List<SavedNote> notes = savedNoteRepository.findByWorkspaceIdOrderByCreatedAtDesc(workspaceId);
+        List<SavedNote> notes = savedNoteRepository.findByWorkspaceIdAndUserIdOrderByCreatedAtDesc(workspaceId, userId);
         log.debug("Found {} notes for workspaceId: {}", notes.size(), workspaceId);
         return notes;
     }

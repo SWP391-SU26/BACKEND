@@ -9,4 +9,6 @@ public interface EmbeddingModelRepository extends JpaRepository<EmbeddingModel, 
     boolean existsByModelName(String modelName);
 
     List<EmbeddingModel> findByIsActiveTrueOrderByCreatedAtDesc();
+
+    long countByIsActiveTrue();
 }

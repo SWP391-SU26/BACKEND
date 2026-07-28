@@ -21,7 +21,14 @@ from src.config import ensure_data_dirs, load_settings
 from src.document_loader import SUPPORTED_EXTENSIONS
 from src.embeddings import get_embedding_provider
 from src.evaluation import BenchmarkRunner
-from src.finetuning import prepare_dataset, validate_jsonl
+from src.finetuning import (
+    FINETUNED_REFUSAL_MESSAGE,
+    is_refusal_answer,
+    prepare_dataset,
+    selected_sources_are_trained,
+    training_source_names,
+    validate_jsonl,
+)
 from src.job_manager import BackgroundJobManager
 from src.rag_pipeline import RAGPipeline
 from src.storage import SQLiteStore
@@ -62,10 +69,12 @@ class GenerateContext(BaseModel):
     filename: str
     page: int | None = None
     content: str
+    score: float = 1.0
 
 class GenerateRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
     contexts: list[GenerateContext]
+    strict: bool = False
 
 class GenerateSource(BaseModel):
     chunk_id: str
@@ -80,11 +89,72 @@ class GenerateResponse(BaseModel):
     is_out_of_scope: bool
     sources: list[GenerateSource]
 
+
+class EmbedRequest(BaseModel):
+    texts: list[str] = Field(min_length=1, max_length=64)
+
+
+class EmbedResponse(BaseModel):
+    provider: str
+    model: str
+    dimension: int
+    vectors: list[list[float]]
+
+class GenerateBatchItem(BaseModel):
+    request_id: str = Field(min_length=1, max_length=100)
+    question: str = Field(min_length=1, max_length=4000)
+    contexts: list[GenerateContext]
+
+class GenerateBatchRequest(BaseModel):
+    items: list[GenerateBatchItem] = Field(min_length=1, max_length=16)
+    strict: bool = True
+
+class GenerateBatchResult(BaseModel):
+    request_id: str
+    answer: str | None = None
+    is_out_of_scope: bool = False
+    sources: list[GenerateSource] = Field(default_factory=list)
+    error: str | None = None
+
+class GenerateBatchResponse(BaseModel):
+    items: list[GenerateBatchResult]
+    batch_size: int
+    max_input_tokens: int
+    max_new_tokens: int
+
 class ChatFinetunedRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
+    strict: bool = True
+    document_filenames: list[str] = Field(default_factory=list)
 
 class ChatFinetunedResponse(BaseModel):
     answer: str
+    is_out_of_scope: bool = False
+    scope_confidence: float | None = None
+    model_ready: bool = True
+    status_code: str | None = None
+
+class ChatFinetunedBatchItem(BaseModel):
+    request_id: str = Field(min_length=1, max_length=100)
+    question: str = Field(min_length=1, max_length=4000)
+    document_filenames: list[str] = Field(default_factory=list)
+
+class ChatFinetunedBatchRequest(BaseModel):
+    items: list[ChatFinetunedBatchItem] = Field(min_length=1, max_length=16)
+    strict: bool = True
+
+class ChatFinetunedBatchResult(BaseModel):
+    request_id: str
+    answer: str | None = None
+    error: str | None = None
+    is_out_of_scope: bool = False
+    scope_confidence: float | None = None
+
+class ChatFinetunedBatchResponse(BaseModel):
+    items: list[ChatFinetunedBatchResult]
+    batch_size: int
+    max_input_tokens: int
+    max_new_tokens: int
 
 class EvaluateRequest(BaseModel):
     question: str
@@ -172,10 +242,33 @@ def health() -> dict[str, str]:
 
 @app.get("/api/model/status")
 def model_status() -> dict[str, Any]:
+    provider = pipeline.settings.generation_provider.lower().strip()
+    if provider in {"auto", "lora", "local"}:
+        try:
+            pipeline.warmup_local_model()
+        except Exception:
+            pass
+    generation = pipeline.generation_status()
     return {
         "embedding_model": pipeline.embedding_provider.model,
-        "generation": pipeline.generation_status(),
+        "generation": generation,
+        "inference_ready": generation["inference_ready"],
+        "training_ready": generation["training_ready"],
+        "generation_ready": generation["generation_ready"],
+        "adapter_dir": generation["adapter_dir"],
     }
+
+
+@app.post("/api/embed", response_model=EmbedResponse)
+def embed_texts(request: EmbedRequest) -> EmbedResponse:
+    vectors = pipeline.embedding_provider.embed_texts(request.texts)
+    dimension = len(vectors[0]) if vectors else 0
+    return EmbedResponse(
+        provider=pipeline.embedding_provider.name,
+        model=pipeline.embedding_provider.model,
+        dimension=dimension,
+        vectors=vectors,
+    )
 
 
 @app.get("/api/documents")
@@ -298,8 +391,8 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
             chapter="Unknown",
             page=ctx.page,
             content=ctx.content,
-            score=1.0,
-            semantic_score=1.0,
+            score=ctx.score,
+            semantic_score=ctx.score,
             lexical_score=1.0
         )
         contexts.append(chunk)
@@ -313,7 +406,12 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
         })
         
     try:
-        answer = pipeline._generate_answer(request.question, contexts, sources_dict_list)
+        answer = pipeline._generate_answer(
+            request.question,
+            contexts,
+            sources_dict_list,
+            strict=request.strict,
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Không thể tạo câu trả lời: {exc}") from exc
 
@@ -325,13 +423,225 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
         sources=[GenerateSource(**s) for s in selected_sources]
     )
 
+
+def _to_retrieved_contexts(contexts: list[GenerateContext]):
+    from src.rag_pipeline import location_label
+    from src.storage import RetrievedChunk
+
+    retrieved = []
+    sources = []
+    for ctx in contexts:
+        chunk = RetrievedChunk(
+            chunk_id=ctx.chunk_id,
+            document_id=ctx.document_id,
+            filename=ctx.filename,
+            subject="Unknown",
+            chapter="Unknown",
+            page=ctx.page,
+            content=ctx.content,
+            score=ctx.score,
+            semantic_score=ctx.score,
+            lexical_score=1.0,
+        )
+        retrieved.append(chunk)
+        sources.append({
+            "chunk_id": ctx.chunk_id,
+            "document_id": ctx.document_id,
+            "filename": ctx.filename,
+            "page": ctx.page,
+            "location": location_label(chunk),
+            "preview": ctx.content[:280],
+        })
+    return retrieved, sources
+
+
+@app.post("/api/generate-batch", response_model=GenerateBatchResponse)
+def generate_answer_batch(request: GenerateBatchRequest) -> GenerateBatchResponse:
+    from src.rag_pipeline import OUT_OF_SCOPE_MESSAGE
+
+    settings = load_settings()
+    if len(request.items) > settings.benchmark_batch_size:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Batch contains {len(request.items)} items; maximum is {settings.benchmark_batch_size}.",
+        )
+
+    prepared = []
+    source_maps: dict[str, dict[str, dict[str, Any]]] = {}
+    for item in request.items:
+        contexts, sources = _to_retrieved_contexts(item.contexts)
+        prepared.append((item.question, contexts))
+        source_maps[item.request_id] = {source["chunk_id"]: source for source in sources}
+
+    try:
+        generated = pipeline.generate_rag_batch(prepared)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Batch RAG generation failed: {exc}") from exc
+
+    results = []
+    for item, (answer, included_contexts) in zip(request.items, generated):
+        normalized = answer.strip() if answer else OUT_OF_SCOPE_MESSAGE
+        included_sources = [
+            source_maps[item.request_id].get(context.chunk_id)
+            for context in included_contexts
+            if source_maps[item.request_id].get(context.chunk_id) is not None
+        ]
+        selected_sources = select_sources_for_answer(normalized, included_sources)
+        results.append(GenerateBatchResult(
+            request_id=item.request_id,
+            answer=normalized,
+            is_out_of_scope=normalized == OUT_OF_SCOPE_MESSAGE,
+            sources=[GenerateSource(**source) for source in selected_sources],
+        ))
+    return GenerateBatchResponse(
+        items=results,
+        batch_size=len(results),
+        max_input_tokens=settings.benchmark_max_input_tokens,
+        max_new_tokens=settings.benchmark_max_new_tokens,
+    )
+
 @app.post("/ai/chat-finetuned", response_model=ChatFinetunedResponse)
 def chat_finetuned(request: ChatFinetunedRequest) -> ChatFinetunedResponse:
+    settings = load_settings()
+    trained_sources = training_source_names([
+        settings.finetuning_dir / "train.jsonl",
+        settings.finetuning_dir / "validation.jsonl",
+    ])
+    if not selected_sources_are_trained(request.document_filenames, trained_sources):
+        return ChatFinetunedResponse(
+            answer=FINETUNED_REFUSAL_MESSAGE,
+            is_out_of_scope=True,
+            scope_confidence=0.0,
+        )
+    scope = pipeline.assess_finetuned_scope(request.question, request.document_filenames)
+    if request.strict and not scope.allowed:
+        return ChatFinetunedResponse(
+            answer=FINETUNED_REFUSAL_MESSAGE,
+            is_out_of_scope=True,
+            scope_confidence=scope.confidence,
+        )
+    generation_status = pipeline.generation_status()
+    if not generation_status.get("configured_ready"):
+        quality_gate = generation_status.get("quality_gate") or {}
+        if not quality_gate.get("passed"):
+            metrics = generation_status.get("evaluation_metrics") or {}
+            thresholds = quality_gate.get("behavioral_thresholds") or {}
+            answer_f1 = metrics.get("behavioral_answer_token_f1")
+            refusal_accuracy = metrics.get("behavioral_refusal_accuracy")
+            metric_detail = ""
+            if answer_f1 is not None or refusal_accuracy is not None:
+                metric_detail = (
+                    f" Kết quả hiện tại: answer F1={answer_f1 if answer_f1 is not None else 'N/A'} "
+                    f"(yêu cầu >= {thresholds.get('min_answer_token_f1', 'N/A')}), "
+                    f"refusal={refusal_accuracy if refusal_accuracy is not None else 'N/A'} "
+                    f"(yêu cầu >= {thresholds.get('min_refusal_accuracy', 'N/A')})."
+                )
+            reason = (
+                "Adapter fine-tuned đang cấu hình chưa có manifest kiểm định hoặc chưa đạt "
+                "behavioral quality gate. Hệ thống đã chặn model để tránh trả lời sai."
+                + metric_detail
+            )
+            code = "QUALITY_GATE_FAILED"
+        else:
+            reason = "Runtime fine-tuning offline chưa đủ dependency hoặc chưa nạp được model."
+            code = "MODEL_RUNTIME_NOT_READY"
+        return ChatFinetunedResponse(
+            answer=f"Fine-tuned model chưa sẵn sàng: {reason}",
+            is_out_of_scope=True,
+            scope_confidence=scope.confidence,
+            model_ready=False,
+            status_code=code,
+        )
     try:
-        answer = pipeline.generate_without_retrieval(request.question)
-        return ChatFinetunedResponse(answer=answer)
+        answer = pipeline.generate_without_retrieval(
+            request.question,
+            allowed_sources=request.document_filenames,
+            strict=request.strict,
+        )
+        refused = is_refusal_answer(answer)
+        return ChatFinetunedResponse(
+            answer=FINETUNED_REFUSAL_MESSAGE if refused else answer,
+            is_out_of_scope=refused,
+            scope_confidence=scope.confidence,
+            model_ready=True,
+        )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Lỗi mô hình finetuned: {exc}") from exc
+        return ChatFinetunedResponse(
+            answer=(
+                "Fine-tuned model chưa sẵn sàng: không thể nạp hoặc chạy adapter local. "
+                f"Chi tiết: {str(exc)[:240]}"
+            ),
+            is_out_of_scope=True,
+            scope_confidence=scope.confidence,
+            model_ready=False,
+            status_code="MODEL_RUNTIME_NOT_READY",
+        )
+
+
+@app.post("/ai/chat-finetuned-batch", response_model=ChatFinetunedBatchResponse)
+def chat_finetuned_batch(request: ChatFinetunedBatchRequest) -> ChatFinetunedBatchResponse:
+    settings = load_settings()
+    if len(request.items) > settings.benchmark_batch_size:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Batch contains {len(request.items)} items; maximum is {settings.benchmark_batch_size}.",
+        )
+    settings = load_settings()
+    trained_sources = training_source_names([
+        settings.finetuning_dir / "train.jsonl",
+        settings.finetuning_dir / "validation.jsonl",
+    ])
+    accepted: list[tuple[ChatFinetunedBatchItem, float]] = []
+    refused: dict[str, ChatFinetunedBatchResult] = {}
+    for item in request.items:
+        if not selected_sources_are_trained(item.document_filenames, trained_sources):
+            refused[item.request_id] = ChatFinetunedBatchResult(
+                request_id=item.request_id,
+                answer=FINETUNED_REFUSAL_MESSAGE,
+                is_out_of_scope=True,
+                scope_confidence=0.0,
+            )
+            continue
+        scope = pipeline.assess_finetuned_scope(item.question, item.document_filenames)
+        if request.strict and not scope.allowed:
+            refused[item.request_id] = ChatFinetunedBatchResult(
+                request_id=item.request_id,
+                answer=FINETUNED_REFUSAL_MESSAGE,
+                is_out_of_scope=True,
+                scope_confidence=scope.confidence,
+            )
+            continue
+        accepted.append((item, scope.confidence))
+    try:
+        answers = pipeline.generate_without_retrieval_batch(
+            [item.question for item, _confidence in accepted],
+            allowed_sources=[item.document_filenames for item, _confidence in accepted],
+            strict=request.strict,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "MODEL_NOT_READY", "message": f"Fine-tuned batch failed: {exc}"},
+        ) from exc
+    return ChatFinetunedBatchResponse(
+        items=[
+            refused.get(item.request_id)
+            or next(
+                ChatFinetunedBatchResult(
+                    request_id=accepted_item.request_id,
+                    answer=FINETUNED_REFUSAL_MESSAGE if is_refusal_answer(answer) else answer.strip(),
+                    is_out_of_scope=is_refusal_answer(answer),
+                    scope_confidence=confidence,
+                )
+                for (accepted_item, confidence), answer in zip(accepted, answers)
+                if accepted_item.request_id == item.request_id
+            )
+            for item in request.items
+        ],
+        batch_size=len(request.items),
+        max_input_tokens=settings.benchmark_max_input_tokens,
+        max_new_tokens=settings.benchmark_max_new_tokens,
+    )
 
 @app.post("/ai/evaluate", response_model=EvaluateResponse)
 def evaluate_answers(request: EvaluateRequest) -> EvaluateResponse:
@@ -482,11 +792,30 @@ def finetuning_status() -> dict[str, Any]:
     validation_path = settings.finetuning_dir / "validation.jsonl"
     packages = ["torch", "transformers", "datasets", "peft", "trl", "bitsandbytes"]
     config_path = ROOT / "experiments" / "lora_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    candidate_adapter = Path(config["output_dir"])
+    if not candidate_adapter.is_absolute():
+        candidate_adapter = (ROOT / candidate_adapter).resolve()
+    candidate_manifest_path = candidate_adapter / "training_manifest.json"
+    candidate_manifest = (
+        json.loads(candidate_manifest_path.read_text(encoding="utf-8"))
+        if candidate_manifest_path.exists()
+        else None
+    )
+    dataset_summary_path = settings.finetuning_dir / "dataset_summary.json"
     return {
         "train_dataset": validate_jsonl(train_path),
         "validation_dataset": validate_jsonl(validation_path),
         "packages": {name: importlib.util.find_spec(name) is not None for name in packages},
-        "config": json.loads(config_path.read_text(encoding="utf-8")),
+        "config": config,
+        "dataset_summary": (
+            json.loads(dataset_summary_path.read_text(encoding="utf-8"))
+            if dataset_summary_path.exists()
+            else None
+        ),
+        "candidate_adapter": str(candidate_adapter),
+        "candidate_quality_gate": (candidate_manifest or {}).get("quality_gate"),
+        "candidate_metrics": (candidate_manifest or {}).get("evaluation_metrics"),
         "ready_for_dry_run": train_path.exists(),
         "training_command": "python experiments/train_lora.py --config experiments/lora_config.json",
     }

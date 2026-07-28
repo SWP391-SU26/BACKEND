@@ -15,6 +15,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import com.courseqa.security.JwtPrincipal;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -42,9 +44,21 @@ public class AuthController {
         return ApiResponse.ok("If the email exists, a new password has been sent.");
     }
 
-    @PostMapping("/logout/{userId}")
-    public ApiResponse<Void> logout(@PathVariable UUID userId) {
-        authService.logout(userId);
+    @PostMapping({"/logout", "/logout/{ignoredUserId}"})
+    public ApiResponse<Void> logout(
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @PathVariable(required = false) UUID ignoredUserId
+    ) {
+        authService.logout(principal.userId());
+        return ApiResponse.ok(null);
+    }
+
+    @PutMapping("/change-password")
+    public ApiResponse<Void> changePassword(
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @RequestBody AuthDto.ChangePasswordRequest request
+    ) {
+        authService.changePassword(principal.userId(), request);
         return ApiResponse.ok(null);
     }
 
@@ -69,9 +83,9 @@ public class AuthController {
     @DeleteMapping("/users/{userId}")
     public ApiResponse<Void> deleteUser(
             @PathVariable UUID userId,
-            @RequestParam UUID requesterId
+            @AuthenticationPrincipal JwtPrincipal principal
     ) {
-        authService.deleteUser(userId, requesterId);
+        authService.deleteUser(userId, principal.userId());
         return ApiResponse.ok(null);
     }
 }
