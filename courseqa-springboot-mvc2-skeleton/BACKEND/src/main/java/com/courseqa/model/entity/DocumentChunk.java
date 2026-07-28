@@ -38,6 +38,9 @@ public class DocumentChunk {
     @Column(name = "content", columnDefinition = "NVARCHAR(MAX)")
     private String content;
 
+    @Column(name = "content_compressed")
+    private byte[] contentCompressed;
+
     @Column(name = "page_start")
     private Integer pageStart;
 
@@ -87,6 +90,8 @@ public class DocumentChunk {
 
     public String getContent() { return content; }
     public void setContent(String content) { this.content = content; }
+    public byte[] getContentCompressed() { return contentCompressed; }
+    public void setContentCompressed(byte[] contentCompressed) { this.contentCompressed = contentCompressed; }
 
     public Integer getPageStart() { return pageStart; }
     public void setPageStart(Integer pageStart) { this.pageStart = pageStart; }

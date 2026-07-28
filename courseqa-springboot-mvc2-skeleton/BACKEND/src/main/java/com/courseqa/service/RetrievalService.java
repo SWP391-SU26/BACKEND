@@ -2,7 +2,6 @@ package com.courseqa.service;
 
 import com.courseqa.model.dto.RagDto;
 import com.courseqa.model.entity.AnswerCitation;
-import com.courseqa.model.entity.ChunkEmbedding;
 import com.courseqa.model.entity.CourseDocument;
 import com.courseqa.model.entity.DocumentChunk;
 import com.courseqa.model.entity.EmbeddingModel;
@@ -22,18 +21,23 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class RetrievalService {
+    private static final Logger log = LoggerFactory.getLogger(RetrievalService.class);
     public static final double DEFAULT_SIMILARITY_THRESHOLD = 0.25;
     private static final double STRONG_MATCH_THRESHOLD = 0.75;
     private static final double DOCUMENT_REFERENCE_THRESHOLD = 0.85;
@@ -47,6 +51,10 @@ public class RetrievalService {
     private final AnswerCitationRepository answerCitationRepository;
     private final EmbeddingService embeddingService;
     private final CourseDocumentRepository courseDocumentRepository;
+    private final EmbeddingVectorCache vectorCache;
+
+    @Value("${rag.similarity-threshold:0.25}")
+    private double configuredSimilarityThreshold = DEFAULT_SIMILARITY_THRESHOLD;
 
     public RetrievalService(
             DocumentChunkRepository documentChunkRepository,
@@ -55,7 +63,8 @@ public class RetrievalService {
             RetrievalResultRepository retrievalResultRepository,
             AnswerCitationRepository answerCitationRepository,
             EmbeddingService embeddingService,
-            CourseDocumentRepository courseDocumentRepository
+            CourseDocumentRepository courseDocumentRepository,
+            EmbeddingVectorCache vectorCache
     ) {
         this.documentChunkRepository = documentChunkRepository;
         this.chunkEmbeddingRepository = chunkEmbeddingRepository;
@@ -64,6 +73,7 @@ public class RetrievalService {
         this.answerCitationRepository = answerCitationRepository;
         this.embeddingService = embeddingService;
         this.courseDocumentRepository = courseDocumentRepository;
+        this.vectorCache = vectorCache;
     }
 
     @Transactional
@@ -73,38 +83,32 @@ public class RetrievalService {
         Instant startedAt = Instant.now();
         EmbeddingModel model = embeddingService.resolveModel(request.embeddingModelId);
         int topK = request.topK == null || request.topK <= 0 ? 5 : Math.min(request.topK, 40);
-        double threshold = request.similarityThreshold == null ? DEFAULT_SIMILARITY_THRESHOLD : request.similarityThreshold;
+        double threshold = request.similarityThreshold == null
+                ? configuredSimilarityThreshold : request.similarityThreshold;
 
         List<DocumentChunk> workspaceChunks = resolveCandidateChunks(request);
         if (workspaceChunks.isEmpty()) {
             return emptyRetrievalResponse(model);
         }
+        QuestionIntentAnalyzer.QueryIntent intent = QuestionIntentAnalyzer.analyze(request.queryText);
 
-        Map<UUID, ChunkEmbedding> embeddingsByChunkId = loadEmbeddingsByChunkId(model, workspaceChunks);
+        Map<UUID, double[]> vectorsByChunkId = loadVectorsByChunkId(model, workspaceChunks);
 
-        if (embeddingsByChunkId.isEmpty()) {
-            workspaceChunks.stream()
-                    .map(DocumentChunk::getWorkspaceId)
-                    .filter(java.util.Objects::nonNull)
-                    .distinct()
-                    .forEach(workspaceId -> prepareMissingWorkspaceEmbeddings(workspaceId, model));
-            embeddingsByChunkId = loadEmbeddingsByChunkId(model, workspaceChunks);
-        }
-
-        if (embeddingsByChunkId.isEmpty()) {
+        if (vectorsByChunkId.isEmpty()) {
             return noPreparedEmbeddingsResponse(model);
         }
 
         double[] queryVector = embeddingService.embedText(request.queryText, model);
         Map<UUID, CourseDocument> documentsById = loadDocumentsById(workspaceChunks);
-        Map<UUID, ChunkEmbedding> preparedEmbeddingsByChunkId = embeddingsByChunkId;
+        Map<UUID, double[]> preparedVectorsByChunkId = vectorsByChunkId;
         List<ScoredChunk> allScoredCandidates = workspaceChunks.stream()
                 .map(chunk -> scoreChunk(
                         chunk,
-                        preparedEmbeddingsByChunkId.get(chunk.getChunkId()),
+                        preparedVectorsByChunkId.get(chunk.getChunkId()),
                         queryVector,
                         request.queryText,
-                        documentsById.get(chunk.getDocumentId()))
+                        documentsById.get(chunk.getDocumentId()),
+                        intent)
                 )
                 .sorted(Comparator.comparingDouble(ScoredChunk::score).reversed()
                         .thenComparing((ScoredChunk scoredChunk) -> nullToMax(scoredChunk.chunk().getPageStart()))
@@ -119,7 +123,6 @@ public class RetrievalService {
         // the document scope, the selection itself is the retrieval constraint,
         // so summarize representative chunks from those documents instead of
         // falling through to unrelated course material or returning zero chunks.
-        QuestionIntentAnalyzer.QueryIntent intent = QuestionIntentAnalyzer.analyze(request.queryText);
         boolean selectedDocumentSection = isSelectedDocumentScope(request) && intent.hasSection();
         boolean selectedDocumentSummary = isSelectedDocumentScope(request) && intent.summary() && !intent.hasSection();
 
@@ -193,6 +196,10 @@ public class RetrievalService {
         return response;
     }
 
+    public double getConfiguredSimilarityThreshold() {
+        return configuredSimilarityThreshold;
+    }
+
     private RagDto.RetrievalResponse emptyRetrievalResponse(EmbeddingModel model) {
         RagDto.RetrievalResponse response = new RagDto.RetrievalResponse();
         response.embeddingModelId = model.getEmbeddingModelId();
@@ -213,23 +220,59 @@ public class RetrievalService {
         return response;
     }
 
-    private Map<UUID, ChunkEmbedding> loadEmbeddingsByChunkId(EmbeddingModel model, List<DocumentChunk> workspaceChunks) {
-        return chunkEmbeddingRepository
-                .findByEmbeddingModelIdAndChunkIdIn(
-                        model.getEmbeddingModelId(),
-                        workspaceChunks.stream().map(DocumentChunk::getChunkId).collect(Collectors.toSet())
-                ).stream()
-                .collect(Collectors.toMap(ChunkEmbedding::getChunkId, Function.identity()));
+    private Map<UUID, double[]> loadVectorsByChunkId(EmbeddingModel model, List<DocumentChunk> workspaceChunks) {
+        UUID modelId = model.getEmbeddingModelId();
+        Map<UUID, double[]> vectors = new java.util.HashMap<>();
+        Set<UUID> missingChunkIds = new java.util.HashSet<>();
+        for (DocumentChunk chunk : workspaceChunks) {
+            double[] cached = vectorCache.get(modelId, chunk.getChunkId());
+            if (cached == null) {
+                missingChunkIds.add(chunk.getChunkId());
+            } else {
+                vectors.put(chunk.getChunkId(), cached);
+            }
+        }
+        log.info("Embedding cache model={} hits={} misses={} totalEntries={}",
+                modelId, vectors.size(), missingChunkIds.size(), vectorCache.size());
+        if (!missingChunkIds.isEmpty()) {
+            long loadStartedAt = System.nanoTime();
+            List<ChunkEmbeddingRepository.CompressedEmbeddingView> compressed =
+                    chunkEmbeddingRepository.findCompressedByModelAndChunkIds(modelId, missingChunkIds);
+            if (compressed != null && !compressed.isEmpty()) {
+                compressed.forEach(embedding -> {
+                    double[] vector = embeddingService.parseCompressedVector(
+                            embedding.getEmbeddingCompressed());
+                    if (vector.length > 0) {
+                        vectors.put(embedding.getChunkId(), vector);
+                        vectorCache.put(modelId, embedding.getChunkId(), vector);
+                    }
+                });
+            } else {
+                chunkEmbeddingRepository.findByEmbeddingModelIdAndChunkIdIn(modelId, missingChunkIds)
+                        .forEach(embedding -> {
+                            double[] vector = embeddingService.parseJsonVector(embedding.getEmbeddingJson());
+                            if (vector.length > 0) {
+                                vectors.put(embedding.getChunkId(), vector);
+                                vectorCache.put(modelId, embedding.getChunkId(), vector);
+                            }
+                        });
+            }
+            log.info("Loaded and parsed {} embedding vectors in {} ms; cacheEntries={}",
+                    vectors.size(), (System.nanoTime() - loadStartedAt) / 1_000_000L, vectorCache.size());
+        }
+        return vectors;
     }
 
     private List<DocumentChunk> resolveCandidateChunks(RagDto.RetrievalRequest request) {
         List<DocumentChunk> chunks;
         if (request.documentIds != null && !request.documentIds.isEmpty()) {
-            chunks = documentChunkRepository.findByDocumentIdInOrderByCreatedAtAsc(request.documentIds.stream().distinct().toList());
+            List<UUID> documentIds = request.documentIds.stream().distinct().toList();
+            chunks = compressedDocumentChunks(documentIds);
         } else if (request.workspaceIds != null && !request.workspaceIds.isEmpty()) {
-            chunks = documentChunkRepository.findByWorkspaceIdInOrderByCreatedAtAsc(request.workspaceIds.stream().distinct().toList());
+            List<UUID> workspaceIds = request.workspaceIds.stream().distinct().toList();
+            chunks = compressedWorkspaceChunks(workspaceIds);
         } else {
-            chunks = documentChunkRepository.findByWorkspaceIdOrderByCreatedAtAsc(request.workspaceId);
+            chunks = compressedWorkspaceChunks(List.of(request.workspaceId));
         }
 
         Map<UUID, CourseDocument> documents = loadDocumentsById(chunks);
@@ -241,19 +284,42 @@ public class RetrievalService {
                 .toList();
     }
 
+    private List<DocumentChunk> compressedDocumentChunks(List<UUID> documentIds) {
+        List<DocumentChunkRepository.CompressedChunkView> compressed =
+                documentChunkRepository.findCompressedByDocumentIds(documentIds);
+        if (compressed != null && !compressed.isEmpty()) {
+            return compressed.stream().map(this::toDocumentChunk).toList();
+        }
+        return documentChunkRepository.findByDocumentIdInOrderByCreatedAtAsc(documentIds);
+    }
+
+    private List<DocumentChunk> compressedWorkspaceChunks(List<UUID> workspaceIds) {
+        List<DocumentChunkRepository.CompressedChunkView> compressed =
+                documentChunkRepository.findCompressedByWorkspaceIds(workspaceIds);
+        if (compressed != null && !compressed.isEmpty()) {
+            return compressed.stream().map(this::toDocumentChunk).toList();
+        }
+        return workspaceIds.size() == 1
+                ? documentChunkRepository.findByWorkspaceIdOrderByCreatedAtAsc(workspaceIds.get(0))
+                : documentChunkRepository.findByWorkspaceIdInOrderByCreatedAtAsc(workspaceIds);
+    }
+
+    private DocumentChunk toDocumentChunk(DocumentChunkRepository.CompressedChunkView source) {
+        DocumentChunk chunk = new DocumentChunk();
+        chunk.setChunkId(source.getChunkId());
+        chunk.setDocumentId(source.getDocumentId());
+        chunk.setPageStart(source.getPageStart());
+        chunk.setPageEnd(source.getPageEnd());
+        chunk.setContent(EmbeddingService.decompressUnicodeText(source.getContentCompressed()));
+        return chunk;
+    }
+
     private boolean isSelectedDocumentScope(RagDto.RetrievalRequest request) {
         if (request.scopeType == null || request.documentIds == null || request.documentIds.isEmpty()) {
             return false;
         }
         String scope = request.scopeType.trim().toUpperCase(java.util.Locale.ROOT);
         return "DOCUMENTS".equals(scope) || "PERSONAL".equals(scope);
-    }
-
-    private void prepareMissingWorkspaceEmbeddings(UUID workspaceId, EmbeddingModel model) {
-        RagDto.PrepareEmbeddingsRequest prepareRequest = new RagDto.PrepareEmbeddingsRequest();
-        prepareRequest.workspaceId = workspaceId;
-        prepareRequest.embeddingModelId = model.getEmbeddingModelId();
-        embeddingService.prepareEmbeddings(prepareRequest);
     }
 
     private Map<UUID, CourseDocument> loadDocumentsById(List<DocumentChunk> workspaceChunks) {
@@ -268,14 +334,15 @@ public class RetrievalService {
 
     private ScoredChunk scoreChunk(
             DocumentChunk chunk,
-            ChunkEmbedding embedding,
+            double[] chunkVector,
             double[] queryVector,
             String queryText,
-            CourseDocument document
+            CourseDocument document,
+            QuestionIntentAnalyzer.QueryIntent intent
     ) {
         double exactTokenScore = embeddingService.exactTokenOverlapScore(queryText, chunk.getContent());
         double documentReferenceScore = documentReferenceScore(queryText, document);
-        if (embedding == null) {
+        if (chunkVector == null || chunkVector.length == 0) {
             return new ScoredChunk(
                     chunk,
                     Math.max(exactTokenScore, documentReferenceScore),
@@ -283,16 +350,44 @@ public class RetrievalService {
                     exactTokenScore
             );
         }
-        double[] chunkVector = embeddingService.parseJsonVector(embedding.getEmbeddingJson());
         double vectorScore = embeddingService.cosineVectorScore(queryVector, chunkVector);
         double semanticScore = Math.max(0.0, vectorScore);
-        double contentScore = (semanticScore * 0.80) + (exactTokenScore * 0.20);
+        double contentScore = Math.min(
+                1.0,
+                (semanticScore * 0.80)
+                        + (exactTokenScore * 0.20)
+                        + definitionCueBoost(intent, queryText, chunk.getContent())
+        );
         return new ScoredChunk(
                 chunk,
                 Math.max(contentScore, documentReferenceScore),
                 documentReferenceScore,
                 contentScore
         );
+    }
+
+    private double definitionCueBoost(
+            QuestionIntentAnalyzer.QueryIntent intent,
+            String queryText,
+            String content
+    ) {
+        if (intent == null || intent.form() != QuestionIntentAnalyzer.QuestionForm.DEFINITION) {
+            return 0.0;
+        }
+
+        String subject = normalizeLoose(queryText)
+                .replaceFirst("^(dinh nghia|khai niem)\\s+", "")
+                .replaceFirst("\\s+(la gi|duoc hieu nhu the nao|what is)$", "")
+                .trim();
+        if (subject.length() < 2) {
+            return 0.0;
+        }
+
+        String normalizedContent = normalizeLoose(content);
+        boolean explicitDefinition = normalizedContent.contains("dinh nghia " + subject)
+                || normalizedContent.contains("khai niem " + subject)
+                || normalizedContent.contains(subject + " la ");
+        return explicitDefinition ? 0.12 : 0.0;
     }
 
     private double documentReferenceScore(String queryText, CourseDocument document) {
@@ -427,34 +522,27 @@ public class RetrievalService {
     }
 
     private List<ScoredChunk> selectRepresentativeSummaryChunks(List<ScoredChunk> candidates, int topK) {
-        if (candidates.size() <= topK) {
-            return candidates.stream()
-                    .sorted(Comparator.comparing((ScoredChunk scoredChunk) -> nullToMax(scoredChunk.chunk().getPageStart()))
-                            .thenComparing(scoredChunk -> nullToMax(scoredChunk.chunk().getChunkIndex())))
-                    .toList();
-        }
-
         List<ScoredChunk> byPage = candidates.stream()
+                .filter(scoredChunk -> !isSummaryNoise(scoredChunk.chunk().getContent()))
                 .sorted(Comparator.comparing((ScoredChunk scoredChunk) -> nullToMax(scoredChunk.chunk().getPageStart()))
                         .thenComparing(scoredChunk -> nullToMax(scoredChunk.chunk().getChunkIndex())))
                 .toList();
+        if (byPage.size() <= topK) {
+            return byPage;
+        }
         List<ScoredChunk> selected = new ArrayList<>();
-
-        addIfMissing(selected, byPage.get(0));
-
-        candidates.stream()
-                .filter(scoredChunk -> summaryPriority(scoredChunk.chunk().getContent()) > 0)
-                .sorted(Comparator.comparingInt((ScoredChunk scoredChunk) ->
-                                summaryPriority(scoredChunk.chunk().getContent())).reversed()
+        byPage.stream()
+                .filter(scoredChunk -> summaryPriority(scoredChunk.chunk().getContent()) >= 30)
+                .sorted(Comparator.comparingInt(
+                                (ScoredChunk scoredChunk) -> summaryPriority(scoredChunk.chunk().getContent()))
+                        .reversed()
                         .thenComparing(scoredChunk -> nullToMax(scoredChunk.chunk().getPageStart())))
-                .forEach(scoredChunk -> {
-                    if (selected.size() < topK) {
-                        addIfMissing(selected, scoredChunk);
-                    }
-                });
+                .limit(Math.max(1, topK * 2L / 3L))
+                .forEach(scoredChunk -> addIfMissing(selected, scoredChunk));
 
-        int step = Math.max(1, byPage.size() / topK);
-        for (int index = 0; index < byPage.size() && selected.size() < topK; index += step) {
+        double step = (byPage.size() - 1) / (double) Math.max(1, topK - 1);
+        for (int slot = 0; slot < topK && selected.size() < topK; slot++) {
+            int index = (int) Math.round(slot * step);
             addIfMissing(selected, byPage.get(index));
         }
         for (ScoredChunk scoredChunk : byPage) {
@@ -479,28 +567,35 @@ public class RetrievalService {
         }
     }
 
+    private boolean isSummaryNoise(String content) {
+        String normalized = normalizeLoose(content);
+        if (normalized.isBlank()) return true;
+        long questionMarks = content == null ? 0 : content.chars().filter(value -> value == '?').count();
+        return questionMarks >= 2
+                || normalized.contains("muc luc")
+                || normalized.contains("cau hoi on tap")
+                || normalized.contains("bai tap on tap")
+                || normalized.contains("tai lieu tham khao")
+                || normalized.matches(".*\\.{4,}\\s*\\d+\\s*$");
+    }
+
     private int summaryPriority(String content) {
         String normalized = normalizeLoose(content);
         int priority = 0;
-        if (normalized.contains("mon hoc") || normalized.contains("bai")) {
-            priority += 12;
+        String opening = normalized.substring(0, Math.min(normalized.length(), 500));
+        if (opening.matches(".*\\bchuong\\s+(?:[ivxlcdm]+|\\d+)\\b.*")) {
+            priority += 60;
         }
-        if (normalized.contains("tu vung") || normalized.contains("ことば")) {
-            priority += 20;
+        if (opening.matches(".*\\bphan\\s+(?:[ivxlcdm]+|\\d+)\\b.*")) {
+            priority += 45;
         }
-        if (normalized.contains("ngu phap") || normalized.contains("ぶんぽう")) {
-            priority += 20;
+        if (opening.contains("noi dung chuong")
+                || opening.contains("nhung nguyen ly")
+                || opening.contains("khai luoc")
+                || opening.contains("van de co ban")) {
+            priority += 25;
         }
-        if (normalized.contains("mau cau") || normalized.contains("phuong tien") || normalized.contains("cach thuc")) {
-            priority += 12;
-        }
-        if (normalized.contains("チャレンジ") || normalized.contains("challenge")) {
-            priority += 10;
-        }
-        if (normalized.contains("ください") || normalized.contains("わかります") || normalized.contains("どの") || normalized.contains("どれ")) {
-            priority += 10;
-        }
-        if (content != null && content.length() > 120) {
+        if (content != null && content.length() > 300) {
             priority += 1;
         }
         return priority;
@@ -593,7 +688,9 @@ public class RetrievalService {
         query.setWorkspaceId(request.workspaceId);
         query.setSemesterWorkspaceId(request.semesterId);
         query.setScopeType(request.scopeType == null || request.scopeType.isBlank() ? "COURSE" : request.scopeType);
-        query.setQueryText(request.queryText.trim());
+        query.setQueryText(request.originalQueryText == null || request.originalQueryText.isBlank()
+                ? request.queryText.trim()
+                : request.originalQueryText.trim());
         query.setRewrittenQuery(request.queryText.trim());
         query.setEmbeddingModelId(model.getEmbeddingModelId());
         query.setTopK(topK);

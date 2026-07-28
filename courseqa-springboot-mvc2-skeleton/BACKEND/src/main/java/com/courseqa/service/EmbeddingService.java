@@ -16,6 +16,13 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.charset.Charset;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.GZIPOutputStream;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -35,17 +42,20 @@ public class EmbeddingService {
     private final DocumentChunkRepository documentChunkRepository;
     private final ChunkEmbeddingRepository chunkEmbeddingRepository;
     private final AIClientService aiClientService;
+    private final EmbeddingVectorCache vectorCache;
 
     public EmbeddingService(
             EmbeddingModelRepository embeddingModelRepository,
             DocumentChunkRepository documentChunkRepository,
             ChunkEmbeddingRepository chunkEmbeddingRepository,
-            AIClientService aiClientService
+            AIClientService aiClientService,
+            EmbeddingVectorCache vectorCache
     ) {
         this.embeddingModelRepository = embeddingModelRepository;
         this.documentChunkRepository = documentChunkRepository;
         this.chunkEmbeddingRepository = chunkEmbeddingRepository;
         this.aiClientService = aiClientService;
+        this.vectorCache = vectorCache;
     }
 
     public List<RagDto.EmbeddingModelResponse> getEmbeddingModels() {
@@ -108,10 +118,13 @@ public class EmbeddingService {
             ChunkEmbedding embedding = new ChunkEmbedding();
             embedding.setChunkId(chunk.getChunkId());
             embedding.setEmbeddingModelId(model.getEmbeddingModelId());
-            embedding.setEmbeddingJson(toJsonVector(preparedVectors.get(index)));
+            String embeddingJson = toJsonVector(preparedVectors.get(index));
+            embedding.setEmbeddingJson(embeddingJson);
+            embedding.setEmbeddingCompressed(compressVectorJson(embeddingJson));
             embedding.setDimension(model.getDimension());
             embedding.setCreatedAt(LocalDateTime.now());
             chunkEmbeddingRepository.save(embedding);
+            vectorCache.put(model.getEmbeddingModelId(), chunk.getChunkId(), preparedVectors.get(index));
             created++;
         }
 
@@ -277,8 +290,60 @@ public class EmbeddingService {
     }
 
     private boolean usesSemanticProvider(EmbeddingModel model) {
-        String provider = model.getProvider() == null ? "" : model.getProvider().toLowerCase(Locale.ROOT);
-        return provider.contains("fastembed") || provider.contains("onnx");
+        String provider = model.getProvider() == null
+                ? ""
+                : model.getProvider().toLowerCase(Locale.ROOT).replace('_', '-');
+        return provider.contains("fastembed")
+                || provider.contains("onnx")
+                || provider.contains("sentence-transformers")
+                || provider.equals("hf")
+                || provider.contains("huggingface");
+    }
+
+    public byte[] compressVectorJson(String json) {
+        return compressText(json);
+    }
+
+    public static byte[] compressText(String value) {
+        return compressText(value, StandardCharsets.UTF_8);
+    }
+
+    public static byte[] compressUnicodeText(String value) {
+        return compressText(value, StandardCharsets.UTF_16LE);
+    }
+
+    private static byte[] compressText(String value, Charset charset) {
+        if (value == null || value.isBlank()) return new byte[0];
+        try (ByteArrayOutputStream output = new ByteArrayOutputStream();
+                GZIPOutputStream gzip = new GZIPOutputStream(output)) {
+            gzip.write(value.getBytes(charset));
+            gzip.finish();
+            return output.toByteArray();
+        } catch (IOException exception) {
+            throw new IllegalStateException("Could not compress embedding vector.", exception);
+        }
+    }
+
+    public double[] parseCompressedVector(byte[] compressed) {
+        if (compressed == null || compressed.length == 0) return new double[0];
+        return parseJsonVector(decompressText(compressed));
+    }
+
+    public static String decompressText(byte[] compressed) {
+        return decompressText(compressed, StandardCharsets.UTF_8);
+    }
+
+    public static String decompressUnicodeText(byte[] compressed) {
+        return decompressText(compressed, StandardCharsets.UTF_16LE);
+    }
+
+    private static String decompressText(byte[] compressed, Charset charset) {
+        if (compressed == null || compressed.length == 0) return "";
+        try (GZIPInputStream gzip = new GZIPInputStream(new ByteArrayInputStream(compressed))) {
+            return new String(gzip.readAllBytes(), charset);
+        } catch (IOException exception) {
+            throw new IllegalStateException("Could not decompress stored text.", exception);
+        }
     }
 
     private EmbeddingModel createDefaultModel() {

@@ -21,13 +21,10 @@ def build_finetuning_system_prompt(allowed_sources: list[str] | set[str] | tuple
     sources = sorted({Path(source).name for source in allowed_sources if source and source.strip()})
     scope = ", ".join(sources) if sources else "tập tài liệu đã được huấn luyện"
     return (
-        "Bạn là trợ lý học tập offline đã được fine-tune. "
-        f"Phạm vi kiến thức được phép trả lời: {scope}. "
-        "Hãy hiểu ý định và cách diễn đạt tương đương của câu hỏi, rồi trả lời rõ ràng, có logic, "
-        "đúng trọng tâm bằng ngôn ngữ của người dùng. Nếu câu hỏi bằng tiếng Việt, chỉ dùng tiếng Việt, "
-        "tuyệt đối không dùng chữ Hán hoặc trộn tiếng Trung. Không trộn kiến thức giữa các tài liệu. "
-        "Nếu câu hỏi không thuộc phạm vi đã học hoặc bạn không chắc chắn, chỉ trả lời đúng câu: "
-        f"{FINETUNED_REFUSAL_MESSAGE}"
+        "Bạn là trợ lý học tập đã được fine-tune cho Triết học Mác - Lênin. "
+        f"Chỉ trả lời kiến thức thuộc nguồn {scope}. "
+        "Không trộn kiến thức giữa các tài liệu. "
+        f"Nếu ngoài phạm vi, chỉ trả lời: {FINETUNED_REFUSAL_MESSAGE}"
     )
 
 
@@ -362,5 +359,14 @@ def is_refusal_answer(answer: str) -> bool:
         "chưa tìm được thông tin",
         "không tìm thấy thông tin",
         "không tìm được thông tin",
+        "chưa tìm ra thông tin",
+        "không tìm ra thông tin",
     )
-    return normalized == expected or any(marker in normalized for marker in refusal_markers)
+    return (
+        normalized == expected
+        or any(marker in normalized for marker in refusal_markers)
+        or (
+            ("tôi chưa tìm" in normalized or "tôi không tìm" in normalized)
+            and not any(marker in normalized for marker in ("nhưng", "tuy nhiên", "theo tôi"))
+        )
+    )

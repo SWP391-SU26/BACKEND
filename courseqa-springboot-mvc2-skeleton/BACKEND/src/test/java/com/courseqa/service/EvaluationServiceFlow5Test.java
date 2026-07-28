@@ -48,14 +48,15 @@ class EvaluationServiceFlow5Test {
     @Mock CourseDocumentRepository documents;
     @Mock CourseWorkspaceRepository workspaces;
     @Mock LearningScopeService scopes;
-    @Mock ChatService chatService;
+    @Mock BenchmarkInferenceService benchmarkInferenceService;
     @Mock AIClientService aiClientService;
     private EvaluationService service;
 
     @BeforeEach
     void setUp() {
         service = new EvaluationService(datasets, datasetDocuments, questions, experiments, results, courses,
-                documents, workspaces, scopes, chatService, aiClientService, Runnable::run, new ObjectMapper());
+                documents, workspaces, scopes, benchmarkInferenceService, aiClientService,
+                Runnable::run, new ObjectMapper());
     }
 
     @Test
@@ -127,7 +128,7 @@ class EvaluationServiceFlow5Test {
         verify(experiments).save(running);
 
         ReflectionTestUtils.invokeMethod(service, "executeBenchmark", experimentId);
-        verifyNoInteractions(chatService);
+        verifyNoInteractions(benchmarkInferenceService);
     }
 
     @Test
@@ -155,7 +156,7 @@ class EvaluationServiceFlow5Test {
 
         assertEquals("CANCELLED", cancelled.getStatus());
         ReflectionTestUtils.invokeMethod(service, "executeBenchmark", experimentId);
-        verifyNoInteractions(chatService);
+        verifyNoInteractions(benchmarkInferenceService);
     }
 
     @Test
@@ -179,11 +180,34 @@ class EvaluationServiceFlow5Test {
         String config = ReflectionTestUtils.invokeMethod(service, "withBenchmarkProfile", "{}", 50);
         var parsed = new ObjectMapper().readTree(config).path("benchmarkProfile");
 
-        assertEquals("full-batch-v1", parsed.path("version").asText());
+        assertEquals("qwen1.5b-sequential-v2", parsed.path("version").asText());
         assertEquals(50, parsed.path("questionCount").asInt());
-        assertEquals(4, parsed.path("batchSize").asInt());
-        assertEquals(448, parsed.path("maxInputTokens").asInt());
-        assertEquals(64, parsed.path("maxNewTokens").asInt());
+        assertEquals(1, parsed.path("batchSize").asInt());
+        assertEquals(1536, parsed.path("maxInputTokens").asInt());
+        assertEquals(192, parsed.path("maxNewTokens").asInt());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void modelReadinessReadsSharedRuntimeMetadataFromGenerationBlock() {
+        when(aiClientService.getModelStatus()).thenReturn(Map.of(
+                "base_rag_status", "BASE_RAG_READY",
+                "fine_tuned_status", "QUALITY_GATE_FAILED",
+                "benchmark_eligible", true,
+                "generation", Map.of(
+                        "base_model", "Qwen/Qwen2.5-1.5B-Instruct",
+                        "adapter_version", "qwen2.5-1.5b-triethoc-lora-v1",
+                        "model_verification_status", "UNVERIFIED",
+                        "adapter_verified", false)));
+
+        Map<String, Object> readiness = service.modelReadiness();
+
+        assertEquals("Qwen/Qwen2.5-1.5B-Instruct", readiness.get("baseModel"));
+        assertEquals("qwen2.5-1.5b-triethoc-lora-v1", readiness.get("adapterVersion"));
+        assertEquals("UNVERIFIED", readiness.get("modelVerificationStatus"));
+        assertEquals(false, readiness.get("qualityGatePassed"));
+        assertEquals("BASE_RAG_READY", readiness.get("baseRagStatus"));
+        assertEquals("QUALITY_GATE_FAILED", readiness.get("fineTunedStatus"));
     }
 
     @Test
@@ -225,14 +249,14 @@ class EvaluationServiceFlow5Test {
         Map<String, Object> fineSummary = (Map<String, Object>) report.get("fineTunedExperiment");
         Map<String, Object> row = ((List<Map<String, Object>>) report.get("perQuestion")).get(0);
 
-        assertEquals("LOCAL_PROXY", report.get("metricStandard"));
-        assertEquals("token-overlap-v1", report.get("formulaVersion"));
+        assertEquals("RAGAS_OFFICIAL", report.get("metricStandard"));
+        assertEquals("ragas-0.4", report.get("formulaVersion"));
         assertEquals("Research snapshot", metadata.get("name"));
         assertEquals(1, metadata.get("questionCount"));
         assertNull(fineSummary.get("faithfulness"));
         assertNull(fineSummary.get("contextPrecision"));
         assertNull(row.get("fineTunedContextRecall"));
-        assertEquals(0.3, row.get("answerCorrectnessDelta"));
+        assertEquals(0.3, row.get("tokenOverlapProxyDelta"));
     }
 
     private Experiment experiment(UUID id, UUID datasetId, String type) {

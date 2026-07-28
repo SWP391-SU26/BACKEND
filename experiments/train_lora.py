@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import importlib.util
 import json
 import math
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -87,10 +90,13 @@ def run_training(config: dict) -> dict:
     if use_qlora:
         if not torch.cuda.is_available():
             raise RuntimeError("QLoRA cần CUDA GPU. Đặt use_qlora=false để thử LoRA.")
+        compute_dtype = (
+            torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+        )
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_compute_dtype=compute_dtype,
             bnb_4bit_use_double_quant=True,
         )
 
@@ -115,6 +121,9 @@ def run_training(config: dict) -> dict:
         cpu_dtype = str(config.get("cpu_dtype", "float32")).lower()
         model_kwargs["dtype"] = torch.bfloat16 if cpu_dtype == "bfloat16" else torch.float32
     model = AutoModelForCausalLM.from_pretrained(model_source, **model_kwargs)
+    model.config.use_cache = False
+    if bool(config.get("gradient_checkpointing", True)):
+        model.gradient_checkpointing_enable()
     dataset = load_dataset(
         "json",
         data_files={
@@ -198,6 +207,7 @@ def run_training(config: dict) -> dict:
             target_modules=config.get("target_modules"),
         )
         model = get_peft_model(model, lora_config)
+    use_bf16 = bool(torch.cuda.is_available() and torch.cuda.is_bf16_supported())
     training_config = TrainingArguments(
         output_dir=str(resolve_path(config["output_dir"])),
         num_train_epochs=float(config.get("epochs", 3)),
@@ -205,14 +215,18 @@ def run_training(config: dict) -> dict:
         per_device_train_batch_size=int(config.get("batch_size", 1)),
         gradient_accumulation_steps=int(config.get("gradient_accumulation_steps", 8)),
         learning_rate=float(config.get("learning_rate", 2e-4)),
+        seed=int(config.get("seed", 42)),
+        data_seed=int(config.get("seed", 42)),
         logging_steps=1,
         save_strategy="epoch",
         eval_strategy="epoch" if len(dataset["validation"]) else "no",
         report_to="none",
         use_cpu=not torch.cuda.is_available(),
-        bf16=bool(torch.cuda.is_available() and torch.cuda.is_bf16_supported()),
-        fp16=False,
-        optim="adamw_torch",
+        bf16=use_bf16,
+        fp16=bool(torch.cuda.is_available() and not use_bf16),
+        optim=str(config.get("optimizer", "paged_adamw_8bit")),
+        save_total_limit=max(1, int(config.get("save_total_limit", 1))),
+        gradient_checkpointing=bool(config.get("gradient_checkpointing", True)),
         dataloader_pin_memory=torch.cuda.is_available(),
     )
     trainer = Trainer(
@@ -228,7 +242,12 @@ def run_training(config: dict) -> dict:
         ),
         processing_class=tokenizer,
     )
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
+    started_at = datetime.now(timezone.utc)
+    started_clock = time.perf_counter()
     train_result = trainer.train()
+    duration_seconds = time.perf_counter() - started_clock
     evaluation_metrics = trainer.evaluate() if len(dataset["validation"]) else {}
     evaluation_metrics["eval_num_tokens"] = sum(
         sum(label != -100 for label in labels) for labels in dataset["validation"]["labels"]
@@ -236,6 +255,11 @@ def run_training(config: dict) -> dict:
     evaluation_metrics.update({
         key: value for key, value in train_result.metrics.items() if key not in evaluation_metrics
     })
+    evaluation_metrics["training_duration_seconds"] = round(duration_seconds, 3)
+    evaluation_metrics["peak_vram_bytes"] = (
+        int(torch.cuda.max_memory_allocated()) if torch.cuda.is_available() else 0
+    )
+    evaluation_metrics["training_started_at"] = started_at.isoformat()
     trainer.save_model(str(resolve_path(config["output_dir"])))
     tokenizer.save_pretrained(str(resolve_path(config["output_dir"])))
     manifest = build_training_manifest(config, evaluation_metrics)
@@ -253,6 +277,12 @@ def build_training_manifest(config: dict, evaluation_metrics: dict) -> dict:
     validation_rows = read_jsonl(validation_path)
     rows = train_rows + validation_rows
     refusal_examples = sum(bool((row.get("metadata") or {}).get("is_out_of_scope")) for row in rows)
+    train_refusal_examples = sum(
+        bool((row.get("metadata") or {}).get("is_out_of_scope")) for row in train_rows
+    )
+    validation_refusal_examples = sum(
+        bool((row.get("metadata") or {}).get("is_out_of_scope")) for row in validation_rows
+    )
     minimum_examples = int(config.get("min_training_examples", 100))
     minimum_refusals = int(config.get("min_refusal_examples", max(10, round(len(rows) * 0.1))))
     maximum_eval_loss = float(config.get("max_eval_loss", 3.0))
@@ -269,15 +299,38 @@ def build_training_manifest(config: dict, evaluation_metrics: dict) -> dict:
         >= max(1, len(validation_rows) * 20),
         "nonzero_train_loss": float(evaluation_metrics.get("train_loss") or 0) > 1e-6,
         "behavioral_smoke_test": bool(evaluation_metrics.get("behavioral_smoke_test", False)),
+        "verified_manifest": True,
     }
+    dataset_manifest_path = resolve_path(
+        config.get(
+            "dataset_manifest",
+            str(Path(config["train_file"]).parent / "dataset_manifest.json"),
+        )
+    )
+    dataset_manifest = (
+        json.loads(dataset_manifest_path.read_text(encoding="utf-8"))
+        if dataset_manifest_path.exists()
+        else {}
+    )
     return {
         "schema_version": 1,
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "adapter_version": resolve_path(config["output_dir"]).name,
         "base_model": config["model_name"],
+        "dataset_version": dataset_manifest.get("dataset_version"),
+        "dataset_manifest_sha256": file_sha256(dataset_manifest_path)
+        if dataset_manifest_path.exists()
+        else None,
+        "pdf_sha256": (dataset_manifest.get("source") or {}).get("sha256"),
+        "train_sha256": file_sha256(train_path),
+        "validation_sha256": file_sha256(validation_path),
+        "git_commit": git_commit(),
         "sources": sorted(training_source_names([train_path, validation_path])),
         "train_examples": len(train_rows),
         "validation_examples": len(validation_rows),
         "refusal_examples": refusal_examples,
+        "train_refusal_examples": train_refusal_examples,
+        "validation_refusal_examples": validation_refusal_examples,
         "evaluation_metrics": {
             key: value for key, value in evaluation_metrics.items() if isinstance(value, (int, float, str, bool))
         },
@@ -292,6 +345,26 @@ def build_training_manifest(config: dict, evaluation_metrics: dict) -> dict:
         },
         "config": config,
     }
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def git_commit() -> str | None:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ROOT,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
 
 
 def read_jsonl(path: Path) -> list[dict]:

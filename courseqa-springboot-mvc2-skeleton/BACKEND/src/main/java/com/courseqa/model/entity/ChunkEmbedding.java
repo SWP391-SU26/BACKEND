@@ -31,6 +31,9 @@ public class ChunkEmbedding {
     @Column(name = "embedding_json", columnDefinition = "NVARCHAR(MAX)")
     private String embeddingJson;
 
+    @Column(name = "embedding_compressed")
+    private byte[] embeddingCompressed;
+
     @Column(name = "dimension")
     private Integer dimension;
 
@@ -50,6 +53,8 @@ public class ChunkEmbedding {
 
     public String getEmbeddingJson() { return embeddingJson; }
     public void setEmbeddingJson(String embeddingJson) { this.embeddingJson = embeddingJson; }
+    public byte[] getEmbeddingCompressed() { return embeddingCompressed; }
+    public void setEmbeddingCompressed(byte[] embeddingCompressed) { this.embeddingCompressed = embeddingCompressed; }
 
     public Integer getDimension() { return dimension; }
     public void setDimension(Integer dimension) { this.dimension = dimension; }

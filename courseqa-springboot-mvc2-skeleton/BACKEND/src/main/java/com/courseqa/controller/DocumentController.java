@@ -2,6 +2,7 @@ package com.courseqa.controller;
 
 import com.courseqa.model.dto.ApiResponse;
 import com.courseqa.model.dto.DocumentDto;
+import com.courseqa.service.DocumentEmbeddingIndexService;
 import com.courseqa.service.DocumentService;
 import com.courseqa.repository.CourseWorkspaceRepository;
 import com.courseqa.security.JwtPrincipal;
@@ -32,10 +33,16 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 @CrossOrigin
 public class DocumentController {
     private final DocumentService documentService;
+    private final DocumentEmbeddingIndexService documentEmbeddingIndexService;
     private final CourseWorkspaceRepository courseWorkspaceRepository;
 
-    public DocumentController(DocumentService documentService, CourseWorkspaceRepository courseWorkspaceRepository) {
+    public DocumentController(
+            DocumentService documentService,
+            DocumentEmbeddingIndexService documentEmbeddingIndexService,
+            CourseWorkspaceRepository courseWorkspaceRepository
+    ) {
         this.documentService = documentService;
+        this.documentEmbeddingIndexService = documentEmbeddingIndexService;
         this.courseWorkspaceRepository = courseWorkspaceRepository;
     }
 
@@ -52,7 +59,9 @@ public class DocumentController {
         request.courseId = courseId;
         request.chapterId = chapterId;
         request.uploadedBy = principal.userId();
-        return ApiResponse.ok(documentService.uploadDocument(file, request));
+        DocumentDto.DocumentResponse response = documentService.uploadDocument(file, request);
+        documentEmbeddingIndexService.prepareDocument(response.documentId);
+        return ApiResponse.ok(response);
     }
 
     @PostMapping("/personal")
@@ -60,7 +69,9 @@ public class DocumentController {
             @RequestParam("file") MultipartFile file,
             @AuthenticationPrincipal JwtPrincipal principal
     ) {
-        return ApiResponse.ok(documentService.uploadPersonalDocument(file, principal.userId()));
+        DocumentDto.DocumentResponse response = documentService.uploadPersonalDocument(file, principal.userId());
+        documentEmbeddingIndexService.prepareDocument(response.documentId);
+        return ApiResponse.ok(response);
     }
 
     @GetMapping("/mine")

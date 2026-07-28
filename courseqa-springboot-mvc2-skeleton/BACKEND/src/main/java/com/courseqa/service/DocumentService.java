@@ -27,6 +27,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -268,16 +269,12 @@ public class DocumentService {
 
     public List<DocumentDto.DocumentResponse> getMyDocuments(UUID userId) {
         requireRequester(userId);
-        return courseDocumentRepository.findByUploadedByOrderByUploadedAtDesc(userId).stream()
-                .map(document -> toResponse(document, userId))
-                .toList();
+        return toResponses(courseDocumentRepository.findByUploadedByOrderByUploadedAtDesc(userId), userId);
     }
 
     public List<DocumentDto.DocumentResponse> getReviewQueue(UUID adminId) {
         requireAdmin(adminId);
-        return courseDocumentRepository.findByReviewStatusOrderBySubmittedAtAsc("PENDING").stream()
-                .map(document -> toResponse(document, adminId))
-                .toList();
+        return toResponses(courseDocumentRepository.findByReviewStatusOrderBySubmittedAtAsc("PENDING"), adminId);
     }
 
     @Transactional
@@ -384,9 +381,7 @@ public class DocumentService {
                     .filter(document -> isCourseAvailable(document.getCourseId()))
                     .toList();
 
-        return documents.stream()
-                .map(document -> toResponse(document, requesterId))
-                .toList();
+        return toResponses(documents, requesterId);
     }
 
     public List<DocumentDto.DocumentResponse> getDocumentsByWorkspace(UUID workspaceId, UUID requesterId) {
@@ -408,10 +403,10 @@ public class DocumentService {
         List<CourseDocument> documents =
             courseDocumentRepository.findByWorkspaceIdOrderByUploadedAtDesc(workspaceId);
 
-        return documents.stream()
+        List<CourseDocument> accessibleDocuments = documents.stream()
                 .filter(document -> isAdmin(requesterId) || requesterId.equals(document.getUploadedBy()) || isApprovedCourseDocument(document))
-                .map(document -> toResponse(document, requesterId))
                 .toList();
+        return toResponses(accessibleDocuments, requesterId);
     }
 
     public DocumentDto.DocumentResponse getDocument(UUID documentId, UUID requesterId) {
@@ -792,6 +787,7 @@ public class DocumentService {
         chunk.setChunkSize(CHUNK_SIZE);
         chunk.setChunkOverlap(CHUNK_OVERLAP);
         chunk.setContent(content);
+        chunk.setContentCompressed(EmbeddingService.compressUnicodeText(content));
         chunk.setPageStart(page.getPageNumber());
         chunk.setPageEnd(page.getPageNumber());
         chunk.setTokenCount(countWords(content));
@@ -1031,7 +1027,33 @@ public class DocumentService {
     }
 
     private DocumentDto.DocumentResponse toResponse(CourseDocument document, UUID requesterId) {
+        String uploaderName = document.getUploadedBy() == null
+                ? null
+                : userRepository.findById(document.getUploadedBy())
+                    .map(user -> user.getFullName())
+                    .orElse(null);
+        return toResponse(document, requesterId, uploaderName);
+    }
+
+    private List<DocumentDto.DocumentResponse> toResponses(
+            List<CourseDocument> documents, UUID requesterId) {
+        Map<UUID, String> uploaderNames = new HashMap<>();
+        List<UUID> uploaderIds = documents.stream()
+                .map(CourseDocument::getUploadedBy)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        userRepository.findAllById(uploaderIds).forEach(user ->
+                uploaderNames.put(user.getUserId(), user.getFullName()));
+        return documents.stream()
+                .map(document -> toResponse(document, requesterId, uploaderNames.get(document.getUploadedBy())))
+                .toList();
+    }
+
+    private DocumentDto.DocumentResponse toResponse(
+            CourseDocument document, UUID requesterId, String uploaderName) {
         DocumentDto.DocumentResponse response = DocumentDto.DocumentResponse.fromEntity(document);
+        response.uploaderName = uploaderName;
         response.canDelete = isAdmin(requesterId) || (requesterId != null && requesterId.equals(document.getUploadedBy())
                 && "PERSONAL".equals(document.getDocumentScope())
                 && List.of("NOT_SUBMITTED", "REJECTED").contains(document.getReviewStatus()));

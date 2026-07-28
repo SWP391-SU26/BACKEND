@@ -1,0 +1,6 @@
+{
+  "embedding_model": "BAAI/bge-m3",
+  "threshold": 0.9,
+  "warning_count": 0,
+  "warnings": []
+}

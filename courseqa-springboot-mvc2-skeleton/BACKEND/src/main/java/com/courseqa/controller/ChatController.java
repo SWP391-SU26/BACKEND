@@ -6,6 +6,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -13,9 +14,11 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import com.courseqa.security.JwtPrincipal;
 
@@ -30,6 +33,13 @@ import com.courseqa.service.NoteService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import java.io.IOException;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 /**
  * ChatController - API endpoints cho chat functionality
@@ -47,10 +57,16 @@ public class ChatController {
 
     private final ChatService chatService;
     private final NoteService noteService;
+    private final Executor chatTaskExecutor;
 
-    public ChatController(ChatService chatService, NoteService noteService) {
+    public ChatController(
+            ChatService chatService,
+            NoteService noteService,
+            @Qualifier("chatTaskExecutor") Executor chatTaskExecutor
+    ) {
         this.chatService = chatService;
         this.noteService = noteService;
+        this.chatTaskExecutor = chatTaskExecutor;
     }
 
     /**
@@ -75,9 +91,28 @@ public class ChatController {
             @RequestParam(required = false) UUID semesterId,
             @RequestParam(required = false) UUID courseId,
             @RequestParam(required = false) String scopeType,
+            @RequestParam(required = false) String query,
             @AuthenticationPrincipal JwtPrincipal principal) {
-        return ApiResponse.ok(chatService.getSessions(principal.userId(), semesterId, courseId, scopeType,
+        return ApiResponse.ok(chatService.getSessions(principal.userId(), semesterId, courseId, scopeType, query,
                 principal.roles().contains("ADMIN")));
+    }
+
+    @PatchMapping("/sessions/{sessionId}")
+    public ApiResponse<ChatDto.SessionResponse> renameSession(
+            @PathVariable UUID sessionId,
+            @RequestBody ChatDto.RenameSessionRequest request,
+            @AuthenticationPrincipal JwtPrincipal principal) {
+        return ApiResponse.ok(chatService.renameSession(sessionId, principal.userId(),
+                request == null ? null : request.getTitle()));
+    }
+
+    @PatchMapping("/sessions/{sessionId}/pin")
+    public ApiResponse<ChatDto.SessionResponse> pinSession(
+            @PathVariable UUID sessionId,
+            @RequestBody ChatDto.PinSessionRequest request,
+            @AuthenticationPrincipal JwtPrincipal principal) {
+        return ApiResponse.ok(chatService.pinSession(sessionId, principal.userId(),
+                request == null ? null : request.getPinned()));
     }
 
     @DeleteMapping("/sessions/{sessionId}")
@@ -108,6 +143,107 @@ public class ChatController {
     ChatDto.AskResponse response = chatService.askQuestion(sessionId, request.getQuestion(), request.getAnswerMode());
 
     return ResponseEntity.ok(ApiResponse.ok(response));
+    }
+
+    @PostMapping(value = "/sessions/{sessionId}/ask/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamQuestion(
+            @PathVariable UUID sessionId,
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @Valid @RequestBody AskQuestionRequest request) {
+        chatService.requireSessionOwner(sessionId, principal.userId());
+        SseEmitter emitter = new SseEmitter(60_000L);
+        AtomicBoolean terminal = new AtomicBoolean(false);
+        long startedAt = System.nanoTime();
+
+        CompletableFuture<ChatDto.AskResponse> task = CompletableFuture.supplyAsync(() ->
+                chatService.askQuestion(
+                        sessionId,
+                        request.getQuestion(),
+                        request.getAnswerMode(),
+                        "FINE_TUNED".equalsIgnoreCase(request.getAnswerMode()),
+                        phase -> sendPhase(emitter, terminal, phase)
+                ), CompletableFuture.delayedExecutor(25, TimeUnit.MILLISECONDS, chatTaskExecutor));
+
+        task.whenComplete((response, error) -> {
+            if (!terminal.compareAndSet(false, true)) return;
+            try {
+                if (error != null) {
+                    Throwable cause = error.getCause() == null ? error : error.getCause();
+                    log.error("Streaming chat failed for session {}", sessionId, cause);
+                    send(emitter, "ERROR", Map.of(
+                            "code", "CHAT_PROCESSING_FAILED",
+                            "message", cause.getMessage() == null ? "Không thể tạo câu trả lời." : cause.getMessage(),
+                            "elapsedMs", elapsedMs(startedAt),
+                            "retryable", true
+                    ));
+                    emitter.complete();
+                    return;
+                }
+                send(emitter, "DELTA", Map.of("text", response.answer == null ? "" : response.answer));
+                send(emitter, "CITATIONS", Map.of("citations",
+                        response.citations == null ? List.of() : response.citations));
+                send(emitter, "COMPLETED", response);
+                emitter.complete();
+            } catch (IOException exception) {
+                log.debug("SSE client disconnected for session {}", sessionId);
+                emitter.complete();
+            }
+        });
+
+        CompletableFuture.runAsync(() -> {
+            if (!terminal.compareAndSet(false, true)) return;
+            task.cancel(true);
+            try {
+                send(emitter, "ERROR", Map.of(
+                        "code", "CHAT_DEADLINE_EXCEEDED",
+                        "message", "Quá trình trả lời đã vượt quá 55 giây. Vui lòng thử lại.",
+                        "elapsedMs", elapsedMs(startedAt),
+                        "retryable", true
+                ));
+                emitter.complete();
+            } catch (IOException exception) {
+                emitter.complete();
+            }
+        }, CompletableFuture.delayedExecutor(55, TimeUnit.SECONDS));
+
+        emitter.onTimeout(() -> {
+            if (terminal.compareAndSet(false, true)) {
+                task.cancel(true);
+                emitter.complete();
+            }
+        });
+        emitter.onError(error -> {
+            terminal.set(true);
+            task.cancel(true);
+        });
+        return emitter;
+    }
+
+    private static void sendPhase(SseEmitter emitter, AtomicBoolean terminal, String phase) {
+        if (terminal.get()) return;
+        try {
+            send(emitter, phase, Map.of("message", phaseMessage(phase)));
+        } catch (IOException exception) {
+            throw new IllegalStateException("SSE client disconnected.", exception);
+        }
+    }
+
+    private static void send(SseEmitter emitter, String eventName, Object data) throws IOException {
+        emitter.send(SseEmitter.event().name(eventName).data(data, MediaType.APPLICATION_JSON));
+    }
+
+    private static String phaseMessage(String phase) {
+        return switch (phase) {
+            case "SCOPE_CHECK" -> "Đang kiểm tra phạm vi tài liệu";
+            case "RETRIEVAL" -> "Đang tìm nội dung liên quan";
+            case "GENERATION_START" -> "Đang tạo câu trả lời";
+            default -> "Đang xử lý";
+        };
+    }
+
+    private static int elapsedMs(long startedAt) {
+        long elapsed = (System.nanoTime() - startedAt) / 1_000_000L;
+        return (int) Math.min(Integer.MAX_VALUE, Math.max(0L, elapsed));
     }
 
     /**

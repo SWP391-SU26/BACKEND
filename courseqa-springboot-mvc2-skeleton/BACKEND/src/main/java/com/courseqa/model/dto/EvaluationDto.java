@@ -57,6 +57,10 @@ public class EvaluationDto {
         private UUID createdBy;
     }
 
+    public static class RunExperimentRequest {
+        public Boolean allowUnverifiedModel;
+    }
+
     @Data
     @Builder
     @NoArgsConstructor

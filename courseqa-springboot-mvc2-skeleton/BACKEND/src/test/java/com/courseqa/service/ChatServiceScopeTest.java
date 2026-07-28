@@ -3,6 +3,7 @@ package com.courseqa.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -16,6 +17,7 @@ import com.courseqa.model.entity.ChatSession;
 import com.courseqa.model.entity.Course;
 import com.courseqa.model.entity.CourseDocument;
 import com.courseqa.model.entity.CourseWorkspace;
+import com.courseqa.model.entity.UserRole;
 import com.courseqa.repository.AnswerCitationRepository;
 import com.courseqa.repository.ChatMessageRepository;
 import com.courseqa.repository.ChatSessionDocumentRepository;
@@ -179,6 +181,72 @@ class ChatServiceScopeTest {
     }
 
     @Test
+    void firstQuestionUsesOriginalQueryWithoutCallingRewriteModel() {
+        UUID userId = UUID.randomUUID();
+        UUID courseId = UUID.randomUUID();
+        UUID semesterId = UUID.randomUUID();
+        UUID workspaceId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        ChatSession session = new ChatSession();
+        session.setChatSessionId(sessionId);
+        session.setUserId(userId);
+        session.setCourseId(courseId);
+        session.setSemesterWorkspaceId(semesterId);
+        session.setScopeType("COURSE");
+        session.setIsActive(true);
+        session.setSessionTitle("New conversation");
+        CourseDocument available = document(UUID.randomUUID(), courseId, "PROCESSED");
+        when(sessions.findById(sessionId)).thenReturn(java.util.Optional.of(session));
+        when(roles.findByUserIdAndIsActiveTrue(userId)).thenReturn(List.of());
+        when(learningScope.requireAccessibleCourse(courseId, userId, false))
+                .thenReturn(course(courseId, semesterId));
+        when(learningScope.requireActiveWorkspace(courseId))
+                .thenReturn(workspace(workspaceId, courseId));
+        when(documents.findByCourseIdAndProcessingStatusOrderByUploadedAtDesc(courseId, "PROCESSED"))
+                .thenReturn(List.of(available));
+        when(messages.save(any(ChatMessage.class))).thenAnswer(invocation -> {
+            ChatMessage message = invocation.getArgument(0);
+            message.setMessageId(UUID.randomUUID());
+            return message;
+        });
+        when(retrieval.retrieve(any())).thenAnswer(invocation -> {
+            com.courseqa.model.dto.RagDto.RetrievalRequest request = invocation.getArgument(0);
+            assertEquals("Vat chat la gi?", request.queryText);
+            com.courseqa.model.dto.RagDto.RetrievalResponse response =
+                    new com.courseqa.model.dto.RagDto.RetrievalResponse();
+            com.courseqa.model.dto.RagDto.RetrievedChunk first =
+                    new com.courseqa.model.dto.RagDto.RetrievedChunk();
+            first.chunkId = UUID.randomUUID();
+            first.documentId = available.getDocumentId();
+            first.content = "Vat chat la cai ton tai khach quan.";
+            first.similarityScore = 0.80;
+            com.courseqa.model.dto.RagDto.RetrievedChunk second =
+                    new com.courseqa.model.dto.RagDto.RetrievedChunk();
+            second.chunkId = UUID.randomUUID();
+            second.documentId = available.getDocumentId();
+            second.content = "Y thuc phan anh vat chat.";
+            second.similarityScore = 0.70;
+            response.answerable = true;
+            response.results = List.of(first, second);
+            response.embeddingModelName = "BAAI/bge-m3";
+            return response;
+        });
+        PythonAiDto.GenerateResponse generated = new PythonAiDto.GenerateResponse();
+        generated.answer = "Vat chat la cai ton tai khach quan.";
+        generated.provider_used = "local-base";
+        generated.generation_mode = "BASE_RAG";
+        generated.base_model = "Qwen/Qwen2.5-1.5B-Instruct";
+        generated.sources = List.of();
+        generated.used_chunk_ids = List.of();
+        when(ai.callGenerate(any(), any())).thenReturn(generated);
+
+        service.askQuestion(sessionId, "Vat chat la gi?", "RAG");
+
+        verify(ai, never()).callRewriteQuery(any());
+        verify(retrieval).retrieve(any());
+    }
+
+    @Test
     void fineTunedModeCallsTrainedModelWithoutDocumentRetrieval() {
         UUID userId = UUID.randomUUID();
         UUID courseId = UUID.randomUUID();
@@ -196,8 +264,10 @@ class ChatServiceScopeTest {
         PythonAiDto.ChatFinetunedResponse modelResponse = new PythonAiDto.ChatFinetunedResponse();
         modelResponse.answer = "Câu trả lời từ data đã train.";
         when(sessions.findById(sessionId)).thenReturn(java.util.Optional.of(session));
-        when(roles.findByUserIdAndIsActiveTrue(userId)).thenReturn(List.of());
-        when(learningScope.requireAccessibleCourse(courseId, userId, false)).thenReturn(course(courseId, semesterId));
+        UserRole adminRole = new UserRole();
+        adminRole.setRoleName("ADMIN");
+        when(roles.findByUserIdAndIsActiveTrue(userId)).thenReturn(List.of(adminRole));
+        when(learningScope.requireAccessibleCourse(courseId, userId, true)).thenReturn(course(courseId, semesterId));
         when(learningScope.requireActiveWorkspace(courseId)).thenReturn(workspace(UUID.randomUUID(), courseId));
         when(documents.findByCourseIdAndProcessingStatusOrderByUploadedAtDesc(courseId, "PROCESSED"))
                 .thenReturn(List.of(available));
@@ -211,10 +281,111 @@ class ChatServiceScopeTest {
         ChatDto.AskResponse response = service.askQuestion(sessionId,
                 "Triết học Mác - Lênin là gì?", "FINE_TUNED");
 
-        assertEquals("FINE_TUNED", response.generationMode);
+        assertEquals("FINE_TUNED_ONLY", response.generationMode);
         assertEquals("Câu trả lời từ data đã train.", response.answer);
         verify(retrieval, never()).retrieve(any());
         verify(ai).callChatFinetuned(any(), any());
+    }
+
+    @Test
+    void fineTunedEvaluationBatchSkipsRetrievalAndForwardsUnverifiedAcknowledgement() {
+        UUID userId = UUID.randomUUID();
+        UUID courseId = UUID.randomUUID();
+        UUID semesterId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        ChatSession session = new ChatSession();
+        session.setChatSessionId(sessionId);
+        session.setUserId(userId);
+        session.setCourseId(courseId);
+        session.setSemesterWorkspaceId(semesterId);
+        session.setScopeType("COURSE");
+        session.setIsActive(true);
+        session.setSessionTitle("Evaluation");
+        CourseDocument available = document(UUID.randomUUID(), courseId, "PROCESSED");
+        available.setOriginalFilename("triethoc.pdf");
+        UserRole adminRole = new UserRole();
+        adminRole.setRoleName("ADMIN");
+
+        when(sessions.findById(sessionId)).thenReturn(java.util.Optional.of(session));
+        when(roles.findByUserIdAndIsActiveTrue(userId)).thenReturn(List.of(adminRole));
+        when(learningScope.requireAccessibleCourse(courseId, userId, true))
+                .thenReturn(course(courseId, semesterId));
+        when(learningScope.requireActiveWorkspace(courseId))
+                .thenReturn(workspace(UUID.randomUUID(), courseId));
+        when(documents.findByCourseIdAndProcessingStatusOrderByUploadedAtDesc(courseId, "PROCESSED"))
+                .thenReturn(List.of(available));
+        when(documents.findAllById(List.of(available.getDocumentId())))
+                .thenReturn(List.of(available));
+        when(messages.save(any(ChatMessage.class))).thenAnswer(invocation -> {
+            ChatMessage message = invocation.getArgument(0);
+            if (message.getMessageId() == null) message.setMessageId(UUID.randomUUID());
+            return message;
+        });
+        when(ai.callChatFinetunedBatch(any())).thenAnswer(invocation -> {
+            PythonAiDto.ChatFinetunedBatchRequest request = invocation.getArgument(0);
+            assertTrue(Boolean.TRUE.equals(request.allow_unverified));
+            assertEquals(1, request.items.size());
+            PythonAiDto.ChatFinetunedBatchResult result = new PythonAiDto.ChatFinetunedBatchResult();
+            result.request_id = request.items.get(0).request_id;
+            result.answer = "Câu trả lời từ LoRA.";
+            result.provider_used = "local-lora";
+            result.base_model = "Qwen/Qwen2.5-1.5B-Instruct";
+            result.adapter_version = "qwen2.5-1.5b-triethoc-lora-v1";
+            result.generation_mode = "FINE_TUNED_ONLY";
+            result.verification_status = "UNVERIFIED";
+            result.quality_gate_passed = false;
+            PythonAiDto.ChatFinetunedBatchResponse response =
+                    new PythonAiDto.ChatFinetunedBatchResponse();
+            response.items = List.of(result);
+            return response;
+        });
+
+        List<ChatDto.AskResponse> responses = service.askEvaluationBatch(
+                sessionId, List.of("Vật chất là gì?"), "FINE_TUNED", true);
+
+        assertEquals(1, responses.size());
+        assertEquals("Câu trả lời từ LoRA.", responses.get(0).answer);
+        assertEquals("UNVERIFIED", responses.get(0).modelVerificationStatus);
+        verify(retrieval, never()).retrieve(any());
+        verify(ai).callChatFinetunedBatch(any());
+    }
+
+    @Test
+    void requireSessionOwnerThrowsForbiddenForOtherUser() {
+        UUID userId = UUID.randomUUID();
+        UUID otherUserId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        ChatSession session = new ChatSession();
+        session.setChatSessionId(sessionId);
+        session.setUserId(userId);
+        session.setIsActive(true);
+
+        when(sessions.findById(sessionId)).thenReturn(java.util.Optional.of(session));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
+                service.requireSessionOwner(sessionId, otherUserId));
+        assertEquals(403, ex.getStatusCode().value());
+    }
+
+    @Test
+    void pinAndRenameSessionUpdatesProperties() {
+        UUID userId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        ChatSession session = new ChatSession();
+        session.setChatSessionId(sessionId);
+        session.setUserId(userId);
+        session.setIsActive(true);
+        session.setSessionTitle("Old Title");
+        session.setIsPinned(false);
+
+        when(sessions.findById(sessionId)).thenReturn(java.util.Optional.of(session));
+
+        ChatDto.SessionResponse renamed = service.renameSession(sessionId, userId, "New Title");
+        assertEquals("New Title", renamed.getSessionTitle());
+
+        ChatDto.SessionResponse pinned = service.pinSession(sessionId, userId, true);
+        assertEquals(true, pinned.getIsPinned());
+
     }
 
     private Course course(UUID courseId, UUID semesterId) {

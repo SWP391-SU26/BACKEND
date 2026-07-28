@@ -546,3 +546,38 @@ Khong tra stack trace hoac internal SQL cho Frontend.
 | BE-OPS-003 | P2 | OPEN | | | | |
 | BE-OPS-004 | P2 | OPEN | | | | |
 | BE-OPS-005 | P2 | OPEN | | | | |
+
+## 17. Retest RAG va Fine-tuning - 2026-07-28
+
+### RAG student chat
+
+- Python `/api/generate` da co buoc kiem tra answer co duoc context ho tro hay khong.
+- Answer sai ngon ngu, bi cat giua cau hoac khong du evidence se chuyen sang grounded extractive fallback.
+- Fallback chi tra `used_chunk_ids` thuc su da dung; citation khong con mac dinh gan tat ca top chunks.
+- Smoke test 5 cau dau cua test set Triet hoc tra `5/5` response hop le va co dung chunk ID.
+- Cau hoi `Xu huong noi bat cua triet hoc An Do co dai la gi?` da duoc fallback thanh evidence day du thay vi output Qwen bi cat giua tu.
+- Python test suite: `39 passed`.
+- Van can retest qua Java voi tai lieu da re-index BGE-M3 trong SQL Server truoc khi dong `BE-CHAT-003`.
+
+### Fine-tuned-only
+
+- Adapter chinh thuc ton tai tai `models/qwen2.5-0.5b-triethoc-lora-v1`.
+- Manifest ghi dung base model `Qwen/Qwen2.5-0.5B-Instruct`, dataset `triethoc-v1`, checksum PDF va dataset.
+- Dataset co 250 train, 50 validation, 50 locked test; semantic leakage scan bang BGE-M3 co `0` warning.
+- Training CUDA hoan tat voi `train_loss=1.8514`, `eval_loss=1.5642`, peak VRAM khoang `2.75 GB`.
+- Behavioral gate khong dat:
+  - answer token F1: `0.2235`, yeu cau toi thieu `0.35`;
+  - refusal accuracy: `1.0`, yeu cau toi thieu `0.80`.
+- `/api/model/status` tra `BASE_RAG_READY` va `QUALITY_GATE_FAILED`.
+- Khong bat `FINETUNING_ALLOW_UNVERIFIED`; strict benchmark tiep tuc bi chan de khong tao so lieu nghien cuu sai.
+- Java readiness da tra them `fineTunedStatus`; blocker hien ro
+  `Strict FINE_TUNED model is not ready: QUALITY_GATE_FAILED.`
+- `BE-FT-001` va `BE-FT-002` van `OPEN`. Huong tiep theo la tang nang luc base model
+  hoac bo sung QA human-reviewed, sau do train va dat lai cung quality gate; khong ha nguong de hop thuc hoa adapter.
+
+### Build va regression
+
+- Java Maven tests: `60 passed`.
+- FE tests: `26 passed`.
+- FE ESLint: `0` error, `3` canh bao Fast Refresh cu.
+- FE Vite production build: thanh cong.

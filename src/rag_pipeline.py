@@ -12,6 +12,7 @@ from .chunker import chunk_pages
 from .config import AppSettings
 from .document_loader import load_document
 from .embeddings import EmbeddingProvider
+from .embeddings import find_cached_snapshot
 from .storage import RetrievedChunk, SQLiteStore
 from .text_utils import file_sha256, split_sentences, tokenize
 
@@ -34,6 +35,18 @@ class ChatResult:
     retrieved: list[RetrievedChunk]
 
 
+@dataclass(frozen=True)
+class GenerationOutput:
+    answer: str
+    provider_used: str
+    base_model: str
+    adapter_version: str | None
+    generation_mode: str
+    dataset_version: str
+    prompt_version: str
+    peak_vram_bytes: int
+
+
 class RAGPipeline:
     def __init__(
         self,
@@ -46,6 +59,10 @@ class RAGPipeline:
         self.embedding_provider = embedding_provider
         self.local_generator = None
         self.local_generator_error: str | None = None
+        self.base_generator = None
+        self.base_generator_error: str | None = None
+        self.shared_runtime = None
+        self.shared_runtime_error: str | None = None
         self.finetuned_scope_guard = None
 
     def ingest_file(self, path: Path, subject: str, chapter: str) -> IngestResult:
@@ -113,6 +130,17 @@ class RAGPipeline:
         sources: list[dict[str, Any]],
         strict: bool = False,
     ) -> str:
+        return self.generate_answer_with_metadata(
+            question, contexts, sources, strict=strict
+        ).answer
+
+    def generate_answer_with_metadata(
+        self,
+        question: str,
+        contexts: list[RetrievedChunk],
+        sources: list[dict[str, Any]],
+        strict: bool = False,
+    ) -> GenerationOutput:
         provider = self.settings.generation_provider.lower().strip()
         if provider in {"auto", "lora", "local"}:
             generator = self._get_local_generator()
@@ -120,39 +148,95 @@ class RAGPipeline:
                 try:
                     answer = generator.generate(question, contexts)
                     if answer:
-                        return answer
+                        return self._generation_output(
+                            answer,
+                            provider_used="local-lora",
+                            generation_mode="RAG_LORA",
+                            adapter_version=getattr(
+                                generator, "adapter_version", None
+                            ),
+                        )
                 except Exception as exc:
                     self.local_generator_error = str(exc)
                     if strict and provider in {"lora", "local"}:
                         raise RuntimeError(f"Local LoRA generation failed: {exc}") from exc
         if provider in {"auto", "openai"} and self.settings.openai_api_key:
             try:
-                return self._generate_with_openai(question, contexts)
+                return self._generation_output(
+                    self._generate_with_openai(question, contexts),
+                    provider_used="openai",
+                    generation_mode="RAG_OPENAI",
+                )
             except Exception as exc:
                 if strict and provider == "openai":
                     raise RuntimeError(f"OpenAI generation failed: {exc}") from exc
-                return self._generate_extractive_answer(question, contexts, sources)
+                return self._generation_output(
+                    self._generate_extractive_answer(question, contexts, sources),
+                    provider_used="extractive",
+                    generation_mode="RAG_EXTRACTIVE_FALLBACK",
+                )
         if strict and provider in {"lora", "local", "openai"}:
             raise RuntimeError(self.local_generator_error or "No strict generation model is ready.")
-        return self._generate_extractive_answer(question, contexts, sources)
+        return self._generation_output(
+            self._generate_extractive_answer(question, contexts, sources),
+            provider_used="extractive",
+            generation_mode="RAG_EXTRACTIVE",
+        )
+
+    def _generation_output(
+        self,
+        answer: str,
+        *,
+        provider_used: str,
+        generation_mode: str,
+        adapter_version: str | None = None,
+    ) -> GenerationOutput:
+        peak_vram_bytes = 0
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                peak_vram_bytes = int(torch.cuda.max_memory_allocated())
+        except (ImportError, RuntimeError):
+            peak_vram_bytes = 0
+        return GenerationOutput(
+            answer=answer,
+            provider_used=provider_used,
+            base_model=self.settings.local_base_model,
+            adapter_version=adapter_version,
+            generation_mode=generation_mode,
+            dataset_version=self.settings.dataset_version,
+            prompt_version=self.settings.prompt_version,
+            peak_vram_bytes=peak_vram_bytes,
+        )
 
     def _get_local_generator(self):
-        if self.local_generator is not None:
-            return self.local_generator
-        if self.local_generator_error is not None:
+        return self._get_shared_runtime()
+
+    def _get_base_generator(self):
+        return self._get_shared_runtime()
+
+    def _get_shared_runtime(self):
+        if self.shared_runtime is not None:
+            return self.shared_runtime
+        if self.shared_runtime_error is not None:
             return None
         try:
-            from .local_generator import LocalLoraGenerator
+            from .shared_qwen import SharedQwenRuntime
 
-            self.local_generator = LocalLoraGenerator(
+            self.shared_runtime = SharedQwenRuntime(
                 base_model=self.settings.local_base_model,
                 adapter_dir=self.settings.lora_adapter_dir,
                 cache_dir=self.settings.model_cache_dir,
+                max_input_tokens=self.settings.local_max_input_tokens,
                 max_new_tokens=self.settings.local_max_new_tokens,
-                enforce_quality_gate=not self.settings.allow_unverified_finetuned,
             )
-            return self.local_generator
+            self.base_generator = self.shared_runtime
+            self.local_generator = self.shared_runtime
+            return self.shared_runtime
         except Exception as exc:
+            self.shared_runtime_error = str(exc)
+            self.base_generator_error = str(exc)
             self.local_generator_error = str(exc)
             return None
 
@@ -191,9 +275,46 @@ class RAGPipeline:
             and base_model_matches
             and (quality_gate_passed or self.settings.allow_unverified_finetuned)
         )
-        inference_ready = configured_ready and self.local_generator is not None \
-            and self.local_generator.warmed_up and self.local_generator_error is None
-        generation_ready = provider == "extractive" or inference_ready or bool(self.settings.openai_api_key)
+        adapter_loaded = bool(self.shared_runtime and self.shared_runtime.adapter_loaded)
+        inference_ready = configured_ready and adapter_loaded \
+            and self.shared_runtime_error is None
+        cached_base = find_cached_snapshot(
+            self.settings.model_cache_dir,
+            self.settings.local_base_model,
+            "config.json",
+        )
+        cached_tokenizer = find_cached_snapshot(
+            self.settings.model_cache_dir,
+            self.settings.local_base_model,
+            "tokenizer.json",
+        )
+        base_configured_ready = (
+            required_modules.get("torch", False)
+            and required_modules.get("transformers", False)
+            and cached_base is not None
+            and cached_tokenizer is not None
+        )
+        base_inference_ready = (
+            base_configured_ready
+            and self.shared_runtime is not None
+            and self.shared_runtime.warmed_up
+            and self.shared_runtime_error is None
+        )
+        generation_ready = (
+            provider == "extractive"
+            or base_configured_ready
+            or inference_ready
+            or bool(self.settings.openai_api_key)
+        )
+        fine_tuned_status = (
+            "FINE_TUNED_READY"
+            if configured_ready
+            else (
+                "QUALITY_GATE_FAILED"
+                if adapter_ready and not quality_gate_passed
+                else "MODEL_RUNTIME_NOT_READY"
+            )
+        )
         return {
             "configured_provider": provider,
             "adapter_dir": str(self.settings.lora_adapter_dir),
@@ -205,6 +326,19 @@ class RAGPipeline:
             "trained_sources": (manifest or {}).get("sources", []),
             "configured_ready": configured_ready,
             "base_model": self.settings.local_base_model,
+            "base_rag_status": (
+                "BASE_RAG_READY" if base_configured_ready else "MODEL_RUNTIME_NOT_READY"
+            ),
+            "base_rag_configured_ready": base_configured_ready,
+            "base_rag_inference_ready": base_inference_ready,
+            "base_model_cache": str(cached_base) if cached_base else None,
+            "base_tokenizer_cache": str(cached_tokenizer) if cached_tokenizer else None,
+            "base_model_error": self.base_generator_error,
+            "fine_tuned_status": fine_tuned_status,
+            "adapter_version": (manifest or {}).get("adapter_version"),
+            "dataset_version": (manifest or {}).get(
+                "dataset_version", self.settings.dataset_version
+            ),
             "manifest_base_model": manifest_base_model or None,
             "base_model_matches": base_model_matches,
             "dependencies": required_modules,
@@ -215,26 +349,42 @@ class RAGPipeline:
             "local_model_loaded": self.local_generator is not None,
             "local_model_warmed_up": bool(self.local_generator and self.local_generator.warmed_up),
             "local_model_error": self.local_generator_error,
+            "shared_runtime_loaded": self.shared_runtime is not None,
+            "quantization": (
+                self.shared_runtime.quantization if self.shared_runtime else "bnb-4bit-nf4"
+            ),
+            "generation_device": self.shared_runtime.device if self.shared_runtime else "cuda",
+            "embedding_device": self.settings.embedding_device,
+            "adapter_loaded": adapter_loaded,
+            "adapter_verified": quality_gate_passed,
+            "benchmark_eligible": bool(adapter_ready and base_model_matches),
+            "model_verification_status": (
+                "VERIFIED" if quality_gate_passed else "UNVERIFIED"
+            ),
             "openai_configured": bool(self.settings.openai_api_key),
         }
 
     def warmup_local_model(self) -> None:
-        generator = self._get_local_generator()
+        generator = self._get_base_generator()
         if not generator:
-            raise RuntimeError(self.local_generator_error or "Local LoRA model is not ready.")
+            raise RuntimeError(self.base_generator_error or "Local base model is not ready.")
         try:
             generator.warmup()
         except Exception as exc:
+            self.shared_runtime_error = str(exc)
+            self.base_generator_error = str(exc)
             self.local_generator_error = str(exc)
             raise
 
     def generate_rag_batch(
         self,
-        items: list[tuple[str, list[RetrievedChunk]]],
+        items: list[tuple],
     ) -> list[tuple[str, list[RetrievedChunk]]]:
-        generator = self._get_local_generator()
+        generator = self._get_base_generator()
         if not generator:
-            raise RuntimeError(self.local_generator_error or "Local LoRA model is not ready.")
+            raise RuntimeError(
+                self.base_generator_error or "Local base model is not ready."
+            )
         return generator.generate_batch(
             items,
             max_new_tokens=self.settings.benchmark_max_new_tokens,
@@ -246,6 +396,7 @@ class RAGPipeline:
         questions: list[str],
         allowed_sources: list[list[str]] | None = None,
         strict: bool = True,
+        allow_unverified: bool = False,
     ) -> list[str]:
         generator = self._get_local_generator()
         if not generator:
@@ -254,17 +405,156 @@ class RAGPipeline:
             questions,
             allowed_sources=allowed_sources,
             strict=strict,
+            allow_unverified=allow_unverified,
             max_new_tokens=self.settings.benchmark_max_new_tokens,
             max_input_tokens=self.settings.benchmark_max_input_tokens,
         )
 
     def generate_without_retrieval(
-        self, question: str, allowed_sources: list[str] | None = None, strict: bool = True
+        self,
+        question: str,
+        allowed_sources: list[str] | None = None,
+        strict: bool = True,
+        allow_unverified: bool = False,
     ) -> str:
         generator = self._get_local_generator()
         if not generator:
             raise RuntimeError(self.local_generator_error or "Local LoRA model chưa sẵn sàng.")
-        return generator.generate_without_context(question, allowed_sources or [], strict=strict)
+        del strict
+        return generator.generate_without_context(
+            question,
+            allowed_sources or [],
+            allow_unverified=allow_unverified,
+        )
+
+    def fine_tuned_metadata(self) -> GenerationOutput:
+        status = self.generation_status()
+        adapter_version = status.get("adapter_version")
+        return self._generation_output(
+            "",
+            provider_used="local-lora",
+            generation_mode="FINE_TUNED_ONLY",
+            adapter_version=adapter_version,
+        )
+
+    def generate_base_rag_answer(
+        self,
+        question: str,
+        contexts: list[RetrievedChunk],
+        *,
+        history: list[dict[str, str]] | None = None,
+        standalone_query: str | None = None,
+        answer_profile: str = "default",
+        strict_prompt: bool = False,
+        max_input_tokens: int | None = None,
+        max_new_tokens: int | None = None,
+        max_time_seconds: float | None = None,
+    ) -> GenerationOutput:
+        generator = self._get_base_generator()
+        if not generator:
+            raise RuntimeError(
+                self.base_generator_error or "Local base model is not ready."
+            )
+        answer = generator.generate(
+            question,
+            contexts,
+            history=history or [],
+            standalone_query=standalone_query,
+            answer_profile=answer_profile,
+            strict_prompt=strict_prompt,
+            max_input_tokens=max_input_tokens or self.settings.local_max_input_tokens,
+            max_new_tokens=max_new_tokens or self.settings.local_max_new_tokens,
+            max_time_seconds=max_time_seconds,
+        )
+        if not answer:
+            raise RuntimeError("Local base model returned an empty answer.")
+        return self._generation_output(
+            answer,
+            provider_used="local-base",
+            generation_mode="BASE_RAG",
+        )
+
+    def repair_grounding_answer(
+        self,
+        question: str,
+        unsupported_sentences: list[str],
+        contexts: list[RetrievedChunk],
+        *,
+        max_input_tokens: int | None = None,
+        max_new_tokens: int | None = None,
+        max_time_seconds: float | None = None,
+    ) -> GenerationOutput:
+        generator = self._get_base_generator()
+        if not generator:
+            raise RuntimeError(
+                self.base_generator_error or "Local base model is not ready."
+            )
+        answer = generator.repair_unsupported_sentences(
+            question,
+            unsupported_sentences,
+            contexts,
+            max_input_tokens=max_input_tokens or self.settings.local_max_input_tokens,
+            max_new_tokens=max_new_tokens or min(self.settings.local_max_new_tokens, 160),
+            max_time_seconds=max_time_seconds,
+        )
+        return self._generation_output(
+            answer,
+            provider_used="local-base-grounding-repair",
+            generation_mode="BASE_RAG",
+        )
+
+    def complete_grounded_answer(
+        self,
+        question: str,
+        current_answer: str,
+        contexts: list[RetrievedChunk],
+        *,
+        answer_profile: str,
+        max_input_tokens: int | None = None,
+        max_new_tokens: int | None = None,
+        max_time_seconds: float | None = None,
+    ) -> GenerationOutput:
+        generator = self._get_base_generator()
+        if not generator:
+            raise RuntimeError(
+                self.base_generator_error or "Local base model is not ready."
+            )
+        answer = generator.complete_grounded_answer(
+            question,
+            current_answer,
+            contexts,
+            answer_profile=answer_profile,
+            max_input_tokens=max_input_tokens or self.settings.local_max_input_tokens,
+            max_new_tokens=max_new_tokens or min(self.settings.local_max_new_tokens, 240),
+            max_time_seconds=max_time_seconds,
+        )
+        return self._generation_output(
+            answer,
+            provider_used="local-base-completeness-repair",
+            generation_mode="BASE_RAG",
+        )
+
+    def rewrite_query(
+        self,
+        question: str,
+        *,
+        history: list[dict[str, str]] | None = None,
+        intent: str = "factual",
+        attempt: int = 1,
+        evidence_hints: list[str] | None = None,
+    ) -> str:
+        generator = self._get_base_generator()
+        if not generator:
+            raise RuntimeError(
+                self.base_generator_error or "Local base model is not ready."
+            )
+        return generator.rewrite_query(
+            question,
+            history=history or [],
+            intent=intent,
+            attempt=attempt,
+            evidence_hints=evidence_hints or [],
+        )
 
     def assess_finetuned_scope(self, question: str, selected_sources: list[str]):
         if self.finetuned_scope_guard is None:

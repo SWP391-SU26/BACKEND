@@ -13,6 +13,7 @@ import com.courseqa.model.entity.CourseDocument;
 import com.courseqa.model.entity.CourseWorkspace;
 import com.courseqa.model.entity.DocumentChunk;
 import com.courseqa.model.entity.SemesterWorkspace;
+import com.courseqa.model.entity.User;
 import com.courseqa.model.entity.UserRole;
 import com.courseqa.repository.ChapterRepository;
 import com.courseqa.repository.CourseDocumentRepository;
@@ -28,6 +29,7 @@ import com.courseqa.repository.UserRoleRepository;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -123,5 +125,32 @@ class DocumentServicePersonalTest {
         assertEquals(courseWorkspaceId, chunk.getWorkspaceId());
         assertEquals(courseId, chunk.getCourseId());
         verify(chunks).saveAll(List.of(chunk));
+    }
+
+    @Test
+    void documentListIncludesUploadDateAndUploaderNameWithOneBatchLookup() {
+        UUID ownerId = UUID.randomUUID();
+        LocalDateTime uploadedAt = LocalDateTime.of(2026, 7, 27, 10, 30);
+        CourseDocument document = new CourseDocument();
+        document.setDocumentId(UUID.randomUUID());
+        document.setUploadedBy(ownerId);
+        document.setUploadedAt(uploadedAt);
+        document.setDocumentScope("PERSONAL");
+        document.setReviewStatus("NOT_SUBMITTED");
+
+        User uploader = new User();
+        uploader.setUserId(ownerId);
+        uploader.setFullName("Nguyen Van A");
+
+        when(users.existsById(ownerId)).thenReturn(true);
+        when(documents.findByUploadedByOrderByUploadedAtDesc(ownerId)).thenReturn(List.of(document));
+        when(users.findAllById(any())).thenReturn(List.of(uploader));
+
+        List<DocumentDto.DocumentResponse> response = service.getMyDocuments(ownerId);
+
+        assertEquals(1, response.size());
+        assertEquals(uploadedAt, response.get(0).uploadedAt);
+        assertEquals("Nguyen Van A", response.get(0).uploaderName);
+        verify(users).findAllById(any());
     }
 }

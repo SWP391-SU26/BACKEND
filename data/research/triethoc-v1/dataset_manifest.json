@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "dataset_version": "triethoc-v1",
+  "seed": 42,
+  "subject": "Triết học Mác - Lênin",
+  "source": {
+    "filename": "75770b9b-cdbf-4038-90e2-f25e1f4426fe_triethocmaclenin.pdf",
+    "canonical_path": "data\\corpus\\triethoc_mac_lenin.pdf",
+    "pages": 214,
+    "sha256": "6e69a2f7294df03d22e94f0c748f407f22231321b8cea1dd661b1f2c9e36e171"
+  },
+  "inputs": {
+    "seed_csv": "data\\ground_truth_triethocmaclenin_100.csv",
+    "seed_csv_sha256": "70aaa87bf7286e3971a9521d0619b6549bd5c47cbac5e53b7dd68cba5c655420",
+    "locked_test": "C:\\FALL 2026\\SWP\\output\\flow5\\triethoc_mac_lenin_50_questions.csv",
+    "locked_test_sha256": "97f98282c8c53e0d0a4d37537856816fb25caf6a5cc839dbde3842f525c40dfb"
+  },
+  "counts": {
+    "train": 250,
+    "train_in_scope": 225,
+    "train_out_of_scope": 25,
+    "validation": 50,
+    "validation_in_scope": 45,
+    "validation_out_of_scope": 5,
+    "test": 50,
+    "robustness": 10
+  },
+  "chapters": [
+    "Chương I",
+    "Chương II",
+    "Chương III",
+    "Chương IV",
+    "Chương V",
+    "Chương VI",
+    "Chương VII",
+    "Chương VIII",
+    "Chương IX",
+    "Chương X",
+    "Chương XI",
+    "Chương XII",
+    "Chương XIII",
+    "Chương XIV"
+  ],
+  "leakage_policy": {
+    "locked_test_questions_in_training": false,
+    "locked_test_answers_verbatim_in_training": false,
+    "train_validation_answers_verbatim_overlap": false,
+    "semantic_near_duplicates_require_review": true,
+    "reviewed_test_concepts_excluded": 7,
+    "minimum_train_validation_evidence_coverage": 0.4,
+    "minimum_test_evidence_coverage": 0.25
+  },
+  "files": {
+    "train.csv": {
+      "path": "data\\research\\triethoc-v1\\train.csv",
+      "sha256": "28dc05eb8d52c55dff9808f4e991e9416de42929f90675eed468eea60bc325f1"
+    },
+    "validation.csv": {
+      "path": "data\\research\\triethoc-v1\\validation.csv",
+      "sha256": "e4012690e558f2f26922b5396519111754d27e40121edafae17a851feb26e29b"
+    },
+    "test.csv": {
+      "path": "data\\research\\triethoc-v1\\test.csv",
+      "sha256": "daea22dd1b5c8a4a2d13894d79b0341ab57b938b2a3b3e2d4a7d1deab1a8b524"
+    },
+    "robustness.csv": {
+      "path": "data\\research\\triethoc-v1\\robustness.csv",
+      "sha256": "72abb1dfe6f65826950888dcb1a2bd2be4ca0c20ccbee98723e09d2487f54fc0"
+    },
+    "train.jsonl": {
+      "path": "data\\research\\triethoc-v1\\train.jsonl",
+      "sha256": "c20e90f2760f3fbedd4c449a01f9a9338ebba445fa6bc839fd3bdfae95811981"
+    },
+    "validation.jsonl": {
+      "path": "data\\research\\triethoc-v1\\validation.jsonl",
+      "sha256": "bc0b832b8bfd731e023669a6c0a926cacfadf71c61d5ac3d45df4c54befa46e8"
+    }
+  }
+}

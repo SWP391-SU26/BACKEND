@@ -2,13 +2,18 @@ package com.courseqa.model.dto;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 public class LearningScopeDto {
     public static class SemesterScope {
         public UUID semesterId;
+        public String semesterCode;
         public String semesterName;
         public String status;
+        public UUID createdBy;
+        public String creatorName;
+        public LocalDateTime createdAt;
         public List<CourseScope> courses = new ArrayList<>();
     }
 
@@ -17,6 +22,9 @@ public class LearningScopeDto {
         public String courseCode;
         public String courseName;
         public String status;
+        public UUID createdBy;
+        public String creatorName;
+        public LocalDateTime createdAt;
         public UUID workspaceId;
         public int documentCount;
         public int processedDocumentCount;

@@ -14,3 +14,5 @@ fastembed>=0.7,<0.8
 sentence-transformers>=3.0.0
 peft>=0.19.0
 accelerate>=1.13.0
+ragas>=0.4,<0.5
+instructor>=1.0

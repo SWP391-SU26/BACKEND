@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import com.courseqa.model.entity.EvaluationDataset;
 import com.courseqa.model.entity.Experiment;
+import com.courseqa.model.dto.EvaluationDto.RunExperimentRequest;
 import com.courseqa.security.JwtPrincipal;
 import com.courseqa.service.EvaluationService;
 import java.util.List;
@@ -65,11 +66,24 @@ class EvaluationControllerTest {
     @Test
     void runEndpointReturnsAcceptedForBackgroundJob() {
         UUID experimentId = UUID.randomUUID();
-        when(evaluationService.startBenchmark(any())).thenReturn(new Experiment());
+        when(evaluationService.startBenchmark(any(), eq(false))).thenReturn(new Experiment());
 
         var response = new EvaluationController(evaluationService).runBenchmark(experimentId);
 
         assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
+    }
+
+    @Test
+    void runEndpointForwardsExplicitUnverifiedAcknowledgement() {
+        UUID experimentId = UUID.randomUUID();
+        RunExperimentRequest request = new RunExperimentRequest();
+        request.allowUnverifiedModel = true;
+        when(evaluationService.startBenchmark(experimentId, true)).thenReturn(new Experiment());
+
+        var response = new EvaluationController(evaluationService).runBenchmark(experimentId, request);
+
+        assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
+        verify(evaluationService).startBenchmark(experimentId, true);
     }
 
     @Test

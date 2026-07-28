@@ -17,23 +17,36 @@ public class LearningScopeService {
     private final CourseDocumentRepository documents;
     private final ChapterRepository chapters;
     private final DocumentChapterRangeRepository ranges;
+    private final UserRepository users;
 
     public LearningScopeService(SemesterWorkspaceRepository semesters, CourseRepository courses,
             CourseWorkspaceRepository workspaces,
             CourseDocumentRepository documents, ChapterRepository chapters,
-            DocumentChapterRangeRepository ranges) {
+            DocumentChapterRangeRepository ranges, UserRepository users) {
         this.semesters = semesters; this.courses = courses;
         this.workspaces = workspaces; this.documents = documents; this.chapters = chapters; this.ranges = ranges;
+        this.users = users;
     }
 
     public List<LearningScopeDto.SemesterScope> scope(UUID userId, boolean admin) {
         Map<UUID, SemesterWorkspace> semesterById = semesters.findAll().stream()
                 .collect(java.util.stream.Collectors.toMap(SemesterWorkspace::getSemesterWorkspaceId, Function.identity()));
+        List<Course> visibleCourses = courses.findAll().stream()
+                .filter(course -> visible(course, semesterById.get(course.getSemesterWorkspaceId())))
+                .sorted(Comparator.comparing(Course::getCreatedAt,
+                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .toList();
+        Set<UUID> creatorIds = new HashSet<>();
+        semesterById.values().stream().map(SemesterWorkspace::getCreatedBy)
+                .filter(Objects::nonNull).forEach(creatorIds::add);
+        visibleCourses.stream().map(Course::getCreatedBy)
+                .filter(Objects::nonNull).forEach(creatorIds::add);
+        Map<UUID, String> creatorNames = users.findAllById(creatorIds).stream()
+                .collect(java.util.stream.Collectors.toMap(User::getUserId, User::getFullName));
         Map<UUID, LearningScopeDto.SemesterScope> result = new LinkedHashMap<>();
 
-        courses.findAll().stream().sorted(Comparator.comparing(Course::getCreatedAt).reversed()).forEach(course -> {
+        visibleCourses.forEach(course -> {
             SemesterWorkspace semester = semesterById.get(course.getSemesterWorkspaceId());
-            if (!visible(course, semester)) return;
             List<CourseDocument> courseDocuments = documents.findByCourseIdOrderByUploadedAtDesc(course.getCourseId());
             courseDocuments = courseDocuments.stream().filter(this::isSharedDocument).toList();
             long processed = courseDocuments.stream().filter(doc -> "PROCESSED".equals(doc.getProcessingStatus())).count();
@@ -44,12 +57,19 @@ public class LearningScopeService {
 
             LearningScopeDto.SemesterScope semesterScope = result.computeIfAbsent(semester.getSemesterWorkspaceId(), id -> {
                 LearningScopeDto.SemesterScope value = new LearningScopeDto.SemesterScope();
-                value.semesterId = id; value.semesterName = semester.getSemesterName(); value.status = semester.getStatus();
+                value.semesterId = id; value.semesterCode = semester.getSemesterCode();
+                value.semesterName = semester.getSemesterName(); value.status = semester.getStatus();
+                value.createdBy = semester.getCreatedBy();
+                value.creatorName = creatorNames.get(semester.getCreatedBy());
+                value.createdAt = semester.getCreatedAt();
                 return value;
             });
             LearningScopeDto.CourseScope courseScope = new LearningScopeDto.CourseScope();
             courseScope.courseId = course.getCourseId(); courseScope.courseCode = course.getCourseCode();
             courseScope.courseName = course.getCourseName(); courseScope.status = course.getStatus();
+            courseScope.createdBy = course.getCreatedBy();
+            courseScope.creatorName = creatorNames.get(course.getCreatedBy());
+            courseScope.createdAt = course.getCreatedAt();
             courseScope.workspaceId = workspace.getWorkspaceId(); courseScope.documentCount = courseDocuments.size();
             courseScope.processedDocumentCount = (int) processed;
             semesterScope.courses.add(courseScope);

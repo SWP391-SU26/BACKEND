@@ -57,7 +57,8 @@ public final class QuestionIntentAnalyzer {
             return QuestionForm.PROCEDURE;
         }
         if (exhaustive || containsAny(normalized,
-                "gom nhung", "bao gom", "nhung gi", "cac loai", "ke ten", "which", "what are")) {
+                "gom nhung", "gom may", "may mat", "bao gom", "nhung gi",
+                "cac loai", "ke ten", "which", "what are")) {
             return QuestionForm.LIST;
         }
         if (asksMeaning || containsAny(normalized, "la gi", "dinh nghia", "khai niem", "duoc hieu", "what is")

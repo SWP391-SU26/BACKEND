@@ -40,6 +40,8 @@ public class DocumentDto {
         public UUID reviewedBy;
         public LocalDateTime reviewedAt;
         public String rejectionReason;
+        public LocalDateTime uploadedAt;
+        public String uploaderName;
         public boolean canDelete;
 
         public static DocumentResponse fromEntity(CourseDocument document) {
@@ -66,6 +68,7 @@ public class DocumentDto {
             response.reviewedBy = document.getReviewedBy();
             response.reviewedAt = document.getReviewedAt();
             response.rejectionReason = document.getRejectionReason();
+            response.uploadedAt = document.getUploadedAt();
             return response;
         }
     }

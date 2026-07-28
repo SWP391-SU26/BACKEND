@@ -41,7 +41,8 @@ class RetrievalServiceDocumentScopeTest {
                 mock(RetrievalResultRepository.class),
                 mock(AnswerCitationRepository.class),
                 embeddingService,
-                documents
+                documents,
+                new EmbeddingVectorCache()
         );
 
         documentId = UUID.randomUUID();
@@ -106,6 +107,55 @@ class RetrievalServiceDocumentScopeTest {
 
         assertTrue(response.answerable);
         assertEquals(documentId, response.results.get(0).documentId);
+    }
+
+    @Test
+    void definitionQuestionPrioritizesAnExplicitDefinitionOverGenericSemanticContent() {
+        UUID genericChunkId = UUID.randomUUID();
+        UUID definitionChunkId = UUID.randomUUID();
+        UUID modelId = UUID.randomUUID();
+
+        DocumentChunk generic = new DocumentChunk();
+        generic.setChunkId(genericChunkId);
+        generic.setDocumentId(documentId);
+        generic.setChunkIndex(1);
+        generic.setPageStart(78);
+        generic.setContent("Tinh vat chat cua the gioi da duoc khoa hoc kiem nghiem.");
+
+        DocumentChunk definition = new DocumentChunk();
+        definition.setChunkId(definitionChunkId);
+        definition.setDocumentId(documentId);
+        definition.setChunkIndex(2);
+        definition.setPageStart(81);
+        definition.setContent("Dinh nghia vat chat: Vat chat la cai ton tai khach quan ben ngoai y thuc.");
+
+        ChunkEmbedding genericEmbedding = new ChunkEmbedding();
+        genericEmbedding.setChunkId(genericChunkId);
+        genericEmbedding.setEmbeddingModelId(modelId);
+        genericEmbedding.setEmbeddingJson("[0.70,0]");
+
+        ChunkEmbedding definitionEmbedding = new ChunkEmbedding();
+        definitionEmbedding.setChunkId(definitionChunkId);
+        definitionEmbedding.setEmbeddingModelId(modelId);
+        definitionEmbedding.setEmbeddingJson("[0.64,0]");
+
+        when(chunks.findByDocumentIdInOrderByCreatedAtAsc(any()))
+                .thenReturn(List.of(generic, definition));
+        when(embeddings.findByEmbeddingModelIdAndChunkIdIn(any(), any()))
+                .thenReturn(List.of(genericEmbedding, definitionEmbedding));
+        when(embeddingService.parseJsonVector(anyString())).thenAnswer(invocation -> {
+            String value = invocation.getArgument(0);
+            return value.startsWith("[0.70") ? new double[] {0.70, 0.0} : new double[] {0.64, 0.0};
+        });
+        when(embeddingService.cosineVectorScore(any(), any())).thenAnswer(invocation ->
+                ((double[]) invocation.getArgument(1))[0]);
+
+        RagDto.RetrievalRequest request = request("DOCUMENTS", "Vat chat la gi?");
+        request.topK = 1;
+        RagDto.RetrievalResponse response = service.retrieve(request);
+
+        assertTrue(response.answerable);
+        assertEquals(definitionChunkId, response.results.get(0).chunkId);
     }
 
     private RagDto.RetrievalRequest request(String scopeType, String question) {

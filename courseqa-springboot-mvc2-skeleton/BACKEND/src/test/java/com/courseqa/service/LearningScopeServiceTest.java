@@ -14,6 +14,7 @@ import com.courseqa.repository.CourseRepository;
 import com.courseqa.repository.CourseWorkspaceRepository;
 import com.courseqa.repository.DocumentChapterRangeRepository;
 import com.courseqa.repository.SemesterWorkspaceRepository;
+import com.courseqa.repository.UserRepository;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,7 +36,8 @@ class LearningScopeServiceTest {
                 mock(CourseWorkspaceRepository.class),
                 documents,
                 mock(ChapterRepository.class),
-                mock(DocumentChapterRangeRepository.class));
+                mock(DocumentChapterRangeRepository.class),
+                mock(UserRepository.class));
     }
 
     @Test

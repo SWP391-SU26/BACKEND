@@ -26,9 +26,9 @@ def generator_without_model() -> LocalLoraGenerator:
 
 def test_benchmark_defaults_are_bounded() -> None:
     settings = AppSettings()
-    assert settings.benchmark_batch_size == 4
-    assert settings.benchmark_max_input_tokens == 448
-    assert settings.benchmark_max_new_tokens == 64
+    assert settings.benchmark_batch_size == 1
+    assert settings.benchmark_max_input_tokens == 1536
+    assert settings.benchmark_max_new_tokens == 192
 
 
 def test_cuda_oom_splits_batch_and_preserves_order(monkeypatch) -> None:

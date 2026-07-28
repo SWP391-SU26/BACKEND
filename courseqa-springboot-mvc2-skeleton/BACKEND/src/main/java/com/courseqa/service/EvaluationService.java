@@ -3,6 +3,7 @@ package com.courseqa.service;
 import com.courseqa.exception.ResourceNotFoundException;
 import com.courseqa.model.dto.ChatDto;
 import com.courseqa.model.dto.LearningScopeDto;
+import com.courseqa.model.dto.PythonAiDto;
 import com.courseqa.model.entity.Course;
 import com.courseqa.model.entity.CourseDocument;
 import com.courseqa.model.entity.CourseWorkspace;
@@ -47,6 +48,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -54,10 +56,11 @@ import org.springframework.web.server.ResponseStatusException;
 public class EvaluationService {
     private static final Logger log = LoggerFactory.getLogger(EvaluationService.class);
     private static final Set<String> TERMINAL_STATUSES = Set.of("COMPLETED", "FAILED");
-    private static final int BENCHMARK_BATCH_SIZE = 4;
-    private static final int BENCHMARK_MAX_INPUT_TOKENS = 448;
-    private static final int BENCHMARK_MAX_NEW_TOKENS = 64;
-    private static final String BENCHMARK_PROFILE_VERSION = "full-batch-v1";
+    private static final int BENCHMARK_BATCH_SIZE = 1;
+    private static final int BENCHMARK_MAX_INPUT_TOKENS = 1536;
+    private static final int BENCHMARK_MAX_NEW_TOKENS = 192;
+    private static final int BENCHMARK_REPETITIONS = 3;
+    private static final String BENCHMARK_PROFILE_VERSION = "qwen1.5b-sequential-v2";
 
     private final EvaluationDatasetRepository datasets;
     private final EvaluationDatasetDocumentRepository datasetDocuments;
@@ -68,7 +71,7 @@ public class EvaluationService {
     private final CourseDocumentRepository documents;
     private final CourseWorkspaceRepository workspaces;
     private final LearningScopeService learningScopeService;
-    private final ChatService chatService;
+    private final BenchmarkInferenceService benchmarkInferenceService;
     private final AIClientService aiClientService;
     private final TaskExecutor taskExecutor;
     private final ObjectMapper objectMapper;
@@ -84,7 +87,7 @@ public class EvaluationService {
             CourseDocumentRepository documents,
             CourseWorkspaceRepository workspaces,
             LearningScopeService learningScopeService,
-            ChatService chatService,
+            BenchmarkInferenceService benchmarkInferenceService,
             AIClientService aiClientService,
             @Qualifier("evaluationTaskExecutor") TaskExecutor taskExecutor,
             ObjectMapper objectMapper) {
@@ -97,7 +100,7 @@ public class EvaluationService {
         this.documents = documents;
         this.workspaces = workspaces;
         this.learningScopeService = learningScopeService;
-        this.chatService = chatService;
+        this.benchmarkInferenceService = benchmarkInferenceService;
         this.aiClientService = aiClientService;
         this.taskExecutor = taskExecutor;
         this.objectMapper = objectMapper;
@@ -183,6 +186,7 @@ public class EvaluationService {
                 .toList();
     }
 
+    @Transactional
     public Map<String, Object> importQuestions(UUID datasetId, MultipartFile file) {
         EvaluationDataset dataset = requireEditableDataset(datasetId);
         if (file == null || file.isEmpty()) {
@@ -199,8 +203,22 @@ public class EvaluationService {
                 throw new IllegalArgumentException("CSV must include question and expected_answer columns.");
             }
             Integer pageIndex = firstHeader(headers, "expected_page", "page");
+            Integer sourceIndex = firstHeader(headers, "expected_source", "source", "filename");
+            Integer evidenceIndex = firstHeader(headers, "evidence_quote", "evidence");
+            Integer chapterIndex = firstHeader(headers, "chapter", "chapter_label");
+            Integer outOfScopeIndex = firstHeader(headers, "is_out_of_scope", "out_of_scope");
             Integer categoryIndex = firstHeader(headers, "category", "question_type", "type");
             Integer difficultyIndex = firstHeader(headers, "difficulty");
+            Set<String> knownQuestions = questions.findByDatasetId(datasetId).stream()
+                    .map(EvaluationQuestion::getQuestionText)
+                    .filter(Objects::nonNull)
+                    .map(this::normalizeForMatching)
+                    .collect(java.util.stream.Collectors.toCollection(HashSet::new));
+            Map<String, CourseDocument> documentsByFilename = getDatasetDocuments(datasetId).stream()
+                    .filter(document -> document.getOriginalFilename() != null)
+                    .collect(java.util.stream.Collectors.toMap(
+                            document -> document.getOriginalFilename().trim().toLowerCase(Locale.ROOT),
+                            Function.identity(), (left, right) -> left));
             int next = questions.findByDatasetId(datasetId).size() + 1;
             int skipped = 0;
             List<EvaluationQuestion> imported = new ArrayList<>();
@@ -209,13 +227,38 @@ public class EvaluationService {
                 String questionText = cell(row, questionIndex).trim();
                 String answer = cell(row, answerIndex).trim();
                 if (questionText.isEmpty() || answer.isEmpty()) { skipped++; continue; }
+                if (!knownQuestions.add(normalizeForMatching(questionText))) {
+                    throw new IllegalArgumentException("Duplicate question at CSV row " + (rowIndex + 1) + ".");
+                }
+                String expectedPageCell = cell(row, pageIndex);
+                Integer expectedPage = parseOptionalInt(expectedPageCell);
+                if (!expectedPageCell.isBlank() && expectedPage == null) {
+                    throw new IllegalArgumentException("expected_page must be an integer at CSV row "
+                            + (rowIndex + 1) + ".");
+                }
+                if (expectedPage != null && expectedPage <= 0) {
+                    throw new IllegalArgumentException("expected_page must be positive at CSV row "
+                            + (rowIndex + 1) + ".");
+                }
+                String expectedSource = cell(row, sourceIndex).trim();
+                CourseDocument expectedDocument = expectedSource.isBlank() ? null
+                        : documentsByFilename.get(expectedSource.toLowerCase(Locale.ROOT));
+                if (!expectedSource.isBlank() && expectedDocument == null) {
+                    throw new IllegalArgumentException("expected_source is not in the dataset corpus at CSV row "
+                            + (rowIndex + 1) + ".");
+                }
                 EvaluationQuestion item = new EvaluationQuestion();
                 item.setDatasetId(datasetId);
                 item.setCourseId(dataset.getCourseId());
                 item.setQuestionNo(next++);
                 item.setQuestionText(questionText);
                 item.setGroundTruthAnswer(answer);
-                item.setExpectedPage(parseOptionalInt(cell(row, pageIndex)));
+                item.setExpectedPage(expectedPage);
+                item.setExpectedSource(expectedSource.isBlank() ? null : expectedSource);
+                item.setExpectedDocumentId(expectedDocument == null ? null : expectedDocument.getDocumentId());
+                item.setEvidenceQuote(defaultIfBlank(cell(row, evidenceIndex), null));
+                item.setChapterLabel(defaultIfBlank(cell(row, chapterIndex), null));
+                item.setIsOutOfScope(parseBoolean(cell(row, outOfScopeIndex)));
                 item.setQuestionType(defaultIfBlank(cell(row, categoryIndex), "FACTUAL"));
                 item.setDifficulty(defaultIfBlank(cell(row, difficultyIndex), "MEDIUM"));
                 item.setCreatedAt(LocalDateTime.now());
@@ -253,10 +296,13 @@ public class EvaluationService {
         experiment.setWorkspaceId(dataset.getWorkspaceId());
         experiment.setExperimentName(name.trim());
         experiment.setExperimentType(normalizedType);
-        experiment.setLlmModel(llmModel.trim());
+        experiment.setLlmModel("Qwen/Qwen2.5-1.5B-Instruct");
+        experiment.setChunkingStrategy("FIXED_500_OVERLAP_50");
         experiment.setTopK(5);
-        experiment.setTemperature(0.2);
-        experiment.setConfigJson(configJson == null || configJson.isBlank() ? "{}" : configJson);
+        experiment.setTemperature(0.0);
+        experiment.setFineTunedModelName("FINE_TUNED".equals(normalizedType)
+                ? "qwen2.5-1.5b-triethoc-lora-v1" : null);
+        experiment.setConfigJson(withResearchConfig(configJson, normalizedType));
         experiment.setCreatedBy(createdBy);
         experiment.setStatus("PENDING");
         experiment.setProgress(0);
@@ -296,12 +342,19 @@ public class EvaluationService {
     }
 
     public synchronized Experiment startBenchmark(UUID experimentId) {
+        return startBenchmark(experimentId, false);
+    }
+
+    public synchronized Experiment startBenchmark(UUID experimentId, boolean allowUnverifiedModel) {
         Experiment experiment = getExperiment(experimentId);
         if (Set.of("QUEUED", "RUNNING").contains(experiment.getStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "This experiment is already queued or running.");
         }
         Map<String, Object> readiness = readiness(experiment.getDatasetId(), experiment.getExperimentType());
-        if (!Boolean.TRUE.equals(readiness.get("ready"))) {
+        boolean acknowledgedUnverified = "FINE_TUNED".equals(experiment.getExperimentType())
+                && allowUnverifiedModel
+                && Boolean.TRUE.equals(readiness.get("benchmarkReady"));
+        if (!Boolean.TRUE.equals(readiness.get("ready")) && !acknowledgedUnverified) {
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> blockers = (List<Map<String, Object>>) readiness.get("blockers");
             String message = blockers.stream().map(item -> String.valueOf(item.get("message")))
@@ -312,7 +365,10 @@ public class EvaluationService {
         cancellationRequests.remove(experimentId);
         results.deleteByExperimentId(experimentId);
         experiment.setDatasetChecksum(dataset.getChecksum());
-        experiment.setConfigJson(withBenchmarkProfile(experiment.getConfigJson(), getQuestions(dataset.getDatasetId()).size()));
+        experiment.setConfigJson(withBenchmarkProfile(
+                experiment.getConfigJson(),
+                getQuestions(dataset.getDatasetId()).size(),
+                acknowledgedUnverified));
         experiment.setStatus("QUEUED");
         experiment.setProgress(0);
         experiment.setSuccessCount(0);
@@ -366,16 +422,29 @@ public class EvaluationService {
 
         Map<String, Object> model = modelReadiness();
         boolean modelReady = "FINE_TUNED".equals(type)
-                ? Boolean.TRUE.equals(model.get("inferenceReady"))
-                : Boolean.TRUE.equals(model.get("generationReady"));
+                ? Boolean.TRUE.equals(model.get("fineTunedReady"))
+                : Boolean.TRUE.equals(model.get("baseRagReady"));
+        String modelStatus = String.valueOf("FINE_TUNED".equals(type)
+                ? model.getOrDefault("fineTunedStatus", "MODEL_RUNTIME_NOT_READY")
+                : model.getOrDefault("baseRagStatus", "MODEL_RUNTIME_NOT_READY"));
         addCheck(checks, blockers, "model", modelReady,
                 "Strict " + type + " generation is ready.",
-                "Strict " + type + " model is not ready. Check the Python model status.");
+                "Strict " + type + " model is not ready: " + modelStatus + ".");
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("datasetId", datasetId);
         response.put("experimentType", type);
         response.put("ready", blockers.isEmpty());
+        boolean nonModelReady = checks.stream()
+                .filter(item -> !"model".equals(item.get("code")))
+                .allMatch(item -> Boolean.TRUE.equals(item.get("passed")));
+        boolean benchmarkEligible = Boolean.TRUE.equals(model.get("benchmarkEligible"));
+        boolean requiresAcknowledgement = "FINE_TUNED".equals(type)
+                && !modelReady && benchmarkEligible;
+        response.put("benchmarkReady", nonModelReady && (modelReady || requiresAcknowledgement));
+        response.put("requiresUnverifiedAcknowledgement", requiresAcknowledgement);
+        response.put("modelVerificationStatus",
+                modelReady ? "VERIFIED" : (requiresAcknowledgement ? "UNVERIFIED" : "NOT_READY"));
         response.put("checks", checks);
         response.put("blockers", blockers);
         response.put("model", model);
@@ -389,10 +458,29 @@ public class EvaluationService {
             boolean inferenceReady = booleanValue(raw, "inference_ready", "inferenceReady", "local_model_loaded");
             boolean trainingReady = booleanValue(raw, "training_ready", "trainingReady");
             boolean generationReady = booleanValue(raw, "generation_ready", "generationReady") || inferenceReady;
+            String baseRagStatus = String.valueOf(firstValue(raw, "base_rag_status"));
+            String fineTunedStatus = String.valueOf(firstValue(raw, "fine_tuned_status"));
+            boolean baseRagReady = "BASE_RAG_READY".equals(baseRagStatus);
+            boolean fineTunedReady = "FINE_TUNED_READY".equals(fineTunedStatus);
+            boolean benchmarkEligible = booleanValue(raw, "benchmark_eligible", "benchmarkEligible");
+            String verificationStatus = String.valueOf(firstValue(
+                    raw, "model_verification_status", "modelVerificationStatus"));
             response.put("reachable", true);
             response.put("inferenceReady", inferenceReady);
             response.put("trainingReady", trainingReady);
             response.put("generationReady", generationReady);
+            response.put("baseRagReady", baseRagReady);
+            response.put("fineTunedReady", fineTunedReady);
+            response.put("baseRagStatus", baseRagStatus);
+            response.put("fineTunedStatus", fineTunedStatus);
+            response.put("benchmarkEligible", benchmarkEligible);
+            response.put("modelVerificationStatus", verificationStatus);
+            response.put("qualityGatePassed", booleanValue(raw, "adapter_verified", "quality_gate_passed"));
+            response.put("baseModel", firstValue(raw, "base_model"));
+            response.put("adapterVersion", firstValue(raw, "adapter_version"));
+            response.put("quantization", firstValue(raw, "quantization"));
+            response.put("generationDevice", firstValue(raw, "generation_device"));
+            response.put("embeddingDevice", firstValue(raw, "embedding_device"));
             response.put("adapterDir", firstValue(raw, "adapter_dir", "adapter_path"));
             response.put("details", raw);
         } catch (RuntimeException exception) {
@@ -400,6 +488,9 @@ public class EvaluationService {
             response.put("inferenceReady", false);
             response.put("trainingReady", false);
             response.put("generationReady", false);
+            response.put("baseRagReady", false);
+            response.put("fineTunedReady", false);
+            response.put("benchmarkEligible", false);
             response.put("error", exception.getMessage());
         }
         return response;
@@ -440,13 +531,29 @@ public class EvaluationService {
             row.put("groundTruth", ragResult.getGroundTruthAnswer());
             row.put("ragAnswer", ragResult.getGeneratedAnswer());
             row.put("fineTunedAnswer", fineResult.getGeneratedAnswer());
-            row.put("ragAnswerCorrectness", ragResult.getAnswerCorrectness());
-            row.put("fineTunedAnswerCorrectness", fineResult.getAnswerCorrectness());
-            row.put("answerCorrectnessDelta", nullableDelta(fineResult.getAnswerCorrectness(), ragResult.getAnswerCorrectness()));
+            row.put("ragProviderUsed", ragResult.getProviderUsed());
+            row.put("fineTunedProviderUsed", fineResult.getProviderUsed());
+            row.put("ragBaseModel", ragResult.getBaseModel());
+            row.put("fineTunedBaseModel", fineResult.getBaseModel());
+            row.put("ragAdapterVersion", ragResult.getAdapterVersion());
+            row.put("fineTunedAdapterVersion", fineResult.getAdapterVersion());
+            row.put("ragEmbeddingModel", ragResult.getEmbeddingModel());
+            row.put("ragGenerationMode", ragResult.getGenerationMode());
+            row.put("fineTunedGenerationMode", fineResult.getGenerationMode());
+            row.put("ragModelVerificationStatus", ragResult.getModelVerificationStatus());
+            row.put("fineTunedModelVerificationStatus", fineResult.getModelVerificationStatus());
+            row.put("ragQualityGatePassed", ragResult.getQualityGatePassed());
+            row.put("fineTunedQualityGatePassed", fineResult.getQualityGatePassed());
+            row.put("ragMetricStandard", ragResult.getMetricStandard());
+            row.put("fineTunedMetricStandard", fineResult.getMetricStandard());
+            row.put("ragJudgeModel", ragResult.getJudgeModel());
+            row.put("fineTunedJudgeModel", fineResult.getJudgeModel());
+            row.put("ragTokenOverlapProxy", ragResult.getAnswerCorrectness());
+            row.put("fineTunedTokenOverlapProxy", fineResult.getAnswerCorrectness());
+            row.put("tokenOverlapProxyDelta",
+                    nullableDelta(fineResult.getAnswerCorrectness(), ragResult.getAnswerCorrectness()));
             row.put("ragAnswerRelevance", ragResult.getAnswerRelevance());
             row.put("fineTunedAnswerRelevance", fineResult.getAnswerRelevance());
-            row.put("ragSemanticSimilarity", ragResult.getSemanticSimilarity());
-            row.put("fineTunedSemanticSimilarity", fineResult.getSemanticSimilarity());
             row.put("ragFaithfulness", ragResult.getFaithfulness());
             row.put("fineTunedFaithfulness", null);
             row.put("ragContextPrecision", ragResult.getContextPrecision());
@@ -487,13 +594,14 @@ public class EvaluationService {
         datasetMetadata.put("documentCount", snapshotDocumentIds(datasetId).size());
         datasetMetadata.put("checksum", rag.getDatasetChecksum());
         response.put("dataset", datasetMetadata);
-        response.put("metricStandard", "LOCAL_PROXY");
-        response.put("formulaVersion", "token-overlap-v1");
+        response.put("metricStandard", "RAGAS_OFFICIAL");
+        response.put("formulaVersion", "ragas-0.4");
         response.put("benchmarkProfile", ragProfile);
         response.put("methodology", Map.of(
-                "officialRagas", false,
-                "label", "RAGAS-style local proxy",
-                "sharedFormulaNotice", "Answer correctness, answer relevance and semantic similarity currently use the same token-overlap evidence."));
+                "officialRagas", true,
+                "judge", "OpenAI",
+                "evaluatorEmbedding", "BAAI/bge-m3",
+                "proxyNotice", "answerCorrectness and semanticSimilarity are token_overlap_proxy metrics, not RAGAS."));
         response.put("ragExperiment", experimentSummary(rag, ragResults, true));
         response.put("fineTunedExperiment", experimentSummary(fine, fineResults, false));
         response.put("perQuestion", perQuestion);
@@ -519,32 +627,62 @@ public class EvaluationService {
         int failure = 0;
         List<String> errorMessages = new ArrayList<>();
         try {
-            UUID sessionId = chatService.createEvaluationSession(experiment.getCreatedBy(), dataset.getCourseId(),
-                    dataset.getSemesterWorkspaceId(), documentIds).getChatSessionId();
+            String mode = "FINE_TUNED".equals(experiment.getExperimentType()) ? "FINE_TUNED" : "RAG";
+            boolean allowUnverifiedModel = allowsUnverifiedModel(experiment);
+            BenchmarkInferenceService.BenchmarkScope benchmarkScope =
+                    new BenchmarkInferenceService.BenchmarkScope(
+                            dataset.getWorkspaceId(),
+                            dataset.getSemesterWorkspaceId(),
+                            documentIds,
+                            experiment.getEmbeddingModelId());
+            if (!benchmarkQuestions.isEmpty()) {
+                EvaluationQuestion warmup = benchmarkQuestions.get(0);
+                benchmarkInferenceService.answerBatch(
+                        benchmarkScope,
+                        List.of(new BenchmarkInferenceService.BenchmarkQuestion(
+                                warmup.getEvaluationQuestionId(), warmup.getQuestionText())),
+                        mode,
+                        allowUnverifiedModel);
+            }
             for (int index = 0; index < benchmarkQuestions.size(); index += BENCHMARK_BATCH_SIZE) {
                 if (isCancellationRequested(experimentId)) return;
                 int end = Math.min(index + BENCHMARK_BATCH_SIZE, benchmarkQuestions.size());
                 List<EvaluationQuestion> batch = benchmarkQuestions.subList(index, end);
-                long startedAt = System.nanoTime();
                 try {
-                    String mode = "FINE_TUNED".equals(experiment.getExperimentType()) ? "FINE_TUNED" : "RAG";
-                    List<ChatDto.AskResponse> answers = chatService.askEvaluationBatch(sessionId,
-                            batch.stream().map(EvaluationQuestion::getQuestionText).toList(), mode);
+                    List<ChatDto.AskResponse> answers = List.of();
+                    long repeatedLatency = 0;
+                    for (int repetition = 0; repetition < BENCHMARK_REPETITIONS; repetition++) {
+                        long repetitionStartedAt = System.nanoTime();
+                        answers = benchmarkInferenceService.answerBatch(
+                                benchmarkScope,
+                                batch.stream().map(question ->
+                                        new BenchmarkInferenceService.BenchmarkQuestion(
+                                                question.getEvaluationQuestionId(),
+                                                question.getQuestionText())).toList(),
+                                mode,
+                                allowUnverifiedModel);
+                        repeatedLatency += elapsedMs(repetitionStartedAt);
+                    }
                     if (isCancellationRequested(experimentId)) return;
                     if (answers.size() != batch.size()) {
                         throw new IllegalStateException("AI batch returned " + answers.size()
                                 + " answers for " + batch.size() + " questions.");
                     }
-                    int batchLatency = elapsedMs(startedAt);
-                    int effectiveLatency = Math.max(1, batchLatency / batch.size());
+                    Map<String, PythonAiDto.OfficialRagasResult> ragasResults =
+                            evaluateWithOfficialRagas(batch, answers);
+                    int batchLatency = Math.max(1, (int) Math.round(
+                            repeatedLatency / (double) BENCHMARK_REPETITIONS));
+                    int effectiveLatency = Math.max(1, (int) Math.round(
+                            repeatedLatency / (double) (BENCHMARK_REPETITIONS * batch.size())));
                     for (int offset = 0; offset < batch.size(); offset++) {
                         persistSuccess(experiment, batch.get(offset), answers.get(offset),
+                                ragasResults.get(String.valueOf(batch.get(offset).getEvaluationQuestionId())),
                                 batchLatency, effectiveLatency, batch.size());
                         success++;
                     }
                 } catch (RuntimeException exception) {
                     if (isCancellationRequested(experimentId)) return;
-                    int batchLatency = elapsedMs(startedAt);
+                    int batchLatency = 0;
                     int effectiveLatency = Math.max(1, batchLatency / batch.size());
                     for (EvaluationQuestion question : batch) {
                         persistFailure(experiment, question, exception,
@@ -613,7 +751,53 @@ public class EvaluationService {
         return true;
     }
 
+    private Map<String, PythonAiDto.OfficialRagasResult> evaluateWithOfficialRagas(
+            List<EvaluationQuestion> batch, List<ChatDto.AskResponse> answers) {
+        PythonAiDto.OfficialRagasBatchRequest request = new PythonAiDto.OfficialRagasBatchRequest();
+        request.items = new ArrayList<>();
+        for (int index = 0; index < batch.size(); index++) {
+            EvaluationQuestion question = batch.get(index);
+            ChatDto.AskResponse answer = answers.get(index);
+            PythonAiDto.OfficialRagasItem item = new PythonAiDto.OfficialRagasItem();
+            item.request_id = String.valueOf(question.getEvaluationQuestionId());
+            item.question = question.getQuestionText();
+            item.response = answer == null ? "" : defaultIfBlank(answer.answer, "");
+            item.reference = question.getGroundTruthAnswer();
+            item.contexts = answer == null || answer.citations == null
+                    ? List.of()
+                    : answer.citations.stream().map(citation -> defaultIfBlank(citation.quoteText, ""))
+                            .filter(value -> !value.isBlank()).toList();
+            request.items.add(item);
+        }
+        PythonAiDto.OfficialRagasBatchResponse response = aiClientService.callOfficialRagasBatch(request);
+        if (response == null || !"RAGAS_OFFICIAL".equals(response.metric_standard) || response.items == null) {
+            throw new IllegalStateException("Official RAGAS evaluator did not return a valid result.");
+        }
+        Map<String, PythonAiDto.OfficialRagasResult> byId = new HashMap<>();
+        for (PythonAiDto.OfficialRagasResult result : response.items) {
+            if (result.error != null && !result.error.isBlank()) {
+                throw new IllegalStateException("Official RAGAS failed for " + result.request_id + ": "
+                        + result.error);
+            }
+            result.metric_standard = response.metric_standard;
+            result.judge_model = response.judge_model;
+            result.embedding_model = response.evaluator_embedding;
+            result.prompt_version = response.prompt_version;
+            byId.put(result.request_id, result);
+        }
+        if (byId.size() != batch.size()) {
+            throw new IllegalStateException("Official RAGAS returned incomplete batch results.");
+        }
+        return byId;
+    }
+
+    private boolean parseBoolean(String value) {
+        if (value == null || value.isBlank()) return false;
+        return Set.of("true", "1", "yes", "y").contains(value.trim().toLowerCase(Locale.ROOT));
+    }
+
     private void persistSuccess(Experiment experiment, EvaluationQuestion question, ChatDto.AskResponse answer,
+            PythonAiDto.OfficialRagasResult ragas,
             int batchLatencyMs, int effectiveLatencyMs, int batchSize) {
         boolean rag = "RAG".equals(experiment.getExperimentType());
         String generated = answer == null ? "" : defaultIfBlank(answer.answer, "");
@@ -626,12 +810,38 @@ public class EvaluationService {
         result.setGeneratedAnswer(generated);
         result.setRetrievedContextJson(rag ? toJson(contexts) : null);
         result.setCitationsJson(rag ? toJson(citations) : null);
-        result.setFaithfulness(rag ? faithfulnessProxy(generated, contexts) : null);
-        result.setAnswerRelevance(answerF1);
-        result.setContextPrecision(rag ? contextPrecisionProxy(question.getGroundTruthAnswer(), contexts) : null);
-        result.setContextRecall(rag ? contextRecallProxy(question.getGroundTruthAnswer(), contexts) : null);
+        result.setFaithfulness(ragas == null ? null : ragas.faithfulness);
+        result.setAnswerRelevance(ragas == null ? null : ragas.answer_relevancy);
+        result.setContextPrecision(ragas == null ? null : ragas.context_precision);
+        result.setContextRecall(ragas == null ? null : ragas.context_recall);
         result.setAnswerCorrectness(answerF1);
         result.setSemanticSimilarity(answerF1);
+        result.setProviderUsed(answer == null ? null : answer.providerUsed);
+        result.setBaseModel(answer == null ? null : answer.baseModel);
+        result.setAdapterVersion(answer == null ? null : answer.adapterVersion);
+        result.setEmbeddingModel(answer == null ? null : answer.embeddingModel);
+        result.setGenerationMode(answer == null ? null : answer.generationMode);
+        result.setDatasetVersion(answer == null ? null : answer.datasetVersion);
+        result.setPromptVersion(answer != null && answer.promptVersion != null
+                ? answer.promptVersion : (ragas == null ? null : ragas.prompt_version));
+        result.setMetricStandard(ragas == null ? null : ragas.metric_standard);
+        result.setJudgeModel(ragas == null ? null : ragas.judge_model);
+        result.setEvaluatorEmbedding(ragas == null ? null : ragas.embedding_model);
+        result.setSourceHit(question.getExpectedDocumentId() == null ? null : citations.stream()
+                .anyMatch(citation -> question.getExpectedDocumentId().equals(citation.documentId)));
+        result.setPageHit(question.getExpectedPage() == null ? null : citations.stream().anyMatch(citation ->
+                citation.pageStart != null
+                        && citation.pageStart <= question.getExpectedPage()
+                        && (citation.pageEnd == null || citation.pageEnd >= question.getExpectedPage())));
+        result.setRefusalCorrect(Boolean.TRUE.equals(question.getIsOutOfScope())
+                ? isRefusalAnswer(generated) : null);
+        result.setThroughputQps(effectiveLatencyMs <= 0 ? null : round4(1000.0 / effectiveLatencyMs));
+        result.setPeakVramBytes(answer == null ? null : answer.peakVramBytes);
+        result.setModelVerificationStatus(answer == null
+                ? null : defaultIfBlank(answer.modelVerificationStatus,
+                        rag ? "VERIFIED" : "UNVERIFIED"));
+        result.setQualityGatePassed(answer == null
+                ? null : (rag ? Boolean.TRUE : answer.qualityGatePassed));
         results.save(result);
     }
 
@@ -656,7 +866,11 @@ public class EvaluationService {
         return result;
     }
 
-    private String withBenchmarkProfile(String configJson, int questionCount) {
+    private String withBenchmarkProfile(
+            String configJson,
+            int questionCount,
+            boolean allowUnverifiedModel
+    ) {
         Map<String, Object> root = new LinkedHashMap<>();
         if (configJson != null && !configJson.isBlank()) {
             try {
@@ -673,11 +887,62 @@ public class EvaluationService {
         profile.put("batchSize", BENCHMARK_BATCH_SIZE);
         profile.put("maxInputTokens", BENCHMARK_MAX_INPUT_TOKENS);
         profile.put("maxNewTokens", BENCHMARK_MAX_NEW_TOKENS);
+        profile.put("warmupRuns", 1);
+        profile.put("repetitions", BENCHMARK_REPETITIONS);
+        profile.put("temperature", 0.0);
+        profile.put("seed", 42);
         root.put("benchmarkProfile", profile);
+        root.put("allowUnverifiedModel", allowUnverifiedModel);
+        root.put("modelVerificationStatus", allowUnverifiedModel ? "UNVERIFIED" : "VERIFIED");
         try {
             return objectMapper.writeValueAsString(root);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Cannot serialize benchmark profile.", exception);
+        }
+    }
+
+    private String withResearchConfig(String configJson, String experimentType) {
+        Map<String, Object> root = new LinkedHashMap<>();
+        if (configJson != null && !configJson.isBlank()) {
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> parsed = objectMapper.readValue(configJson, Map.class);
+                root.putAll(parsed);
+            } catch (JsonProcessingException exception) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "configJson must be valid JSON.");
+            }
+        }
+        root.put("generationMode", "FINE_TUNED".equals(experimentType)
+                ? "FINE_TUNED_ONLY" : "BASE_RAG");
+        root.put("baseModel", "Qwen/Qwen2.5-1.5B-Instruct");
+        root.put("adapterVersion", "FINE_TUNED".equals(experimentType)
+                ? "qwen2.5-1.5b-triethoc-lora-v1" : null);
+        root.put("embeddingModel", "BAAI/bge-m3");
+        root.put("chunkingStrategy", "FIXED_500_OVERLAP_50");
+        root.put("topK", 5);
+        root.put("temperature", 0.0);
+        root.put("seed", 42);
+        root.put("datasetVersion", "triethoc-v1");
+        root.put("promptVersion", "triethoc-grounded-v1");
+        try {
+            return objectMapper.writeValueAsString(root);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Cannot serialize research configuration.", exception);
+        }
+    }
+
+    private String withBenchmarkProfile(String configJson, int questionCount) {
+        return withBenchmarkProfile(configJson, questionCount, false);
+    }
+
+    private boolean allowsUnverifiedModel(Experiment experiment) {
+        if (experiment.getConfigJson() == null || experiment.getConfigJson().isBlank()) return false;
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> config = objectMapper.readValue(experiment.getConfigJson(), Map.class);
+            return Boolean.TRUE.equals(config.get("allowUnverifiedModel"));
+        } catch (JsonProcessingException exception) {
+            return false;
         }
     }
 
@@ -721,15 +986,34 @@ public class EvaluationService {
         summary.put("benchmarkProfile", benchmarkProfile(experiment));
         summary.put("successCount", experiment.getSuccessCount());
         summary.put("failureCount", experiment.getFailureCount());
+        ExperimentResult firstCompleted = values.stream()
+                .filter(value -> value.getErrorMessage() == null || value.getErrorMessage().isBlank())
+                .findFirst().orElse(null);
+        summary.put("providerUsed", firstCompleted == null ? null : firstCompleted.getProviderUsed());
+        summary.put("baseModel", firstCompleted == null ? null : firstCompleted.getBaseModel());
+        summary.put("adapterVersion", firstCompleted == null ? null : firstCompleted.getAdapterVersion());
+        summary.put("embeddingModel", firstCompleted == null ? null : firstCompleted.getEmbeddingModel());
+        summary.put("generationMode", firstCompleted == null ? null : firstCompleted.getGenerationMode());
+        summary.put("datasetVersion", firstCompleted == null ? null : firstCompleted.getDatasetVersion());
+        summary.put("promptVersion", firstCompleted == null ? null : firstCompleted.getPromptVersion());
+        summary.put("modelVerificationStatus",
+                firstCompleted == null ? null : firstCompleted.getModelVerificationStatus());
+        summary.put("qualityGatePassed",
+                firstCompleted == null ? null : firstCompleted.getQualityGatePassed());
+        summary.put("metricStandard", firstCompleted == null ? null : firstCompleted.getMetricStandard());
+        summary.put("judgeModel", firstCompleted == null ? null : firstCompleted.getJudgeModel());
         int totalCount = values.size();
         long successfulResults = values.stream()
                 .filter(value -> value.getErrorMessage() == null || value.getErrorMessage().isBlank())
                 .count();
         summary.put("totalCount", totalCount);
         summary.put("successRate", totalCount == 0 ? null : round4(successfulResults / (double) totalCount));
-        summary.put("answerCorrectness", average(values, ExperimentResult::getAnswerCorrectness));
+        summary.put("tokenOverlapProxy", average(values, ExperimentResult::getAnswerCorrectness));
         summary.put("answerRelevance", average(values, ExperimentResult::getAnswerRelevance));
-        summary.put("semanticSimilarity", average(values, ExperimentResult::getSemanticSimilarity));
+        summary.put("sourceHitRate", booleanRate(values, ExperimentResult::getSourceHit));
+        summary.put("pageHitRate", booleanRate(values, ExperimentResult::getPageHit));
+        summary.put("refusalAccuracy", booleanRate(values, ExperimentResult::getRefusalCorrect));
+        summary.put("throughputQps", average(values, ExperimentResult::getThroughputQps));
         summary.put("latencyMs", average(values, value -> value.getLatencyMs() == null ? null : value.getLatencyMs().doubleValue()));
         if (includeContextMetrics) {
             summary.put("faithfulness", average(values, ExperimentResult::getFaithfulness));
@@ -741,6 +1025,23 @@ public class EvaluationService {
             summary.put("contextRecall", null);
         }
         return summary;
+    }
+
+    private boolean isRefusalAnswer(String answer) {
+        String normalized = normalizeForMatching(answer);
+        return normalized.contains("khong tim thay")
+                || normalized.contains("chua tim thay")
+                || normalized.contains("ngoai pham vi")
+                || normalized.contains("khong co thong tin");
+    }
+
+    private Double booleanRate(List<ExperimentResult> values,
+            Function<ExperimentResult, Boolean> extractor) {
+        List<Boolean> applicable = values.stream().map(extractor)
+                .filter(Objects::nonNull).toList();
+        if (applicable.isEmpty()) return null;
+        return round4(applicable.stream().filter(Boolean.TRUE::equals).count()
+                / (double) applicable.size());
     }
 
     private Object parseJsonCollection(String value) {
@@ -775,17 +1076,23 @@ public class EvaluationService {
 
     private boolean booleanValue(Map<String, Object> values, String... keys) {
         for (String key : keys) if (Boolean.TRUE.equals(values.get(key))) return true;
-        Object runtime = values.get("runtime");
-        if (runtime instanceof Map<?, ?> nested) {
-            for (String key : keys) if (Boolean.TRUE.equals(nested.get(key))) return true;
+        for (String container : List.of("runtime", "generation")) {
+            Object nestedValue = values.get(container);
+            if (nestedValue instanceof Map<?, ?> nested) {
+                for (String key : keys) if (Boolean.TRUE.equals(nested.get(key))) return true;
+            }
         }
         return false;
     }
 
     private Object firstValue(Map<String, Object> values, String... keys) {
         for (String key : keys) if (values.get(key) != null) return values.get(key);
-        Object runtime = values.get("runtime");
-        if (runtime instanceof Map<?, ?> nested) for (String key : keys) if (nested.get(key) != null) return nested.get(key);
+        for (String container : List.of("runtime", "generation")) {
+            Object nestedValue = values.get(container);
+            if (nestedValue instanceof Map<?, ?> nested) {
+                for (String key : keys) if (nested.get(key) != null) return nested.get(key);
+            }
+        }
         return null;
     }
 
@@ -860,6 +1167,16 @@ public class EvaluationService {
 
     private String normalizeHeader(String value) {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT).replace('-', '_');
+    }
+
+    private String normalizeForMatching(String value) {
+        if (value == null) return "";
+        return Normalizer.normalize(value, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9\\p{IsAlphabetic}]+", " ")
+                .trim()
+                .replaceAll("\\s+", " ");
     }
 
     private Integer firstHeader(Map<String, Integer> headers, String... names) {

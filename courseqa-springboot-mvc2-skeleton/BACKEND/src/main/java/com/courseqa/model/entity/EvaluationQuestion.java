@@ -36,6 +36,18 @@ public class EvaluationQuestion {
     @Column(name = "expected_page")
     private Integer expectedPage;
 
+    @Column(name = "expected_source")
+    private String expectedSource;
+
+    @Column(name = "evidence_quote", columnDefinition = "NVARCHAR(MAX)")
+    private String evidenceQuote;
+
+    @Column(name = "chapter_label")
+    private String chapterLabel;
+
+    @Column(name = "is_out_of_scope")
+    private Boolean isOutOfScope;
+
     @Column(name = "question_type")
     private String questionType;
 
@@ -73,6 +85,18 @@ public class EvaluationQuestion {
 
     public Integer getExpectedPage() { return expectedPage; }
     public void setExpectedPage(Integer expectedPage) { this.expectedPage = expectedPage; }
+
+    public String getExpectedSource() { return expectedSource; }
+    public void setExpectedSource(String expectedSource) { this.expectedSource = expectedSource; }
+
+    public String getEvidenceQuote() { return evidenceQuote; }
+    public void setEvidenceQuote(String evidenceQuote) { this.evidenceQuote = evidenceQuote; }
+
+    public String getChapterLabel() { return chapterLabel; }
+    public void setChapterLabel(String chapterLabel) { this.chapterLabel = chapterLabel; }
+
+    public Boolean getIsOutOfScope() { return isOutOfScope; }
+    public void setIsOutOfScope(Boolean outOfScope) { isOutOfScope = outOfScope; }
 
     public String getQuestionType() { return questionType; }
     public void setQuestionType(String questionType) { this.questionType = questionType; }

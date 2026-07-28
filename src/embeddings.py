@@ -53,23 +53,39 @@ class HashingEmbeddingProvider(EmbeddingProvider):
 
 
 class SentenceTransformerEmbeddingProvider(EmbeddingProvider):
-    def __init__(self, model: str, cache_folder: str | None = None) -> None:
+    def __init__(
+        self,
+        model: str,
+        cache_folder: str | None = None,
+        device: str = "cpu",
+    ) -> None:
         from sentence_transformers import SentenceTransformer
         import torch
 
         self.name = "sentence-transformers"
         self.model = model
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        requested_device = device.strip().lower()
+        self.device = (
+            "cuda"
+            if requested_device == "cuda" and torch.cuda.is_available()
+            else "cpu"
+        )
         local_model = find_cached_snapshot(Path(cache_folder), model, "modules.json") if cache_folder else None
         try:
             self._model = SentenceTransformer(
                 str(local_model or model),
-                device=device,
+                device=self.device,
                 cache_folder=cache_folder,
                 local_files_only=True,
             )
         except Exception:
-            self._model = SentenceTransformer(model, device=device, cache_folder=cache_folder)
+            self._model = SentenceTransformer(
+                model,
+                device=self.device,
+                cache_folder=cache_folder,
+            )
+        if self.device == "cuda":
+            self._model.half()
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         vectors = self._model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
@@ -120,6 +136,7 @@ def get_embedding_provider(settings: AppSettings) -> EmbeddingProvider:
         return SentenceTransformerEmbeddingProvider(
             settings.embedding_model,
             cache_folder=str(settings.model_cache_dir),
+            device=settings.embedding_device,
         )
     if provider in {"fastembed", "fastembed-onnx", "onnx"}:
         return FastEmbedEmbeddingProvider(

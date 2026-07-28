@@ -2,6 +2,7 @@ package com.courseqa.controller;
 
 import com.courseqa.model.dto.ApiResponse;
 import com.courseqa.model.dto.LearningScopeDto;
+import com.courseqa.model.dto.EvaluationDto.RunExperimentRequest;
 import com.courseqa.model.entity.CourseDocument;
 import com.courseqa.model.entity.EvaluationDataset;
 import com.courseqa.model.entity.EvaluationQuestion;
@@ -102,9 +103,17 @@ public class EvaluationController {
     }
 
     @PostMapping("/experiments/{experimentId}/run")
-    public ResponseEntity<ApiResponse<Experiment>> runBenchmark(@PathVariable UUID experimentId) {
+    public ResponseEntity<ApiResponse<Experiment>> runBenchmark(
+            @PathVariable UUID experimentId,
+            @RequestBody(required = false) RunExperimentRequest request) {
         return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(ApiResponse.ok(evaluationService.startBenchmark(experimentId)));
+                .body(ApiResponse.ok(evaluationService.startBenchmark(
+                        experimentId,
+                        request != null && Boolean.TRUE.equals(request.allowUnverifiedModel))));
+    }
+
+    public ResponseEntity<ApiResponse<Experiment>> runBenchmark(UUID experimentId) {
+        return runBenchmark(experimentId, null);
     }
 
     @PostMapping("/experiments/{experimentId}/cancel")
