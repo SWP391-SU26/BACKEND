@@ -247,15 +247,21 @@ public class ChatService {
             return guardedResponse(sessionId, savedUserMessage, preCheck.message(), answerMode, null, null);
         }
 
+    //    if ("FINE_TUNED".equals(answerMode)) {
+     //       return answerWithFineTunedModel(sessionId, savedUserMessage, question, strict);
+     //   }
+
         if ("FINE_TUNED".equals(answerMode)) {
-            return answerWithFineTunedModel(sessionId, savedUserMessage, question, strict);
-        }
+           return answerWithFineTunedModel(sessionId, session, resolvedScope, savedUserMessage, question, strict);
+    }
+
+
 
         RagDto.RetrievalResponse retrieval = retrieveFromJavaSql(session, resolvedScope, savedUserMessage, question);
         QuestionScopeGuard.GuardDecision retrievalCheck = questionScopeGuard.postRetrievalCheck(question, retrieval);
         if (!retrievalCheck.allowed()) {
             return guardedResponse(sessionId, savedUserMessage, retrievalCheck.message(), answerMode,
-                    retrieval.embeddingModelName, retrieval.retrievalQueryId);
+                  retrieval == null ? null :  retrieval.embeddingModelName, retrieval == null ? null : retrieval.retrievalQueryId);
         }
 
         if (!Boolean.TRUE.equals(retrieval.answerable) || retrieval.results == null || retrieval.results.isEmpty()) {
@@ -493,10 +499,32 @@ public class ChatService {
 
     private String truncate(String value, int max) { return value.length() <= max ? value : value.substring(0, max).trim(); }
 
-    private ChatDto.AskResponse answerWithFineTunedModel(UUID sessionId, ChatMessage savedUserMessage,
-            String question, boolean strict) {
-        return answerWithoutRetrieval(sessionId, savedUserMessage, question, "FINE_TUNED", "qwen-rag-lora", strict);
+ //   private ChatDto.AskResponse answerWithFineTunedModel(UUID sessionId, ChatMessage savedUserMessage,
+ //           String question, boolean strict) {
+//        return answerWithoutRetrieval(sessionId, savedUserMessage, question, "FINE_TUNED", "qwen-rag-lora", strict);
+ //   }
+
+//private ChatDto.AskResponse answerWithFineTunedModel(UUID sessionId, ChatSession session,
+  //      ResolvedScope resolvedScope, ChatMessage savedUserMessage, String question, boolean strict) {
+  //  RagDto.RetrievalResponse retrieval = retrieveFromJavaSql(session, resolvedScope, savedUserMessage, question);
+   // QuestionScopeGuard.GuardDecision retrievalCheck = questionScopeGuard.postRetrievalCheck(question, retrieval);
+   // if (!retrievalCheck.allowed()) {
+//        return guardedResponse(sessionId, savedUserMessage, retrievalCheck.message(), "FINE_TUNED",
+ //               retrieval.embeddingModelName, retrieval.retrievalQueryId);
+  //  }
+  //  return answerWithoutRetrieval(sessionId, savedUserMessage, question, "FINE_TUNED", "qwen-rag-lora", strict);
+//}
+    private ChatDto.AskResponse answerWithFineTunedModel(UUID sessionId, ChatSession session,
+        ResolvedScope resolvedScope, ChatMessage savedUserMessage, String question, boolean strict) {
+    RagDto.RetrievalResponse retrieval = retrieveFromJavaSql(session, resolvedScope, savedUserMessage, question);
+    QuestionScopeGuard.GuardDecision retrievalCheck = questionScopeGuard.postRetrievalCheck(question, retrieval);
+    if (!retrievalCheck.allowed()) {
+        return guardedResponse(sessionId, savedUserMessage, retrievalCheck.message(), "FINE_TUNED",
+                retrieval == null ? null : retrieval.embeddingModelName,
+                retrieval == null ? null : retrieval.retrievalQueryId);
     }
+    return answerWithoutRetrieval(sessionId, savedUserMessage, question, "FINE_TUNED", "qwen-rag-lora", strict);
+}
 
     private ChatDto.AskResponse answerWithoutRetrieval(
             UUID sessionId,

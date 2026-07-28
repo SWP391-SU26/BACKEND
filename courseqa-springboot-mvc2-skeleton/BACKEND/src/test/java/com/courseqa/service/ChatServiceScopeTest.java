@@ -177,7 +177,7 @@ class ChatServiceScopeTest {
         verify(retrieval, never()).retrieve(any());
         verify(ai, never()).callGenerate(any(), any());
     }
-
+/* 
     @Test
     void fineTunedModeCallsTrainedModelWithoutDocumentRetrieval() {
         UUID userId = UUID.randomUUID();
@@ -216,7 +216,90 @@ class ChatServiceScopeTest {
         verify(retrieval, never()).retrieve(any());
         verify(ai).callChatFinetuned(any(), any());
     }
+*/
+@Test
+    void fineTunedModeRunsScopeGuardThenAnswersInScopeQuestion() {
+        UUID userId = UUID.randomUUID();
+        UUID courseId = UUID.randomUUID();
+        UUID semesterId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        ChatSession session = new ChatSession();
+        session.setChatSessionId(sessionId);
+        session.setUserId(userId);
+        session.setCourseId(courseId);
+        session.setSemesterWorkspaceId(semesterId);
+        session.setScopeType("COURSE");
+        session.setIsActive(true);
+        session.setSessionTitle("New conversation");
+        CourseDocument available = document(UUID.randomUUID(), courseId, "PROCESSED");
+        PythonAiDto.ChatFinetunedResponse modelResponse = new PythonAiDto.ChatFinetunedResponse();
+        modelResponse.answer = "Câu trả lời từ data đã train.";
+        when(sessions.findById(sessionId)).thenReturn(java.util.Optional.of(session));
+        when(roles.findByUserIdAndIsActiveTrue(userId)).thenReturn(List.of());
+        when(learningScope.requireAccessibleCourse(courseId, userId, false)).thenReturn(course(courseId, semesterId));
+        when(learningScope.requireActiveWorkspace(courseId)).thenReturn(workspace(UUID.randomUUID(), courseId));
+        when(documents.findByCourseIdAndProcessingStatusOrderByUploadedAtDesc(courseId, "PROCESSED"))
+                .thenReturn(List.of(available));
+        when(messages.save(any(ChatMessage.class))).thenAnswer(invocation -> {
+            ChatMessage message = invocation.getArgument(0);
+            message.setMessageId(UUID.randomUUID());
+            return message;
+        });
+        when(retrieval.retrieve(any())).thenReturn(groundedRetrieval(available.getDocumentId()));
+        when(ai.callChatFinetuned(any(), any())).thenReturn(modelResponse);
 
+        ChatDto.AskResponse response = service.askQuestion(sessionId,
+                "Triết học Mác - Lênin là gì?", "FINE_TUNED");
+
+        // The guard now runs in FT mode: retrieval happens, but only as a scope check.
+        verify(retrieval).retrieve(any());
+        assertEquals("FINE_TUNED", response.generationMode);
+        assertEquals("Câu trả lời từ data đã train.", response.answer);
+        // Closed-book: retrieved chunks are never sent to the model, and never cited.
+        verify(ai).callChatFinetuned(any(), any());
+        verify(ai, never()).callGenerate(any(), any());
+        assertEquals(0, response.citations.size());
+    }
+
+    @Test
+    void fineTunedModeRefusesWhenScopeGuardRejectsRetrieval() {
+        UUID userId = UUID.randomUUID();
+        UUID courseId = UUID.randomUUID();
+        UUID semesterId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        ChatSession session = new ChatSession();
+        session.setChatSessionId(sessionId);
+        session.setUserId(userId);
+        session.setCourseId(courseId);
+        session.setSemesterWorkspaceId(semesterId);
+        session.setScopeType("COURSE");
+        session.setIsActive(true);
+        session.setSessionTitle("New conversation");
+        CourseDocument available = document(UUID.randomUUID(), courseId, "PROCESSED");
+        when(sessions.findById(sessionId)).thenReturn(java.util.Optional.of(session));
+        when(roles.findByUserIdAndIsActiveTrue(userId)).thenReturn(List.of());
+        when(learningScope.requireAccessibleCourse(courseId, userId, false)).thenReturn(course(courseId, semesterId));
+        when(learningScope.requireActiveWorkspace(courseId)).thenReturn(workspace(UUID.randomUUID(), courseId));
+        when(documents.findByCourseIdAndProcessingStatusOrderByUploadedAtDesc(courseId, "PROCESSED"))
+                .thenReturn(List.of(available));
+        when(messages.save(any(ChatMessage.class))).thenAnswer(invocation -> {
+            ChatMessage message = invocation.getArgument(0);
+            message.setMessageId(UUID.randomUUID());
+            return message;
+        });
+        // Nothing in the course documents grounds this question.
+        when(retrieval.retrieve(any())).thenReturn(null);
+
+        ChatDto.AskResponse response = service.askQuestion(sessionId,
+                "1+1=?", "FINE_TUNED");
+
+        // This is the Monday demo bug: it must refuse, not answer.
+        assertEquals("SCOPE_GUARD", response.generationMode);
+        assertEquals("FINE_TUNED", response.answerMode);
+        verify(ai, never()).callChatFinetuned(any(), any());
+    }
+
+    
     private Course course(UUID courseId, UUID semesterId) {
         Course course = new Course();
         course.setCourseId(courseId);
@@ -240,4 +323,25 @@ class ChatServiceScopeTest {
         document.setProcessingStatus(status);
         return document;
     }
+//helpers
+private com.courseqa.model.dto.RagDto.RetrievalResponse groundedRetrieval(UUID documentId) {
+        com.courseqa.model.dto.RagDto.RetrievedChunk chunk =
+                new com.courseqa.model.dto.RagDto.RetrievedChunk();
+        chunk.chunkId = UUID.randomUUID();
+        chunk.documentId = documentId;
+        chunk.documentTitle = "Giáo trình Triết học Mác - Lênin";
+        chunk.filename = "triethocmaclenin.pdf";
+        chunk.pageStart = 1;
+        chunk.pageEnd = 1;
+        chunk.content = "Triết học Mác - Lênin là hệ thống quan điểm duy vật biện chứng "
+                + "về tự nhiên, xã hội và tư duy, do C. Mác và Ph. Ăngghen sáng lập.";
+        com.courseqa.model.dto.RagDto.RetrievalResponse response =
+                new com.courseqa.model.dto.RagDto.RetrievalResponse();
+        response.answerable = true;
+        response.results = List.of(chunk);
+        response.embeddingModelName = "bge-m3";
+        response.retrievalQueryId = UUID.randomUUID();
+        return response;
+    }
+
 }
