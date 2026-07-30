@@ -296,25 +296,12 @@ public class EvaluationService {
         experiment.setWorkspaceId(dataset.getWorkspaceId());
         experiment.setExperimentName(name.trim());
         experiment.setExperimentType(normalizedType);
-
-
-      //  experiment.setLlmModel("Qwen/Qwen2.5-1.5B-Instruct");
         experiment.setLlmModel(resolveBaseModel());
-
-
-
         experiment.setChunkingStrategy("FIXED_500_OVERLAP_50");
         experiment.setTopK(5);
         experiment.setTemperature(0.0);
-
-
-       // experiment.setFineTunedModelName("FINE_TUNED".equals(normalizedType)
-        //        ? "qwen2.5-1.5b-triethoc-lora-v1" : null);
         experiment.setFineTunedModelName("FINE_TUNED".equals(normalizedType)
                 ? resolveAdapterVersion() : null);
-
-
-                
         experiment.setConfigJson(withResearchConfig(configJson, normalizedType));
         experiment.setCreatedBy(createdBy);
         experiment.setStatus("PENDING");
@@ -927,16 +914,9 @@ public class EvaluationService {
         }
         root.put("generationMode", "FINE_TUNED".equals(experimentType)
                 ? "FINE_TUNED_ONLY" : "BASE_RAG");
-        //root.put("baseModel", "Qwen/Qwen2.5-1.5B-Instruct");
-       // root.put("adapterVersion", "FINE_TUNED".equals(experimentType)
-       //         ? "qwen2.5-1.5b-triethoc-lora-v1" : null);
-
         root.put("baseModel", resolveBaseModel());
         root.put("adapterVersion", "FINE_TUNED".equals(experimentType)
                 ? resolveAdapterVersion() : null);
-
-
-
         root.put("embeddingModel", "BAAI/bge-m3");
         root.put("chunkingStrategy", "FIXED_500_OVERLAP_50");
         root.put("topK", 5);
@@ -950,13 +930,13 @@ public class EvaluationService {
             throw new IllegalStateException("Cannot serialize research configuration.", exception);
         }
     }
-//-----------------Helpers
-private String resolveBaseModel() {
+
+    private String resolveBaseModel() {
         try {
             Map<String, Object> raw = aiClientService.getModelStatus();
-            Object baseModel = firstValue(raw, "base_model");
-            if (baseModel != null && !String.valueOf(baseModel).isBlank()) {
-                return String.valueOf(baseModel);
+            String baseModel = stringValue(firstValue(raw, "base_model"));
+            if (baseModel != null && !baseModel.isBlank()) {
+                return baseModel;
             }
         } catch (Exception exception) {
             log.warn("Could not read base model from AI engine: {}", exception.getMessage());
@@ -967,16 +947,19 @@ private String resolveBaseModel() {
     private String resolveAdapterVersion() {
         try {
             Map<String, Object> raw = aiClientService.getModelStatus();
-            Object adapterVersion = firstValue(raw, "adapter_version");
-            if (adapterVersion != null && !String.valueOf(adapterVersion).isBlank()) {
-                return String.valueOf(adapterVersion);
+            String adapterVersion = stringValue(firstValue(raw, "adapter_version"));
+            if (adapterVersion != null && !adapterVersion.isBlank()) {
+                return adapterVersion;
             }
         } catch (Exception exception) {
             log.warn("Could not read adapter version from AI engine: {}", exception.getMessage());
         }
         return "UNKNOWN";
     }
-//--------------------------------------
+
+    private String stringValue(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
 
     private String withBenchmarkProfile(String configJson, int questionCount) {
         return withBenchmarkProfile(configJson, questionCount, false);

@@ -541,6 +541,7 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
         answer_is_complete,
         answer_is_well_formed,
         ensure_grounded_answer,
+        format_grounded_answer,
         select_context_windows,
     )
     from src.rag_pipeline import OUT_OF_SCOPE_MESSAGE, location_label
@@ -612,14 +613,14 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
 
     started_at = time.perf_counter()
     output_tokens = {
-        "definition": 180,
-        "factual": 180,
-        "comparison": 240,
-        "list": 220,
-        "reasoning": 240,
-        "procedure": 220,
-        "summary": 320,
-    }.get(request.answer_profile, 180)
+        "definition": 128,
+        "factual": 128,
+        "comparison": 160,
+        "list": 144,
+        "reasoning": 160,
+        "procedure": 144,
+        "summary": 192,
+    }.get(request.answer_profile, 128)
     try:
         generated = pipeline.generate_base_rag_answer(
             request.question,
@@ -630,7 +631,7 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
             strict_prompt=True,
             max_input_tokens=2048,
             max_new_tokens=output_tokens,
-            max_time_seconds=32,
+            max_time_seconds=24,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Không thể tạo câu trả lời: {exc}") from exc
@@ -646,7 +647,7 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
             bool(grounded.unsupported_sentences)
             or not answer_is_complete(grounded.answer, request.answer_profile)
         )
-        and (time.perf_counter() - started_at) < 30
+        and (time.perf_counter() - started_at) < 25
     )
     if repair_attempted:
         try:
@@ -656,8 +657,8 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
                 contexts,
                 answer_profile=request.answer_profile,
                 max_input_tokens=2048,
-                max_new_tokens=min(output_tokens, 240),
-                max_time_seconds=15,
+                max_new_tokens=min(output_tokens, 128),
+                max_time_seconds=7,
             )
             repaired_grounding = ensure_grounded_answer(
                 request.question,
@@ -685,6 +686,8 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
         if answer_is_well_formed(grounded.answer)
         else OUT_OF_SCOPE_MESSAGE
     )
+    if answer != OUT_OF_SCOPE_MESSAGE:
+        answer = format_grounded_answer(answer, request.answer_profile, request.question)
     if answer == OUT_OF_SCOPE_MESSAGE:
         grounded = replace(
             grounded,
@@ -793,7 +796,7 @@ def generate_answer_batch(request: GenerateBatchRequest) -> GenerateBatchRespons
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Batch RAG generation failed: {exc}") from exc
 
-    from src.grounded_answer import ensure_grounded_answer
+    from src.grounded_answer import ensure_grounded_answer, format_grounded_answer
 
     results = []
     for item, (answer, included_contexts) in zip(request.items, generated):
@@ -826,7 +829,13 @@ def generate_answer_batch(request: GenerateBatchRequest) -> GenerateBatchRespons
                     grounded = repaired_grounding
             except Exception:
                 pass
-        normalized = grounded.answer.strip() if grounded.answer else OUT_OF_SCOPE_MESSAGE
+        normalized = (
+            format_grounded_answer(
+                grounded.answer, item.answer_profile, item.question
+            )
+            if grounded.answer
+            else OUT_OF_SCOPE_MESSAGE
+        )
         used_ids = set(grounded.used_chunk_ids)
         included_sources = [
             source_maps[item.request_id].get(context.chunk_id)

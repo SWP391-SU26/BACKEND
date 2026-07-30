@@ -2,6 +2,7 @@ from src.grounded_answer import (
     answer_is_complete,
     answer_is_well_formed,
     ensure_grounded_answer,
+    format_grounded_answer,
     select_context_windows,
 )
 from src.storage import RetrievedChunk
@@ -272,6 +273,90 @@ def test_fully_grounded_markdown_is_preserved() -> None:
     )
 
     assert result.answer == generated
+
+
+def test_partial_grounding_keeps_supported_bullet_structure() -> None:
+    class SimilarEmbedding:
+        def embed_texts(self, texts):
+            return [[1.0, 0.0] for _text in texts]
+
+    context = chunk(
+        "chunk-1",
+        "Vật chất tồn tại khách quan và có trước ý thức. "
+        "Ý thức là sự phản ánh thế giới vật chất.",
+    )
+    generated = (
+        "- Vật chất tồn tại khách quan và có trước ý thức.\n"
+        "- Hegel đã xây dựng toàn bộ quan điểm này.\n"
+        "- Ý thức là sự phản ánh thế giới vật chất."
+    )
+
+    result = ensure_grounded_answer(
+        "Tại sao vật chất quyết định ý thức?",
+        generated,
+        [context],
+        embedding_provider=SimilarEmbedding(),
+    )
+
+    assert result.answer.count("\n- ") == 1
+    assert result.answer.startswith("- ")
+    assert "Vật chất tồn tại khách quan" in result.answer
+    assert "Ý thức là sự phản ánh" in result.answer
+    assert "Hegel" not in result.answer
+
+
+def test_partial_markdown_table_falls_back_to_valid_bullets() -> None:
+    supported = [
+        "Vật chất tồn tại khách quan.",
+        "Ý thức phản ánh thế giới vật chất.",
+    ]
+    original = (
+        "| Tiêu chí | Vật chất | Ý thức |\n"
+        "|---|---|---|\n"
+        "| Bản chất | Tồn tại khách quan. | Phản ánh thế giới vật chất. |"
+    )
+
+    from src.grounded_answer import preserve_supported_markdown
+
+    result = preserve_supported_markdown(original, supported)
+
+    assert result == (
+        "- Vật chất tồn tại khách quan.\n"
+        "- Ý thức phản ánh thế giới vật chất."
+    )
+
+
+def test_reasoning_formatter_recovers_inline_numbered_model_output() -> None:
+    answer = (
+        "Vật chất quyết định ý thức.\n"
+        "2. Vật chất là nguồn gốc của ý thức.\n"
+        "3. Ý thức tác động trở lại vật chất thông qua thực tiễn."
+    )
+
+    result = format_grounded_answer(
+        answer,
+        "reasoning",
+        "Tại sao vật chất quyết định ý thức?",
+    )
+
+    assert result.startswith("**Trả lời trực tiếp:** Vật chất quyết định ý thức.")
+    assert "\n- Vật chất là nguồn gốc của ý thức." in result
+    assert "\n- Ý thức tác động trở lại vật chất" in result
+    assert result.endswith("**Kết luận:** Vật chất quyết định ý thức.")
+
+
+def test_formatter_preserves_model_markdown_that_is_already_structured() -> None:
+    answer = "- Ý thứ nhất.\n- Ý thứ hai."
+
+    assert format_grounded_answer(answer, "list", "Hãy liệt kê") == answer
+
+
+def test_procedure_formatter_uses_numbered_steps() -> None:
+    answer = "Chuẩn bị dữ liệu. Kiểm tra dữ liệu. Chạy đánh giá."
+
+    result = format_grounded_answer(answer, "procedure", "Quy trình gồm những bước nào?")
+
+    assert result == "1. Chuẩn bị dữ liệu.\n2. Kiểm tra dữ liệu.\n3. Chạy đánh giá."
 
 
 def test_repetitive_synonym_chain_is_not_well_formed() -> None:

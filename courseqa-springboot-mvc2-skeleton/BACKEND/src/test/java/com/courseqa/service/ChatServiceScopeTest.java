@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import com.courseqa.model.dto.ChatDto;
 import com.courseqa.model.dto.PythonAiDto;
+import com.courseqa.model.dto.RagDto;
 import com.courseqa.model.entity.ChatMessage;
 import com.courseqa.model.entity.ChatSession;
 import com.courseqa.model.entity.Course;
@@ -178,6 +179,42 @@ class ChatServiceScopeTest {
         assertEquals("GREETING", response.generationMode);
         verify(retrieval, never()).retrieve(any());
         verify(ai, never()).callGenerate(any(), any());
+    }
+
+    @Test
+    void localFallbackIsTransparentAndUsesMarkdownBullets() {
+        RagDto.RetrievedChunk first = new RagDto.RetrievedChunk();
+        first.content = "Vật chất tồn tại khách quan và có trước ý thức.";
+        RagDto.RetrievedChunk second = new RagDto.RetrievedChunk();
+        second.content = "Ý thức phản ánh thế giới vật chất thông qua bộ óc con người.";
+
+        String answer = service.buildLocalFallbackAnswer(List.of(first, second));
+
+        assertTrue(answer.startsWith("### Thông tin tạm thời từ tài liệu"));
+        assertTrue(answer.contains("- Vật chất tồn tại khách quan"));
+        assertTrue(answer.contains("- Ý thức phản ánh thế giới vật chất"));
+        assertTrue(answer.contains("chưa phải câu trả lời đã được AI tổng hợp"));
+    }
+
+    @Test
+    void reasoningDisplayFormatterRecoversInlineNumberedOutput() {
+        String raw = "Vật chất quyết định ý thức.\n"
+                + "2. Vật chất là nguồn gốc của ý thức.\n"
+                + "3. Ý thức tác động trở lại vật chất thông qua thực tiễn.";
+
+        String answer = service.formatAnswerForDisplay(raw, "reasoning");
+
+        assertTrue(answer.startsWith("**Trả lời trực tiếp:** Vật chất quyết định ý thức."));
+        assertTrue(answer.contains("\n- Vật chất là nguồn gốc của ý thức."));
+        assertTrue(answer.contains("\n- Ý thức tác động trở lại vật chất"));
+        assertTrue(answer.endsWith("**Kết luận:** Vật chất quyết định ý thức."));
+    }
+
+    @Test
+    void displayFormatterPreservesExistingMarkdown() {
+        String markdown = "- Ý thứ nhất.\n- Ý thứ hai.";
+
+        assertEquals(markdown, service.formatAnswerForDisplay(markdown, "list"));
     }
 
     @Test
