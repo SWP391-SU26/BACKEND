@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
@@ -365,24 +366,33 @@ public class ChatService {
                     elapsedMs(generationStartedAt), sessionId);
         } catch (Exception exception) {
             log.error("Python /api/generate failed for sessionId {}: {}", sessionId, exception.getMessage());
-            String answer = "Hệ thống AI đang bận hoặc chưa sẵn sàng. Bạn có thể thử gửi lại câu hỏi sau ít phút.";
-            ChatMessage assistantMessage = saveMessage(sessionId, "assistant", answer, "AI_RETRYABLE_ERROR");
-            return completeResponse(new ChatDto.AskResponse(
+            String answer = buildLocalFallbackAnswer(retrieval.results);
+            ChatMessage assistantMessage = saveMessage(sessionId, "assistant", answer, "LOCAL_FALLBACK");
+            List<String> usedChunkIds = fallbackChunkIds(retrieval.results);
+            List<ChatDto.CitationItem> citations = saveCitations(
+                    assistantMessage, retrieval.results, List.of(), usedChunkIds);
+            ChatDto.AskResponse response = new ChatDto.AskResponse(
                     sessionId,
                     savedUserMessage.getMessageId(),
                     assistantMessage.getMessageId(),
                     answer,
                     "RAG",
                     retrieval.embeddingModelName,
-                    "AI_RETRYABLE_ERROR",
+                    "LOCAL_FALLBACK",
                     retrieval.retrievalQueryId,
-                    new ArrayList<>()
-            ), startedAt);
+                    citations
+            );
+            response.providerUsed = "spring-local-fallback";
+            response.fallbackReason = classifyAiFailure(exception);
+            return completeResponse(response, startedAt);
         }
 
         String answer = Boolean.TRUE.equals(generated.is_out_of_scope)
                 ? OUT_OF_SCOPE_MESSAGE
                 : (generated.answer == null || generated.answer.isBlank() ? OUT_OF_SCOPE_MESSAGE : generated.answer);
+        if (!OUT_OF_SCOPE_MESSAGE.equals(answer)) {
+            answer = formatAnswerForDisplay(answer, ragFlow.answerProfile());
+        }
 
         String providerUsed = firstNonBlank(generated.provider_used, "unknown");
         String generationMode = firstNonBlank(generated.generation_mode, "BASE_RAG");
@@ -1085,6 +1095,122 @@ public class ChatService {
     private int elapsedMs(long startedAt) {
         long elapsed = (System.nanoTime() - startedAt) / 1_000_000L;
         return (int) Math.min(Integer.MAX_VALUE, Math.max(0L, elapsed));
+    }
+
+    String buildLocalFallbackAnswer(List<RagDto.RetrievedChunk> chunks) {
+        List<RagDto.RetrievedChunk> usable = chunks == null ? List.of() : chunks.stream()
+                .filter(chunk -> chunk != null && chunk.content != null && !chunk.content.isBlank())
+                .limit(3)
+                .toList();
+        if (usable.isEmpty()) {
+            return OUT_OF_SCOPE_MESSAGE;
+        }
+
+        StringBuilder answer = new StringBuilder();
+        answer.append("### Thông tin tạm thời từ tài liệu\n\n")
+                .append("Dịch vụ tạo câu trả lời đang tạm thời chưa sẵn sàng. ")
+                .append("Dưới đây là các đoạn liên quan nhất đã được hệ thống tìm thấy:\n\n");
+        for (int index = 0; index < usable.size(); index++) {
+            answer.append("- ")
+                    .append(cleanFallbackText(usable.get(index).content))
+                    .append("\n");
+        }
+        answer.append("\n> Đây là nội dung trích xuất, chưa phải câu trả lời đã được AI tổng hợp. ")
+                .append("Vui lòng đối chiếu các nguồn bên dưới.");
+        return answer.toString().trim();
+    }
+
+    private List<String> fallbackChunkIds(List<RagDto.RetrievedChunk> chunks) {
+        if (chunks == null) return List.of();
+        return chunks.stream()
+                .filter(chunk -> chunk != null && chunk.chunkId != null)
+                .limit(3)
+                .map(chunk -> chunk.chunkId.toString())
+                .toList();
+    }
+
+    private String cleanFallbackText(String content) {
+        String cleaned = content == null ? "" : content
+                .replaceAll("\\s+", " ")
+                .trim();
+        if (cleaned.length() <= 360) return cleaned;
+        int sentenceEnd = Math.max(cleaned.lastIndexOf(". ", 360), cleaned.lastIndexOf("。", 360));
+        if (sentenceEnd >= 180) return cleaned.substring(0, sentenceEnd + 1).trim();
+        return cleaned.substring(0, 360).trim() + "...";
+    }
+
+    private String classifyAiFailure(Exception exception) {
+        String message = exception == null || exception.getMessage() == null
+                ? ""
+                : exception.getMessage().toLowerCase(java.util.Locale.ROOT);
+        if (message.contains("connect")) return "PYTHON_AI_UNAVAILABLE";
+        if (message.contains("timeout") || message.contains("timed out")) return "PYTHON_AI_TIMEOUT";
+        if (message.contains("model") || message.contains("adapter")) return "MODEL_NOT_READY";
+        return "PYTHON_GENERATION_FAILED";
+    }
+
+    String formatAnswerForDisplay(String answer, String answerProfile) {
+        String cleaned = answer == null ? "" : answer.trim();
+        if (cleaned.isBlank()) {
+            return cleaned;
+        }
+        String firstLine = cleaned.split("\\R", 2)[0].trim();
+        if (Pattern.compile("(?m)^\\s*(?:[-*+]\\s+|\\|.+\\|\\s*$)")
+                .matcher(cleaned).find()
+                || firstLine.matches("^\\d+[.)]\\s+.*")) {
+            return cleaned;
+        }
+
+        String expanded = cleaned.replaceAll("\\s+(?=\\d+[.)]\\s+)", "\n");
+        List<String> units = new ArrayList<>();
+        for (String line : expanded.split("\\R+")) {
+            String withoutMarker = line.replaceFirst("^\\s*\\d+[.)]\\s+", "").trim();
+            for (String sentence : withoutMarker.split("(?<=[.!?;])\\s+")) {
+                String unit = sentence.trim();
+                if (unit.length() >= 8) units.add(unit);
+            }
+        }
+        if (units.size() < 2) return cleaned;
+
+        String profile = answerProfile == null
+                ? "factual"
+                : answerProfile.toLowerCase(java.util.Locale.ROOT);
+        if ("reasoning".equals(profile)) {
+            StringBuilder formatted = new StringBuilder()
+                    .append("**Trả lời trực tiếp:** ").append(units.get(0))
+                    .append("\n\n**Các lý do chính:**\n");
+            units.stream().skip(1).limit(4)
+                    .forEach(item -> formatted.append("- ").append(item).append("\n"));
+            return formatted.append("\n**Kết luận:** ").append(units.get(0)).toString().trim();
+        }
+        if ("definition".equals(profile)) {
+            StringBuilder formatted = new StringBuilder()
+                    .append("**Định nghĩa:** ").append(units.get(0))
+                    .append("\n\n**Đặc điểm chính:**\n");
+            units.stream().skip(1).limit(4)
+                    .forEach(item -> formatted.append("- ").append(item).append("\n"));
+            return formatted.toString().trim();
+        }
+        if ("procedure".equals(profile)) {
+            StringBuilder formatted = new StringBuilder();
+            for (int index = 0; index < Math.min(units.size(), 7); index++) {
+                formatted.append(index + 1).append(". ").append(units.get(index)).append("\n");
+            }
+            return formatted.toString().trim();
+        }
+        if (Set.of("list", "summary", "comparison").contains(profile)) {
+            StringBuilder formatted = new StringBuilder();
+            units.stream().limit(8)
+                    .forEach(item -> formatted.append("- ").append(item).append("\n"));
+            return formatted.toString().trim();
+        }
+        if ("factual".equals(profile) && units.size() >= 3) {
+            StringBuilder formatted = new StringBuilder(units.get(0)).append("\n\n");
+            units.stream().skip(1).limit(4)
+                    .forEach(item -> formatted.append("- ").append(item).append("\n"));
+            return formatted.toString().trim();
+        }
+        return cleaned;
     }
 
     private ChatMessage saveMessage(UUID sessionId, String role, String content) {

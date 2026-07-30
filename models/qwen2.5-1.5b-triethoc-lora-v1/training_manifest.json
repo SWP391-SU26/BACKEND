@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-07-28T10:56:30.898046+00:00",
+  "adapter_version": "qwen2.5-1.5b-triethoc-lora-v1",
+  "base_model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "dataset_version": "triethoc-v1",
+  "dataset_manifest_sha256": "1e3e79a0d56ba674b0ec93fc4f4c8f15c5a31730549462822d418a06da0634e1",
+  "pdf_sha256": "6e69a2f7294df03d22e94f0c748f407f22231321b8cea1dd661b1f2c9e36e171",
+  "train_sha256": "c20e90f2760f3fbedd4c449a01f9a9338ebba445fa6bc839fd3bdfae95811981",
+  "validation_sha256": "bc0b832b8bfd731e023669a6c0a926cacfadf71c61d5ac3d45df4c54befa46e8",
+  "git_commit": "f0b95df9e3aa0f32ce54785fb46cb1878f23700f",
+  "sources": [
+    "75770b9b-cdbf-4038-90e2-f25e1f4426fe_triethocmaclenin.pdf"
+  ],
+  "train_examples": 250,
+  "validation_examples": 50,
+  "refusal_examples": 30,
+  "train_refusal_examples": 25,
+  "validation_refusal_examples": 5,
+  "evaluation_metrics": {
+    "eval_loss": 1.4543066024780273,
+    "eval_runtime": 6.4577,
+    "eval_samples_per_second": 7.743,
+    "eval_steps_per_second": 1.084,
+    "epoch": 3.0,
+    "eval_num_tokens": 1677,
+    "train_runtime": 410.4819,
+    "train_samples_per_second": 1.827,
+    "train_steps_per_second": 0.117,
+    "total_flos": 996917657859072.0,
+    "train_loss": 1.7504245315988858,
+    "training_duration_seconds": 410.993,
+    "peak_vram_bytes": 3450494464,
+    "training_started_at": "2026-07-28T10:49:33.125777+00:00",
+    "behavioral_answer_token_f1": 0.2343,
+    "behavioral_refusal_accuracy": 1.0,
+    "behavioral_examples": 50
+  },
+  "quality_gate": {
+    "passed": false,
+    "checks": {
+      "enough_examples": true,
+      "enough_refusal_examples": true,
+      "has_validation": true,
+      "acceptable_eval_loss": true,
+      "enough_evaluated_tokens": true,
+      "nonzero_train_loss": true,
+      "behavioral_smoke_test": false,
+      "verified_manifest": true
+    },
+    "thresholds": {
+      "min_training_examples": 100,
+      "min_refusal_examples": 10,
+      "max_eval_loss": 3.0
+    },
+    "behavioral_thresholds": {
+      "min_answer_token_f1": 0.35,
+      "min_refusal_accuracy": 0.8
+    },
+    "rejection_reason": "Behavioral benchmark chưa đạt ngưỡng chất lượng production."
+  },
+  "config": {
+    "model_name": "Qwen/Qwen2.5-1.5B-Instruct",
+    "train_file": "data/research/triethoc-v1/train.jsonl",
+    "validation_file": "data/research/triethoc-v1/validation.jsonl",
+    "dataset_manifest": "data/research/triethoc-v1/dataset_manifest.json",
+    "output_dir": "models/qwen2.5-1.5b-triethoc-lora-v1",
+    "tokenizer_name": "Qwen/Qwen2.5-1.5B-Instruct",
+    "model_cache_dir": "data/models_cache/hub",
+    "use_qlora": true,
+    "cpu_dtype": "float32",
+    "epochs": 3,
+    "batch_size": 1,
+    "gradient_accumulation_steps": 16,
+    "learning_rate": 0.0002,
+    "seed": 42,
+    "max_length": 512,
+    "gradient_checkpointing": true,
+    "save_total_limit": 1,
+    "optimizer": "paged_adamw_8bit",
+    "lora_r": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.05,
+    "min_training_examples": 100,
+    "min_refusal_examples": 10,
+    "max_eval_loss": 3.0,
+    "refusal_oversample_factor": 1,
+    "target_modules": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj"
+    ]
+  }
+}

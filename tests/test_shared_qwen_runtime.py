@@ -3,7 +3,7 @@ from types import MethodType
 
 import pytest
 
-from src.shared_qwen import SharedQwenRuntime
+from src.shared_qwen import ANSWER_PROFILE_RULES, SharedQwenRuntime
 from src.storage import RetrievedChunk
 
 
@@ -128,7 +128,25 @@ def test_reasoning_prompt_requires_a_complete_study_answer() -> None:
     )
 
     assert included == [context]
-    assert "luận điểm trực tiếp" in messages[0]["content"]
-    assert "4-6 câu" in messages[0]["content"]
+    assert "**Trả lời trực tiếp:**" in messages[0]["content"]
+    assert "**Các lý do chính:**" in messages[0]["content"]
+    assert "**Kết luận:**" in messages[0]["content"]
+    assert "2-4 gạch đầu dòng" in messages[0]["content"]
     assert "không bắt đầu hoặc kết thúc bằng mẩu câu bị cắt" in messages[0]["content"]
     assert "bỏ bối cảnh lịch sử" in messages[0]["content"]
+    assert "không tự viết [1], [2]" in messages[0]["content"]
+
+
+@pytest.mark.parametrize(
+    ("profile", "expected"),
+    [
+        ("definition", "**Định nghĩa:**"),
+        ("list", "danh sách Markdown"),
+        ("procedure", "đánh số"),
+        ("comparison", "bảng Markdown"),
+        ("summary", "5-8 gạch đầu dòng"),
+        ("reasoning", "**Kết luận:**"),
+    ],
+)
+def test_answer_profiles_request_adaptive_markdown(profile: str, expected: str) -> None:
+    assert expected in ANSWER_PROFILE_RULES[profile]

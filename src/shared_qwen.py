@@ -14,6 +14,44 @@ from .rag_pipeline import OUT_OF_SCOPE_MESSAGE
 from .storage import RetrievedChunk
 
 
+ANSWER_PROFILE_RULES = {
+    "short": (
+        "Trả lời trực tiếp trong 2-3 câu hoàn chỉnh. Không thêm tiêu đề hoặc danh sách "
+        "nếu một đoạn ngắn đã đủ rõ."
+    ),
+    "factual": (
+        "Mở đầu bằng câu trả lời trực tiếp. Nếu có từ hai chi tiết hỗ trợ trở lên, "
+        "trình bày chúng bằng 2-4 gạch đầu dòng Markdown. Giữ câu trả lời trong khoảng 70-120 từ."
+    ),
+    "definition": (
+        "Mở đầu bằng '**Định nghĩa:**' và một câu định nghĩa trực tiếp. Nếu chứng cứ đủ, "
+        "thêm '**Đặc điểm chính:**' với 2-4 gạch đầu dòng ngắn. Giữ trong khoảng 80-160 từ."
+    ),
+    "list": (
+        "Dùng danh sách Markdown gồm 3-7 ý chính; mỗi ý bắt đầu bằng từ khóa in đậm "
+        "và có một lời giải thích ngắn. Không lặp lại cùng một ý dưới nhiều cách diễn đạt."
+    ),
+    "procedure": (
+        "Dùng danh sách Markdown có đánh số theo đúng thứ tự trong tài liệu. "
+        "Mỗi bước nêu hành động trước, sau đó mới ghi điều kiện hoặc lưu ý cần thiết."
+    ),
+    "comparison": (
+        "Nếu tài liệu có đủ tiêu chí cho cả hai đối tượng, dùng bảng Markdown ngắn gồm "
+        "các cột Tiêu chí và từng đối tượng, rồi thêm một câu kết luận. Nếu chưa đủ dữ liệu "
+        "để lập bảng, dùng các gạch đầu dòng và nói rõ phần tài liệu chưa cung cấp."
+    ),
+    "summary": (
+        "Tóm tắt thành 5-8 gạch đầu dòng Markdown đại diện cho các chủ đề chính. "
+        "Mỗi ý chỉ 1-2 câu và không kể lại nguyên văn một đoạn tài liệu."
+    ),
+    "reasoning": (
+        "Mở đầu bằng '**Trả lời trực tiếp:**' và một câu nêu luận điểm. Sau đó dùng "
+        "'**Các lý do chính:**' với 2-4 gạch đầu dòng giải thích các cơ chế hoặc nguyên nhân "
+        "khác nhau. Kết thúc bằng '**Kết luận:**' và một câu ngắn. Giữ trong khoảng 100-160 từ."
+    ),
+}
+
+
 class SharedQwenRuntime:
     """One 4-bit Qwen instance shared by base RAG and LoRA inference."""
 
@@ -248,15 +286,6 @@ class SharedQwenRuntime:
     ) -> str:
         if not contexts:
             return ""
-        profile_rules = {
-            "definition": "Nêu định nghĩa, giải thích các đặc trưng cốt lõi và ý nghĩa trong 3-5 câu.",
-            "factual": "Trả lời trực tiếp rồi bổ sung 2-3 chi tiết làm rõ có trong chứng cứ.",
-            "comparison": "So sánh theo từng tiêu chí rõ ràng, nêu điểm giống, khác và kết luận.",
-            "list": "Dùng danh sách Markdown gồm các ý chính; giải thích ngắn cho từng ý.",
-            "procedure": "Trình bày tuần tự các bước và điều kiện quan trọng.",
-            "reasoning": "Nêu luận điểm, ít nhất ba ý giải thích cơ chế hoặc nguyên nhân khác nhau, rồi kết luận ý nghĩa trong 4-6 câu.",
-            "summary": "Tóm tắt 5-8 ý đại diện bằng Markdown, bao quát các chủ đề chính thay vì một đoạn riêng lẻ.",
-        }
         evidence = "\n\n".join(
             f"[{index}] {item.filename}, trang {item.page or '?'}\n{item.content}"
             for index, item in enumerate(contexts, start=1)
@@ -271,7 +300,9 @@ class SharedQwenRuntime:
             "Không dịch thuật ngữ sang tiếng Anh, không chú thích trong ngoặc và không liệt kê chuỗi từ đồng nghĩa. "
             "Không thêm tên người, mốc lịch sử hoặc tranh luận trường phái nếu câu hỏi không yêu cầu các chi tiết đó. "
             "Mỗi khẳng định phải kiểm chứng được; không thêm kiến thức ngoài tài liệu, UUID hay mục nguồn. "
-            f"{profile_rules.get(answer_profile, profile_rules['factual'])}\n\n"
+            "Dùng Markdown có chủ đích để sinh viên quét nhanh nội dung; không dồn nhiều ý độc lập vào một đoạn văn. "
+            "Không tạo mục 'Nguồn' hoặc tự viết ký hiệu citation vì giao diện xử lý nguồn riêng. "
+            f"{ANSWER_PROFILE_RULES.get(answer_profile, ANSWER_PROFILE_RULES['factual'])}\n\n"
             f"Câu hỏi: {question}\n\n"
             f"CÂU TRẢ LỜI HIỆN TẠI:\n{current_answer or '(chưa đủ ý)'}\n\n"
             f"CHỨNG CỨ TÀI LIỆU:\n{evidence}"
@@ -418,16 +449,6 @@ class SharedQwenRuntime:
         strict_prompt: bool,
         max_input_tokens: int,
     ) -> tuple[list[dict[str, str]], list[RetrievedChunk]]:
-        profile_rules = {
-            "short": "Trả lời trực tiếp trong 2-3 câu hoàn chỉnh.",
-            "factual": "Trả lời thẳng vào dữ kiện được hỏi trong 3-5 câu, kèm các chi tiết làm rõ có trong tài liệu.",
-            "definition": "Nêu định nghĩa trước, rồi giải thích đặc trưng cốt lõi và ý nghĩa trong 3-5 câu.",
-            "list": "Dùng danh sách Markdown gồm các ý chính; mỗi ý có một lời giải thích ngắn.",
-            "procedure": "Trình bày theo các bước Markdown đúng thứ tự trong tài liệu.",
-            "comparison": "So sánh theo từng tiêu chí rõ ràng, nêu điểm giống, khác và kết luận; có thể dùng bảng Markdown.",
-            "summary": "Tóm tắt có cấu trúc thành 5-8 ý đại diện, bao quát các chủ đề chính thay vì kể lại một đoạn riêng lẻ.",
-            "reasoning": "Nêu luận điểm trực tiếp, ít nhất ba ý giải thích cơ chế hoặc nguyên nhân khác nhau, rồi kết luận ý nghĩa trong 4-6 câu.",
-        }
         system = (
             "Bạn là trợ lý học tập cho sinh viên. Chỉ được dùng thông tin trong DOCUMENT CONTEXT "
             "để đưa ra các khẳng định về môn học. Lịch sử chỉ dùng để hiểu đại từ và ý định hỏi tiếp, "
@@ -442,7 +463,9 @@ class SharedQwenRuntime:
             "hoặc từ thuộc lĩnh vực khác. Câu đầu tiên phải trả lời trực tiếp bằng chính các thuật ngữ đó. "
             "Chỉ dùng bằng chứng trực tiếp trả lời câu hỏi; bỏ bối cảnh lịch sử, tên người, ví dụ và phần tranh luận "
             "không cần thiết nếu người dùng không hỏi. "
-            f"{profile_rules.get(answer_profile, profile_rules['short'])}"
+            "Dùng Markdown có chủ đích để sinh viên quét nhanh nội dung; không dồn nhiều ý độc lập vào một đoạn văn. "
+            "Không tạo mục 'Nguồn', không tự viết [1], [2] hoặc tên file vì giao diện sẽ hiển thị citation riêng. "
+            f"{ANSWER_PROFILE_RULES.get(answer_profile, ANSWER_PROFILE_RULES['short'])}"
         )
         if strict_prompt:
             system += (

@@ -227,7 +227,7 @@ def ensure_grounded_answer(
     grounded_text = (
         generated_answer.strip()
         if supported and not unsupported
-        else " ".join(supported).strip()
+        else preserve_supported_markdown(generated_answer, supported)
     )
     return GroundedAnswer(
         answer=grounded_text,
@@ -237,6 +237,118 @@ def ensure_grounded_answer(
         unsupported_sentences=unsupported,
         unsupported_sentence_count=len(unsupported),
     )
+
+
+def preserve_supported_markdown(original: str, supported: Sequence[str]) -> str:
+    """Keep useful list numbering after unsupported claims have been removed."""
+    remaining = list(supported)
+    if not remaining:
+        return ""
+
+    if re.search(r"^\s*\|.+\|\s*$", original, flags=re.MULTILINE):
+        return "\n".join(f"- {sentence}" for sentence in remaining)
+
+    restored: list[str] = []
+    prefix_pattern = re.compile(r"^(\s*(?:[-*+]\s+|\d+[.)]\s+|>\s+))(.*)$")
+    for raw_line in original.splitlines():
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        match = prefix_pattern.match(stripped)
+        prefix = match.group(1) if match else ""
+        content = match.group(2) if match else stripped
+        content_terms_set = content_terms(content)
+        if not content_terms_set:
+            continue
+
+        best_index = -1
+        best_score = 0.0
+        for index, sentence in enumerate(remaining):
+            sentence_terms = content_terms(sentence)
+            union = content_terms_set | sentence_terms
+            score = len(content_terms_set & sentence_terms) / len(union) if union else 0.0
+            if score > best_score:
+                best_index = index
+                best_score = score
+        if best_index >= 0 and best_score >= 0.45:
+            restored.append(f"{prefix}{remaining.pop(best_index)}".strip())
+
+    restored.extend(remaining)
+    return "\n".join(restored).strip()
+
+
+def format_grounded_answer(answer: str, answer_profile: str, question: str = "") -> str:
+    """Deterministically format verified claims without adding new knowledge."""
+    cleaned = (answer or "").strip()
+    if not cleaned:
+        return ""
+
+    cleaned = re.sub(
+        r"\s+(?=\*\*(?:Định nghĩa|Đặc điểm chính|Trả lời trực tiếp|Các lý do chính|Kết luận):\*\*)",
+        "\n\n",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    first_line = cleaned.splitlines()[0].strip()
+    if (
+        re.search(r"(?m)^\s*(?:[-*+]\s+|\|.+\|\s*$)", cleaned)
+        or re.match(r"^\d+[.)]\s+", first_line)
+    ):
+        return cleaned
+
+    expanded = re.sub(r"\s+(?=\d+[.)]\s+)", "\n", cleaned)
+    units: list[str] = []
+    for line in expanded.splitlines():
+        without_marker = re.sub(r"^\s*\d+[.)]\s+", "", line).strip()
+        units.extend(split_answer_sentences(without_marker))
+    if len(units) < 2:
+        return cleaned
+
+    labels = _format_labels(question)
+    if answer_profile == "reasoning":
+        direct = units[0]
+        details = units[1:5]
+        bullets = "\n".join(f"- {item}" for item in details)
+        return (
+            f"**{labels['direct']}:** {direct}\n\n"
+            f"**{labels['reasons']}:**\n{bullets}\n\n"
+            f"**{labels['conclusion']}:** {direct}"
+        )
+    if answer_profile == "definition":
+        details = "\n".join(f"- {item}" for item in units[1:5])
+        return (
+            f"**{labels['definition']}:** {units[0]}\n\n"
+            f"**{labels['features']}:**\n{details}"
+        )
+    if answer_profile == "procedure":
+        return "\n".join(f"{index}. {item}" for index, item in enumerate(units[:7], start=1))
+    if answer_profile in {"list", "summary", "comparison"}:
+        return "\n".join(f"- {item}" for item in units[:8])
+    if answer_profile == "factual" and len(units) >= 3:
+        details = "\n".join(f"- {item}" for item in units[1:5])
+        return f"{units[0]}\n\n{details}"
+    return cleaned
+
+
+def _format_labels(question: str) -> dict[str, str]:
+    normalized = normalize_text(question)
+    english_markers = {"what", "why", "how", "explain", "compare", "because"}
+    english = len(set(re.findall(r"[a-z]+", normalized)) & english_markers) >= 1
+    if english:
+        return {
+            "definition": "Definition",
+            "features": "Key points",
+            "direct": "Direct answer",
+            "reasons": "Main reasons",
+            "conclusion": "Conclusion",
+        }
+    return {
+        "definition": "Định nghĩa",
+        "features": "Đặc điểm chính",
+        "direct": "Trả lời trực tiếp",
+        "reasons": "Các lý do chính",
+        "conclusion": "Kết luận",
+    }
 
 
 def answer_is_complete(answer: str, answer_profile: str) -> bool:
@@ -365,9 +477,17 @@ def is_noise_text(text: str) -> bool:
 
 
 def split_answer_sentences(text: str) -> list[str]:
-    cleaned = clean_ocr_text(text)
-    if not cleaned:
-        return []
+    lines = (text or "").splitlines()
+    filtered_lines = []
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or re.fullmatch(r"\|?(?:\s*:?-+:?\s*\|)+", stripped):
+            continue
+        next_line = lines[index + 1].strip() if index + 1 < len(lines) else ""
+        if next_line and re.fullmatch(r"\|?(?:\s*:?-+:?\s*\|)+", next_line):
+            continue
+        filtered_lines.append(stripped)
+    cleaned = "\n".join(filtered_lines)
     parts = re.split(r"(?<=[.!?;])\s+|\n+", cleaned)
     return [part.strip(" -\t") for part in parts if len(part.strip()) >= 12]
 
