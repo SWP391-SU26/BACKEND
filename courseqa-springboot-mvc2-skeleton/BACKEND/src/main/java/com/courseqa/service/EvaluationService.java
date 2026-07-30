@@ -314,7 +314,6 @@ public class EvaluationService {
                 ? resolveAdapterVersion() : null);
 
 
-
                 
         experiment.setConfigJson(withResearchConfig(configJson, normalizedType));
         experiment.setCreatedBy(createdBy);
@@ -951,13 +950,13 @@ public class EvaluationService {
             throw new IllegalStateException("Cannot serialize research configuration.", exception);
         }
     }
-
+//-----------------Helpers
 private String resolveBaseModel() {
         try {
             Map<String, Object> raw = aiClientService.getModelStatus();
-            String baseModel = firstValue(raw, "base_model");
-            if (baseModel != null && !baseModel.isBlank()) {
-                return baseModel;
+            Object baseModel = firstValue(raw, "base_model");
+            if (baseModel != null && !String.valueOf(baseModel).isBlank()) {
+                return String.valueOf(baseModel);
             }
         } catch (Exception exception) {
             log.warn("Could not read base model from AI engine: {}", exception.getMessage());
@@ -968,16 +967,16 @@ private String resolveBaseModel() {
     private String resolveAdapterVersion() {
         try {
             Map<String, Object> raw = aiClientService.getModelStatus();
-            String adapterVersion = firstValue(raw, "adapter_version");
-            if (adapterVersion != null && !adapterVersion.isBlank()) {
-                return adapterVersion;
+            Object adapterVersion = firstValue(raw, "adapter_version");
+            if (adapterVersion != null && !String.valueOf(adapterVersion).isBlank()) {
+                return String.valueOf(adapterVersion);
             }
         } catch (Exception exception) {
             log.warn("Could not read adapter version from AI engine: {}", exception.getMessage());
         }
         return "UNKNOWN";
     }
-
+//--------------------------------------
 
     private String withBenchmarkProfile(String configJson, int questionCount) {
         return withBenchmarkProfile(configJson, questionCount, false);
