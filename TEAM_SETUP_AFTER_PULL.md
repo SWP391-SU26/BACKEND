@@ -1,13 +1,13 @@
 # Team Setup After Pull
 
-File này dành cho thành viên pull branch `member-3` về để chạy workflow demo RAG + Fine-tuning.
+File này dành cho thành viên pull branch `develop` về để chạy workflow demo RAG + Fine-tuning.
 
 ## 1. Pull code
 
 ```cmd
 cd C:\DEV\SWP\BACKEND
-git checkout member-3
-git pull origin member-3
+git checkout develop
+git pull origin develop
 ```
 
 ## 2. Tạo Python virtual environment
@@ -39,7 +39,7 @@ python -c "import torch; print(torch.__version__); print(torch.version.cuda); pr
 Repo đã có sẵn adapter:
 
 ```text
-models/qwen-rag-lora
+models/qwen2.5-1.5b-triethoc-lora-v1
 ```
 
 Chạy:
@@ -48,8 +48,9 @@ Chạy:
 cd C:\DEV\SWP\BACKEND
 .venv\Scripts\activate.bat
 set GENERATION_PROVIDER=lora
-set LORA_ADAPTER_DIR=models/qwen-rag-lora
-set LOCAL_MAX_NEW_TOKENS=40
+set LOCAL_BASE_MODEL=Qwen/Qwen2.5-1.5B-Instruct
+set LORA_ADAPTER_DIR=models/qwen2.5-1.5b-triethoc-lora-v1
+set FINETUNING_ALLOW_UNVERIFIED=true
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
 ```
 

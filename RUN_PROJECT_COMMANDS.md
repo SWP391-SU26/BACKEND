@@ -14,33 +14,38 @@ Can mo 3 terminal rieng:
 - Terminal 3: Frontend Vite.
 
 
-## 2. Terminal 1 - Chay Python AI Fine-tuning
-
-Dung khi test Workflow 5 hoac Fine-tuning benchmark.
+## 2. Cai dat lan dau sau khi pull
 
 ```cmd
 cd BACKEND
+python -m venv .venv
 .venv\Scripts\activate.bat
-set GENERATION_PROVIDER=lora
-set LORA_ADAPTER_DIR=models\qwen-rag-lora
-set LOCAL_MAX_NEW_TOKENS=25
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+copy .env.example .env
 ```
 
-Ghi chu:
-- `LOCAL_MAX_NEW_TOKENS=25` giup demo nhanh.
-- Neu muon cau tra loi dai hon co the tang len `40` hoac `50`, nhung benchmark se cham hon.
-- Lan dau chay co the mat thoi gian tai/cache base model Qwen tu Hugging Face.
-- Neu PowerShell khong chay duoc activate, hay mo terminal CMD.
+Base model `Qwen/Qwen2.5-1.5B-Instruct` se duoc tai tu Hugging Face trong lan
+chay dau. LoRA adapter da nam trong repo tai:
+
+```txt
+models\qwen2.5-1.5b-triethoc-lora-v1
+```
+
+Khong copy `.env` tu may thanh vien khac. Moi dev tu cau hinh DB va secret cua
+minh.
 
 
-## 3. Terminal 1 - Chay Python AI RAG/mac dinh
+## 3. Terminal 1 - Chay Python AI RAG
 
-Neu chi test RAG, co the chay gon hon:
+Day la che do mac dinh cho AI Chat:
 
 ```cmd
 cd BACKEND
 .venv\Scripts\activate.bat
+set GENERATION_PROVIDER=local
+set LOCAL_BASE_MODEL=Qwen/Qwen2.5-1.5B-Instruct
+set LORA_ADAPTER_DIR=models\qwen2.5-1.5b-triethoc-lora-v1
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
 ```
 
@@ -48,16 +53,34 @@ Kiem tra Python AI:
 
 ```cmd
 curl http://127.0.0.1:8001/api/health
+curl http://127.0.0.1:8001/api/model/status
 ```
 
 Hoac mo:
 
 ```txt
-http://127.0.0.1:8001
+http://127.0.0.1:8001/docs
 ```
 
 
-## 4. Terminal 2 - Chay Java Spring backend
+## 4. Terminal 1 - Chay Python AI Fine-tuning
+
+Chi dung khi test Workflow 5 hoac Fine-tuning benchmark. Adapter hien tai la
+artifact nghien cuu va chua dat behavioral quality gate, vi vay can bat co xac
+nhan rieng:
+
+```cmd
+cd BACKEND
+.venv\Scripts\activate.bat
+set GENERATION_PROVIDER=lora
+set LOCAL_BASE_MODEL=Qwen/Qwen2.5-1.5B-Instruct
+set LORA_ADAPTER_DIR=models\qwen2.5-1.5b-triethoc-lora-v1
+set FINETUNING_ALLOW_UNVERIFIED=true
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
+```
+
+
+## 5. Terminal 2 - Chay Java Spring backend
 
 ```cmd
 cd BACKEND\courseqa-springboot-mvc2-skeleton\BACKEND
@@ -78,7 +101,7 @@ http://localhost:8080
 ```
 
 
-## 5. Terminal 3 - Chay Frontend
+## 6. Terminal 3 - Chay Frontend
 
 Lan dau pull ve thi cai package:
 
@@ -101,7 +124,7 @@ http://localhost:5173
 ```
 
 
-## 6. Thu tu chay khuyen dung
+## 7. Thu tu chay khuyen dung
 
 ```txt
 1. Chay Python AI service truoc.

@@ -10,8 +10,8 @@ public class EvaluationAsyncConfig {
     @Bean(name = "evaluationTaskExecutor")
     public TaskExecutor evaluationTaskExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(1);
-        executor.setMaxPoolSize(1);
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(2);
         executor.setQueueCapacity(20);
         executor.setThreadNamePrefix("flow5-benchmark-");
         executor.setWaitForTasksToCompleteOnShutdown(false);

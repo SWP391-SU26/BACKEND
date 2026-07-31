@@ -64,6 +64,21 @@ public class CourseDocument {
     @Column(name = "processing_status")
     private String processingStatus;
 
+    @Column(name = "indexing_status")
+    private String indexingStatus;
+
+    @Column(name = "indexed_embedding_model_id")
+    private UUID indexedEmbeddingModelId;
+
+    @Column(name = "indexed_model_version")
+    private String indexedModelVersion;
+
+    @Column(name = "indexed_at")
+    private LocalDateTime indexedAt;
+
+    @Column(name = "index_error", columnDefinition = "NVARCHAR(MAX)")
+    private String indexError;
+
     @Column(name = "total_pages")
     private Integer totalPages;
 
@@ -152,6 +167,21 @@ public class CourseDocument {
 
     public String getProcessingStatus() { return processingStatus; }
     public void setProcessingStatus(String processingStatus) { this.processingStatus = processingStatus; }
+
+    public String getIndexingStatus() { return indexingStatus; }
+    public void setIndexingStatus(String indexingStatus) { this.indexingStatus = indexingStatus; }
+
+    public UUID getIndexedEmbeddingModelId() { return indexedEmbeddingModelId; }
+    public void setIndexedEmbeddingModelId(UUID indexedEmbeddingModelId) { this.indexedEmbeddingModelId = indexedEmbeddingModelId; }
+
+    public String getIndexedModelVersion() { return indexedModelVersion; }
+    public void setIndexedModelVersion(String indexedModelVersion) { this.indexedModelVersion = indexedModelVersion; }
+
+    public LocalDateTime getIndexedAt() { return indexedAt; }
+    public void setIndexedAt(LocalDateTime indexedAt) { this.indexedAt = indexedAt; }
+
+    public String getIndexError() { return indexError; }
+    public void setIndexError(String indexError) { this.indexError = indexError; }
 
     public Integer getTotalPages() { return totalPages; }
     public void setTotalPages(Integer totalPages) { this.totalPages = totalPages; }

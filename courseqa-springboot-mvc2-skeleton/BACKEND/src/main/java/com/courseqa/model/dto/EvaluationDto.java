@@ -57,6 +57,16 @@ public class EvaluationDto {
         private UUID createdBy;
     }
 
+    public static class RunExperimentRequest {
+        public Boolean allowUnverifiedModel;
+    }
+
+    public static class RunPairRequest {
+        public UUID ragExperimentId;
+        public UUID fineTunedExperimentId;
+        public Boolean allowUnverifiedModel;
+    }
+
     @Data
     @Builder
     @NoArgsConstructor

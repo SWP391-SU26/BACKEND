@@ -20,7 +20,7 @@ def test_adapter_path_is_absolute_and_points_to_configured_candidate(monkeypatch
     monkeypatch.setenv("LORA_ADAPTER_DIR", "stale/missing/adapter")
     settings = load_settings()
     assert settings.lora_adapter_dir.is_absolute()
-    assert settings.lora_adapter_dir == (BASE_DIR / "models" / "qwen-study-lora-1.5b-v4").resolve()
+    assert settings.lora_adapter_dir == (BASE_DIR / "stale" / "missing" / "adapter").resolve()
 
 
 def test_model_readiness_reports_missing_adapter(tmp_path: Path) -> None:
@@ -101,6 +101,29 @@ def test_strict_rag_uses_deterministic_generator(monkeypatch, tmp_path: Path) ->
     assert pipeline._generate_answer("Question", [SimpleNamespace()], [], strict=True) == "deterministic answer"
 
 
+def test_base_rag_never_uses_lora_or_openai(monkeypatch, tmp_path: Path) -> None:
+    settings = AppSettings(
+        lora_adapter_dir=tmp_path / "missing",
+        generation_provider="openai",
+        openai_api_key="not-used",
+    )
+    pipeline = RAGPipeline(settings, DummyStore(), DummyEmbedding())
+    generator = SimpleNamespace(generate=lambda question, contexts, **_kwargs: "base grounded answer")
+    monkeypatch.setattr(pipeline, "_get_base_generator", lambda: generator)
+    monkeypatch.setattr(
+        pipeline,
+        "_get_local_generator",
+        lambda: pytest.fail("BASE_RAG must not initialize the LoRA adapter"),
+    )
+
+    result = pipeline.generate_base_rag_answer("Question", [SimpleNamespace()])
+
+    assert result.answer == "base grounded answer"
+    assert result.provider_used == "local-base"
+    assert result.generation_mode == "BASE_RAG"
+    assert result.adapter_version is None
+
+
 def test_single_japanese_character_is_valid_list_item(tmp_path: Path) -> None:
     settings = AppSettings(lora_adapter_dir=tmp_path, generation_provider="extractive")
     pipeline = RAGPipeline(settings, DummyStore(), DummyEmbedding())
@@ -132,7 +155,7 @@ def test_finetuned_generation_uses_real_generator_path(monkeypatch, tmp_path: Pa
     settings = AppSettings(lora_adapter_dir=tmp_path)
     pipeline = RAGPipeline(settings, DummyStore(), DummyEmbedding())
     generator = SimpleNamespace(
-        generate_without_context=lambda question, allowed_sources, strict=True: f"fine:{question}:{allowed_sources[0]}"
+        generate_without_context=lambda question, allowed_sources, **_kwargs: f"fine:{question}:{allowed_sources[0]}"
     )
     monkeypatch.setattr(pipeline, "_get_local_generator", lambda: generator)
     assert pipeline.generate_without_retrieval("Question", ["course.pdf"]) == "fine:Question:course.pdf"

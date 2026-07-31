@@ -11,23 +11,27 @@ from typing import Any
 
 
 FINETUNED_REFUSAL_MESSAGE = "Tôi chưa tìm thấy thông tin này trong tài liệu đã được huấn luyện."
+UUID_FILENAME_PREFIX = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}[_-]",
+    re.IGNORECASE,
+)
 
 
 def normalize_source_name(value: str) -> str:
-    return Path(value.strip()).name.casefold() if value and value.strip() else ""
+    if not value or not value.strip():
+        return ""
+    filename = Path(value.strip()).name
+    return UUID_FILENAME_PREFIX.sub("", filename).casefold()
 
 
 def build_finetuning_system_prompt(allowed_sources: list[str] | set[str] | tuple[str, ...]) -> str:
     sources = sorted({Path(source).name for source in allowed_sources if source and source.strip()})
     scope = ", ".join(sources) if sources else "tập tài liệu đã được huấn luyện"
     return (
-        "Bạn là trợ lý học tập offline đã được fine-tune. "
-        f"Phạm vi kiến thức được phép trả lời: {scope}. "
-        "Hãy hiểu ý định và cách diễn đạt tương đương của câu hỏi, rồi trả lời rõ ràng, có logic, "
-        "đúng trọng tâm bằng ngôn ngữ của người dùng. Nếu câu hỏi bằng tiếng Việt, chỉ dùng tiếng Việt, "
-        "tuyệt đối không dùng chữ Hán hoặc trộn tiếng Trung. Không trộn kiến thức giữa các tài liệu. "
-        "Nếu câu hỏi không thuộc phạm vi đã học hoặc bạn không chắc chắn, chỉ trả lời đúng câu: "
-        f"{FINETUNED_REFUSAL_MESSAGE}"
+        "Bạn là trợ lý học tập đã được fine-tune cho Triết học Mác - Lênin. "
+        f"Chỉ trả lời kiến thức thuộc nguồn {scope}. "
+        "Không trộn kiến thức giữa các tài liệu. "
+        f"Nếu ngoài phạm vi, chỉ trả lời: {FINETUNED_REFUSAL_MESSAGE}"
     )
 
 
@@ -58,7 +62,12 @@ def selected_sources_are_trained(selected_filenames: list[str], trained_sources:
         for filename in selected_filenames
         if filename and filename.strip()
     }
-    return bool(selected) and selected.issubset(trained_sources)
+    normalized_trained = {
+        normalize_source_name(filename)
+        for filename in trained_sources
+        if filename and filename.strip()
+    }
+    return bool(selected) and selected.issubset(normalized_trained)
 
 
 @dataclass(frozen=True)
@@ -362,5 +371,14 @@ def is_refusal_answer(answer: str) -> bool:
         "chưa tìm được thông tin",
         "không tìm thấy thông tin",
         "không tìm được thông tin",
+        "chưa tìm ra thông tin",
+        "không tìm ra thông tin",
     )
-    return normalized == expected or any(marker in normalized for marker in refusal_markers)
+    return (
+        normalized == expected
+        or any(marker in normalized for marker in refusal_markers)
+        or (
+            ("tôi chưa tìm" in normalized or "tôi không tìm" in normalized)
+            and not any(marker in normalized for marker in ("nhưng", "tuy nhiên", "theo tôi"))
+        )
+    )

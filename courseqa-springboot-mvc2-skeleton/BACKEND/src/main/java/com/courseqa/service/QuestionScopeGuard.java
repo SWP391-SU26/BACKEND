@@ -203,7 +203,9 @@ public class QuestionScopeGuard {
         return matchedBigrams >= requiredBigrams;
     }
 
-    List<String> keyTerms(String question) {
+  /*   List<String> keyTerms(String question) {
+
+
         List<String> values = new ArrayList<>();
         for (String token : tokens(question)) {
             if (STOP_WORDS.contains(token) || QUESTION_WORDS.contains(token)) {
@@ -213,7 +215,22 @@ public class QuestionScopeGuard {
         }
         return values.stream().distinct().toList();
     }
+*/
 
+List<String> keyTerms(String question) {
+        List<String> values = new ArrayList<>();
+        for (String token : tokens(question)) {
+            if (STOP_WORDS.contains(token) || QUESTION_WORDS.contains(token)) {
+                continue;
+            }
+            if (token.matches("\\d+")) {
+                continue;
+            }
+            values.add(token);
+        }
+        return values.stream().distinct().toList();
+    }
+    
     private boolean isAmbiguous(String normalized, List<String> tokens) {
         if (AMBIGUOUS_PATTERNS.stream().anyMatch(pattern -> pattern.matcher(normalized).find())) {
             return true;

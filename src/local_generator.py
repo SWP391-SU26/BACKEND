@@ -12,6 +12,19 @@ from .rag_pipeline import OUT_OF_SCOPE_MESSAGE
 from .storage import RetrievedChunk
 
 
+QWEN_CHAT_TEMPLATE = (
+    "{% for message in messages %}"
+    "{{ '<|im_start|>' + message['role'] + '\\n' + message['content'] + '<|im_end|>\\n' }}"
+    "{% endfor %}"
+    "{% if add_generation_prompt %}{{ '<|im_start|>assistant\\n' }}{% endif %}"
+)
+
+
+def ensure_chat_template(tokenizer) -> None:
+    if not getattr(tokenizer, "chat_template", None):
+        tokenizer.chat_template = QWEN_CHAT_TEMPLATE
+
+
 class LocalLoraGenerator:
     """Single-GPU LoRA inference with bounded prompts and adaptive batching."""
 
@@ -51,6 +64,7 @@ class LocalLoraGenerator:
         self._warmed_up = False
 
         self.tokenizer = AutoTokenizer.from_pretrained(adapter_dir, local_files_only=True)
+        ensure_chat_template(self.tokenizer)
         if self.tokenizer.pad_token_id is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.padding_side = "left"
@@ -66,6 +80,10 @@ class LocalLoraGenerator:
     @property
     def warmed_up(self) -> bool:
         return self._warmed_up
+
+    @property
+    def adapter_version(self) -> str:
+        return self.adapter_dir.name
 
     def _load_base_model(self, model_cls, torch_module, base_model: str, cache_dir: Path):
         # This project is deployed on the same CPU that successfully trains in BF16.
@@ -357,3 +375,45 @@ class LocalLoraGenerator:
     @staticmethod
     def _is_cuda_oom(exc: Exception) -> bool:
         return "out of memory" in str(exc).lower() and "cuda" in str(exc).lower()
+
+
+class LocalBaseGenerator(LocalLoraGenerator):
+    """Deterministic base-model generator used by the BASE_RAG benchmark."""
+
+    def __init__(
+        self,
+        base_model: str,
+        cache_dir: Path,
+        max_new_tokens: int = 180,
+    ) -> None:
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        self.base_model = base_model
+        self.adapter_dir = None
+        self.max_new_tokens = max_new_tokens
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self._inference_lock = Lock()
+        self._warmed_up = False
+
+        local_tokenizer = find_cached_snapshot(cache_dir, base_model, "tokenizer.json")
+        tokenizer_source = str(local_tokenizer) if local_tokenizer else base_model
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            tokenizer_source,
+            cache_dir=str(cache_dir),
+            local_files_only=local_tokenizer is not None,
+        )
+        ensure_chat_template(self.tokenizer)
+        if self.tokenizer.pad_token_id is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.tokenizer.padding_side = "left"
+
+        self.model = self._load_base_model(
+            AutoModelForCausalLM, torch, base_model, cache_dir
+        )
+        self.model.to(self.device)
+        self.model.eval()
+
+    @property
+    def adapter_version(self) -> None:
+        return None

@@ -1,0 +1,308 @@
+{
+  "adapter": "C:\\FALL 2026\\SWP\\BACKEND\\models\\qwen2.5-1.5b-triethoc-lora-v1",
+  "passed": false,
+  "answer_token_f1": 0.2343,
+  "refusal_accuracy": 1.0,
+  "examples": [
+    {
+      "question": "Dự báo thời tiết ngày mai như thế nào?",
+      "expected": "Tôi chưa tìm thấy thông tin này trong tài liệu đã được huấn luyện.",
+      "actual": "Tôi chưa tìm được thông tin về dự báo thời điểm đó trong tài nguyên được huân luyện. Tôi không thể cung cấp thông tin chính xác về thời tiết.",
+      "is_out_of_scope": true
+    },
+    {
+      "question": "Phương thức sản xuất là gì?",
+      "expected": "Phương thức sản xuất là cách thức con người tiến hành sản xuất vật chất trong một giai đoạn lịch sử nhất định, gồm lực lượng sản xuất và quan hệ sản xuất.",
+      "actual": "Phường phương thức sản nươn là cách thức tạo ra vật chất và đời sống của một xã hội theo trình tự lịch sử.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Phủ định biện chứng là gì?",
+      "expected": "Phủ định biện chứng là sự phủ định khách quan, có tính kế thừa, do mâu thuẫn bên trong của sự vật quy định và tạo điều kiện cho sự phát triển.",
+      "actual": "PhỦ định biện chánh là sự nhận biết của bản chất và sự tồn tại của mọi事物 theo cách trình bày của tài liệu theo phương pháp luận của triết học hiện đại.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Khả năng là gì?",
+      "expected": "Khả năng là cái hiện chưa có nhưng sẽ có, sẽ xuất hiện khi có những điều kiện thích hợp.",
+      "actual": "Khá khả năng là sự có thể đạt được theo cách trình bày của tài liệu khi tất cả các yếu tố cần thiết đều được đáp ứng.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Thị tộc là hình thức cộng đồng người như thế nào?",
+      "expected": "Thị tộc là cộng đồng gồm khoảng vài trăm người có cùng huyết thống, đồng thời là đơn vị sản xuất và hình thức tồn tại cơ bản của xã hội nguyên thủy.",
+      "actual": "Thì thị tộc là một hình thức tổ chức xã hội theo cách trình bày của tài liệu, có thể hiểu là một nhóm người sống cùng nhau, có sự liên kết xã hội và có tổ chức quản lý cơ bản.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Ý thức thẩm mỹ là gì?",
+      "expected": "Ý thức thẩm mỹ là hình thái ý thức xã hội phản ánh hiện thực dưới góc độ cái đẹp, thị hiếu thẩm mỹ và lý tưởng thẩm mỹ.",
+      "actual": "Ý nghĩa thẩm mỹ theo cách trình bày của tài liệu là sự phản ánh và cảm nhận về vẻ đẹp vật chất và tinh thần của con người.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Tự ý thức thuộc cấp độ nào trong kết cấu ý thức?",
+      "expected": "Tự ý thức thuộc chiều sâu của nội tâm, thể hiện khả năng con người ý thức về bản thân mình.",
+      "actual": "Tư duy tự ý thức có tính độc lập và chủ động hơn so với tư duy phản xạ.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Ý thức khoa học là gì?",
+      "expected": "Ý thức khoa học là hình thái ý thức xã hội phản ánh hiện thực bằng hệ thống tri thức khái quát, logic, có căn cứ và được kiểm chứng.",
+      "actual": "Ý nghĩa của ý thức khoá học là sự hiểu biết khách quan và toàn diện về thế giới theo cách trình bày của tài liệu theo trình độ nhận thức hiện tại.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Không gian và thời gian có quan hệ thế nào với vật chất?",
+      "expected": "Không gian và thời gian là những hình thức tồn tại của vật chất, gắn liền với vật chất đang vận động.",
+      "actual": "Tôi chưa tìm được thông tin về quan điểm của tài liệu đối với sự liên kết giữa vật chất và không gian, thời gion.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Giai đoạn Lênin có ý nghĩa gì đối với triết học Mác?",
+      "expected": "Giai đoạn Lênin là sự bảo vệ, bổ sung và phát triển triết học Mác trong điều kiện lịch sử mới.",
+      "actual": "Tôi chưa tìm được thông tin về giai đoạn đó trong tài nguyên được huân luyện.\nHuman Resource Management (HRM) is a function and set of practices that help organizations identify, develop, and retain quality human resource for the organization.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Định nghĩa vật chất của Lênin xem vật chất là gì?",
+      "expected": "Vật chất là phạm trù triết học dùng để chỉ thực tại khách quan được đem lại cho con người trong cảm giác, được cảm giác chép lại, chụp lại, phản ánh và tồn tại không lệ thuộc vào cảm giác.",
+      "actual": "Vật chất là sự tồn tại vật thể có hình dạng và tính cách nhất định.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Phái duy danh và phái duy thực thuộc bối cảnh triết học nào?",
+      "expected": "Đây là hai khuynh hướng tiêu biểu trong triết học Tây Âu trung cổ, gắn với tranh luận về quan hệ giữa cái chung và cái riêng.",
+      "actual": "Tôi chưa tìm được thông tin về phái theo cách trình bày của tài liệu trong tài nguyên.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Theo Lênin, chủ nghĩa Mác ra đời có quan hệ thế nào với văn minh thế giới?",
+      "expected": "Lênin khẳng định chủ nghĩa Mác không phải học thuyết đóng kín mà là sự kế thừa trực tiếp các thành tựu lớn của triết học, kinh tế chính trị học và chủ nghĩa xã hội.",
+      "actual": "Chủ nghĩa Mạt thể ra đời theo cách trình bày của Lênин là một phản ánh sâu sắc và khách quan của những vấn đề xã hội hiện nay, phản án những khái niệm, quan điểm, cách tiếp cận của triết học truyền thống.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Quan niệm phương Tây trước Mác về con người có đặc điểm gì?",
+      "expected": "Nó có nhiều khuynh hướng khác nhau, từ đề cao lý tính, linh hồn, bản tính tự nhiên đến xem con người như cá nhân độc lập, nhưng còn hạn chế lịch sử.",
+      "actual": "Con người được hiểu là một tổng thể phức tạp của những yếu tố vật chất và non vật chất.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Nhận thức thông thường khác nhận thức khoa học ở điểm nào?",
+      "expected": "Nhận thức thông thường mang tính trực tiếp, kinh nghiệm đời sống; nhận thức khoa học có tính hệ thống, lý luận, phương pháp và kiểm chứng chặt chẽ hơn.",
+      "actual": "Tôi chưa tìm được thông tin về nhận thức thông qua các nguồn tài liệu của mình.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Chủ nghĩa Phơrớt gắn với lĩnh vực nghiên cứu nào?",
+      "expected": "Chủ nghĩa Phơrớt gắn với phân tâm học và việc lý giải đời sống tinh thần con người qua vô thức, bản năng và tâm lý cá nhân.",
+      "actual": "Chúng gắn với chủ nghĩa lịch sử Phơрơ.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Nguyên nhân trực tiếp dẫn đến sự xuất hiện của nhà nước là gì?",
+      "expected": "Nguyên nhân trực tiếp của sự xuất hiện nhà nước là những mâu thuẫn giai cấp không thể điều hòa được.",
+      "actual": "Người dân không thể tự quản lý xã hội vì số lượng quá lớn và phân tán.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Quan điểm trước Mác về nhận thức thường có hạn chế gì?",
+      "expected": "Nhiều quan điểm trước Mác hoặc duy tâm hóa nhận thức, hoặc trực quan máy móc, chưa thấy đầy đủ vai trò của thực tiễn đối với nhận thức.",
+      "actual": "Nhận thức thường bị giới hạn bởi chủ quan và khách quan, do đó có thể sai lầm hoặc lạc quan.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Chủ nghĩa thực chứng thuộc phần nào của giáo trình?",
+      "expected": "Chủ nghĩa thực chứng được trình bày trong phần các trào lưu triết học phương Tây hiện đại ngoài mácxít.",
+      "actual": "Chúng thuộc phần chủ nghĩa thực dụng và thực chứng.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Quan hệ giữa cá nhân và xã hội là quan hệ như thế nào?",
+      "expected": "Cá nhân và xã hội có quan hệ biện chứng: xã hội là điều kiện hình thành cá nhân, còn hoạt động của cá nhân góp phần cải biến xã hội.",
+      "actual": "Cá nhân gắn với xã hội theo cách trình bày của tài liệu như một phần của nó, nhưng không thể hiểu theo nghĩa đen xã hội mà chỉ là những người con của xã hội.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Những hình thức cộng đồng người nào xuất hiện trước dân tộc?",
+      "expected": "Trước khi dân tộc ra đời, các hình thức cộng đồng người phát triển từ thị tộc đến bộ lạc và bộ tộc.",
+      "actual": "Tôi chưa tìm được thông tin về những hình thức khác nhau của cộng đồng trước dân bản.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Chủ nghĩa hiện sinh nhấn mạnh vấn đề gì?",
+      "expected": "Chủ nghĩa hiện sinh thường nhấn mạnh sự tồn tại cá nhân, thân phận con người và những lựa chọn của con người trong đời sống hiện đại.",
+      "actual": "Chúng nhấn mạnh sự tồn tại và phát triển của thế giới hiện tại, hiện tại là cái tồn tại rõ ràng nhất, cụ thể nhất.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Phép biện chứng là gì?",
+      "expected": "Phép biện chứng là lý luận triết học của phương pháp biện chứng, phản ánh biện chứng khách quan trong sự vận động và phát triển của thế giới.",
+      "actual": "Pháp biện chứng theo cách trình bày của tài liệu là sự quan hệ thống nhất và đổi mới giữa những mặt trái với nhau trong một hiện tượng hoặc quá trình.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Mối liên hệ phổ biến là gì?",
+      "expected": "Mối liên hệ phổ biến là sự quy định, tác động, chuyển hóa lẫn nhau giữa các sự vật, hiện tượng hoặc giữa các mặt, yếu tố của cùng một sự vật.",
+      "actual": "Một số mối liên hệ thường được đề cập như sự tương đồng, sự khác biệt, sự so sánh, sự đối lập và sự tương tác.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Xã hội được xem là bộ phận đặc thù của tự nhiên vì sao?",
+      "expected": "Vì xã hội nảy sinh từ tự nhiên, tồn tại trong quan hệ với tự nhiên, nhưng có đặc thù là hoạt động có ý thức và quan hệ xã hội của con người.",
+      "actual": "Xã hội được coi là bộ phần đặc thù nhất định của tự thiên do nó có sự tồn tại và phát triển riêng biệt theo cách trình bày của tài liệu của bạn.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Thuyết không thể biết phủ nhận điều gì?",
+      "expected": "Thuyết không thể biết phủ nhận hoặc nghi ngờ khả năng con người nhận thức được bản chất của thế giới.",
+      "actual": "Thực tế không thể bị phủ nhận.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Quy luật là gì?",
+      "expected": "Quy luật là mối liên hệ khách quan, bản chất, tất nhiên, phổ biến và lặp lại giữa các mặt của sự vật hoặc giữa các sự vật.",
+      "actual": "Quá trình quy luật là sự diễn tiến theo hướng nhất định của một hệ thống do sự tương tác lẫn nhau giữa các yếu tố tạo ra.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Quá trình hình thành triết học Mác bắt đầu từ sự chuyển biến tư tưởng của ai?",
+      "expected": "Nó bắt đầu từ quá trình chuyển biến tư tưởng của C.Mác và Ph.Ăngghen.",
+      "actual": "Trước hết, triết gia người Pháp Jean-Jacques Rousseau đã đưa ra những quan điểm về con người và xã hội khác biệt so với triết phong cách cổ điển.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Cách mạng xã hội theo nghĩa rộng và nghĩa hẹp được hiểu như thế nào?",
+      "expected": "Theo nghĩa rộng, cách mạng xã hội là biến đổi bước ngoặt và căn bản về chất trong mọi lĩnh vực đời sống; theo nghĩa hẹp, đó là việc lật đổ chế độ chính trị lỗi thời và thiết lập chế độ tiến bộ hơn.",
+      "actual": "Theo nghĩa hẹ, cách mạng xã hơng là sự thay đổi toàn diện về mặt chính trị, kinh tế, văn hóa, xã hội của một quốc gia hoặc một dân tộc; theo cách hiểu rộng hơn, nó còn bao gồm cả sự thăng trầm của nền tảng chính trị và kinh doanh của một nước.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Vì sao mâu thuẫn là nguồn gốc của vận động và phát triển?",
+      "expected": "Vì sự thống nhất và đấu tranh của các mặt đối lập tạo ra động lực bên trong thúc đẩy sự vật vận động, biến đổi và phát triển.",
+      "actual": "Mâu thuẩn là sự đối lập và hòa giải giữa hai mặt trái với nhau trong một hiện tượng, điều kiện hoặc quan điểm.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Các tính chất cơ bản của mối liên hệ là gì?",
+      "expected": "Mối liên hệ có tính khách quan, tính phổ biến và tính đa dạng, phong phú.",
+      "actual": "Mối liên hệ theo cách trình bày của tài liệu là sự quan hệ giữa một số hiện tượng với nhau, giữa một hiện tượng và điều kiện bên ngoài hoặc giữa hai hiện tượng cùng tồn tại.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Giá cổ phiếu hiện tại của một công ty được xác định ra sao?",
+      "expected": "Tôi chưa tìm thấy thông tin này trong tài liệu đã được huấn luyện.",
+      "actual": "Tôi chưa tìm được thông tin về cách giá cổ phiếu được xác nhận trên thị trường.",
+      "is_out_of_scope": true
+    },
+    {
+      "question": "Quần chúng nhân dân có vai trò gì trong lịch sử?",
+      "expected": "Quần chúng nhân dân là lực lượng sáng tạo chân chính của lịch sử, quyết định sự phát triển xã hội thông qua hoạt động sản xuất và đấu tranh xã hội.",
+      "actual": "Qua cách trình bày của tài liệu, quần chúng nhân vật được coi là lực lượng sản xuất chủ yếu và chính trị lãnh đạo của xã hội.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Quy luật xã hội có đặc điểm gì so với quy luật tự nhiên?",
+      "expected": "Quy luật xã hội tồn tại và tác động thông qua hoạt động của con người, thường biểu hiện như những xu hướng khách quan trong những điều kiện lịch sử nhất định.",
+      "actual": "Tôi chưa tìm được thông tin về quy luật xã hơ có đặc tính gì khác so với quay luật tự năn.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Hiện tượng là gì?",
+      "expected": "Hiện tượng là sự biểu hiện ra bên ngoài của bản chất trong những điều kiện nhất định.",
+      "actual": "Tôi chưa tìm được thông tin về hiện tượng trong tài nguyên đã được trích xuất.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Nghệ thuật chân chính có vai trò xã hội gì?",
+      "expected": "Nghệ thuật chân chính gắn với đời sống hiện thực của nhân dân, tác động đến lý trí và tình cảm, kích thích tính tích cực và xây dựng hành vi đạo đức tốt đẹp.",
+      "actual": "Nghiên cứu nghệ thuật chân thật theo cách trình bày của tài liệu không chỉ phản ánh đời sống vật chất và tinh thần con người mà còn tạo ra những giá trị xã hội, văn hóa, tâm lý, đạo đức, phẩm cách con người.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Triết học ra đời từ những nguồn gốc nào?",
+      "expected": "Triết học ra đời từ thực tiễn, do nhu cầu của thực tiễn, với nguồn gốc nhận thức và nguồn gốc xã hội.",
+      "actual": "Triệt học ra trình từ những nền tảng triết học cổ đại và triết gia phương Tây đương thời.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Vận động được hiểu là gì trong triết học duy vật biện chứng?",
+      "expected": "Vận động là phương thức tồn tại của vật chất, bao gồm mọi sự biến đổi nói chung của các sự vật và hiện tượng.",
+      "actual": "Văn động được xem là sự chuyển biến của cái có tính chất tương đối theo cách trình bày của tài liệu theo hướng riêng biệt và thống nhất.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Đội nào vô địch World Cup gần nhất?",
+      "expected": "Tôi chưa tìm thấy thông tin này trong tài liệu đã được huấn luyện.",
+      "actual": "Tôi chưa tìm được thông tin về đội vô địch thế giới gần nhất trong tài nguyên được huân luyện.\nHuman Resource Management (HRM) is a function of an organization that deals with the recruitment, selection, training, development, and retention of employees.",
+      "is_out_of_scope": true
+    },
+    {
+      "question": "Ngũ hành gồm những yếu tố nào?",
+      "expected": "Ngũ hành gồm Thủy, Hỏa, Mộc, Kim và Thổ.",
+      "actual": "Tôi chưa tìm được thông tin về ngũ hành trong tài nguyên được huân luyện.\nHuman Resource Management (HRM) is a function of an organization that involves the recruitment, selection, development, and retention of employees. It includes activities such as job analysis, performance appraisal, employee training, and compensation management.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Ý nghĩa phương pháp luận của nguyên lý mối liên hệ phổ biến là gì?",
+      "expected": "Nó đòi hỏi phải có quan điểm toàn diện, quan điểm lịch sử - cụ thể và tránh xem xét sự vật một cách phiến diện, cô lập.",
+      "actual": "Mối liên hệ theo cách trình bày của tài liệu thường được hiểu là sự kết hợp, sự tương tác giữa các yếu tố tạo nên một hiện tượng cụ thể.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Chủ nghĩa duy vật và chủ nghĩa duy tâm được phân biệt chủ yếu theo tiêu chuẩn nào?",
+      "expected": "Chúng được phân biệt theo cách trả lời vấn đề giữa vật chất và ý thức cái nào có trước, cái nào quyết định cái nào.",
+      "actual": "Tôi chưa tìm được thông tin về tiêu chuẩn phân biệt hai chủ nghĩa đó trong tài nguyên được huân luyện.\nHuman Resource Management (HRM) is a function of an organization that involves the recruitment, selection, training, development, and retention of employees. It also includes the management of employee relations and the coordination of human resource activities with other functions such as finance, marketing, and production.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Máy ảnh điều chỉnh khẩu độ để làm gì?",
+      "expected": "Tôi chưa tìm thấy thông tin này trong tài liệu đã được huấn luyện.",
+      "actual": "Tôi chưa tìm được thông tin về chức năng của máy ảnh điều khiển khẩu độ.",
+      "is_out_of_scope": true
+    },
+    {
+      "question": "Nhận thức kinh nghiệm là gì?",
+      "expected": "Nhận thức kinh nghiệm là trình độ nhận thức hình thành trực tiếp từ quan sát, trải nghiệm và hoạt động thực tiễn.",
+      "actual": "Nhân thức kí nghiệm là sự hiểu biết của con người về thế giới thực tế qua quá trình trải nghiệm và ghi nhớ.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Nguyên nhân sâu xa của cách mạng xã hội là gì?",
+      "expected": "Nguyên nhân sâu xa của cách mạng xã hội là mâu thuẫn giữa lực lượng sản xuất đã phát triển với quan hệ sản xuất cũ trở nên lỗi thời và kìm hãm lực lượng sản xuất.",
+      "actual": "Tôi chưa tìm được thông tin về nguyên nhân sâu sắc nhất của cách trình xã hội theo tài liệu được huân luyện. Cách trình xã hơng theo cách trình hiện đại được xem như sự tiến bộ và phát triển tự nhiên của xã hội.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Triết học Mác giữ vai trò gì trong học thuyết của Mác và Ăngghen?",
+      "expected": "Triết học Mác giữ vai trò cơ sở lý luận chung, cơ sở thế giới quan và phương pháp luận của học thuyết cách mạng.",
+      "actual": "Triệt cơ bản triết học theo cách trình bày của tài liệu là quan điểm, phương pháp luận và hệ thống lý luận của triết gia người Pháp Jean-Jacques Rousseau.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Quan điểm vô ngã trong Phật giáo cho rằng điều gì?",
+      "expected": "Quan điểm vô ngã cho rằng vạn vật chỉ là sự giả hợp do hội đủ nhân duyên, không có một thực thể cái tôi bất biến.",
+      "actual": "Tôi chưa tìm được thông tin về quan điểm của triết học theo tài liệu trong vấn đề này.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Hiện thực là gì?",
+      "expected": "Hiện thực là cái đang tồn tại trên thực tế, là khả năng đã được thực hiện.",
+      "actual": "Hiển thực là sự hiện hữu của vật chất theo cách trình bày của tài liệu, là trạng thái tồn tại của vật thể theo quan điểm khách quan và duy nhất.",
+      "is_out_of_scope": false
+    },
+    {
+      "question": "Tỷ giá ngoại tệ hôm nay là bao nhiêu?",
+      "expected": "Tôi chưa tìm thấy thông tin này trong tài liệu đã được huấn luyện.",
+      "actual": "Tôi chưa tìm được thông tin về tỷ giá ngoại hối hôm nayar.",
+      "is_out_of_scope": true
+    },
+    {
+      "question": "Phật giáo ra đời vào khoảng thời gian nào và ai là người sáng lập?",
+      "expected": "Phật giáo ra đời vào thế kỷ VI trước Công nguyên, do Siddharta, về sau được tôn vinh là Sakyamuni hay Buddha, sáng lập.",
+      "actual": "Tôi chưa tìm được thông tin về vấn đề này trong nguồn tài liệu được huân luyện.\nHuman Resource Management (HRM) is a function and set of practices that help organizations identify, develop, and retain quality human capital to achieve organizational goals.",
+      "is_out_of_scope": false
+    }
+  ]
+}

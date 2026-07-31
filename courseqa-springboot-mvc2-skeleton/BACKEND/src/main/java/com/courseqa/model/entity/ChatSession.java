@@ -55,6 +55,12 @@ public class ChatSession {
     @Column(name = "is_active")
     private Boolean isActive;
 
+    @Column(name = "is_pinned")
+    private Boolean isPinned;
+
+    @Column(name = "pinned_at")
+    private LocalDateTime pinnedAt;
+
     @Column(name = "started_at")
     private LocalDateTime startedAt;
 
@@ -98,6 +104,12 @@ public class ChatSession {
 
     public Boolean getIsActive() { return isActive; }
     public void setIsActive(Boolean isActive) { this.isActive = isActive; }
+
+    public Boolean getIsPinned() { return isPinned; }
+    public void setIsPinned(Boolean isPinned) { this.isPinned = isPinned; }
+
+    public LocalDateTime getPinnedAt() { return pinnedAt; }
+    public void setPinnedAt(LocalDateTime pinnedAt) { this.pinnedAt = pinnedAt; }
 
     public LocalDateTime getStartedAt() { return startedAt; }
     public void setStartedAt(LocalDateTime startedAt) { this.startedAt = startedAt; }

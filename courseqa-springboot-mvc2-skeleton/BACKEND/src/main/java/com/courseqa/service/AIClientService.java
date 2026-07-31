@@ -23,9 +23,7 @@ public class AIClientService {
     @Value("${python.ai.service.url:http://localhost:8001}")
     private String pythonAiServiceUrl;
 
-    private static final int CHAT_TIMEOUT_SECONDS = 30;
     private static final int MAX_RETRIES = 3;
-    private static final int BENCHMARK_BATCH_TIMEOUT_SECONDS = 60;
     private static final int MODEL_WARMUP_TIMEOUT_SECONDS = 180;
 
     @Value("${python.ai.service.benchmark-timeout-seconds:1800}")
@@ -33,6 +31,12 @@ public class AIClientService {
 
     @Value("${python.ai.service.finetuned-timeout-seconds:180}")
     private int finetunedTimeoutSeconds;
+
+    @Value("${python.ai.service.chat-timeout-seconds:112}")
+    private int chatTimeoutSeconds;
+
+    @Value("${python.ai.service.embedding-timeout-seconds:600}")
+    private int embeddingTimeoutSeconds;
 
     public AIClientService(WebClient webClient) {
         this.webClient = webClient;
@@ -46,7 +50,7 @@ public class AIClientService {
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(responseType)
-                .timeout(Duration.ofSeconds(CHAT_TIMEOUT_SECONDS))
+                .timeout(Duration.ofSeconds(chatTimeoutSeconds))
                 .retryWhen(Retry.backoff(MAX_RETRIES, Duration.ofMillis(200))
                         .filter(throwable -> isRetryableError(throwable))
                         .doBeforeRetry(retrySignal ->
@@ -66,14 +70,20 @@ public class AIClientService {
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(responseType)
-                .timeout(Duration.ofSeconds(CHAT_TIMEOUT_SECONDS))
-                .retryWhen(Retry.backoff(MAX_RETRIES, Duration.ofMillis(200))
-                        .filter(throwable -> isRetryableError(throwable))
-                        .doBeforeRetry(retrySignal ->
-                            log.warn("Retry {} /api/generate - Error: {}",
-                                retrySignal.totalRetries() + 1,
-                                retrySignal.failure().getMessage())
-                        ))
+                .timeout(Duration.ofSeconds(chatTimeoutSeconds))
+                .onErrorMap(this::handleError)
+                .block();
+    }
+
+    public PythonAiDto.RewriteQueryResponse callRewriteQuery(PythonAiDto.RewriteQueryRequest request) {
+        log.info("Calling Python AI Engine /api/rewrite-query (attempt {})", request.attempt);
+        return webClient.post()
+                .uri(pythonAiServiceUrl + "/api/rewrite-query")
+                .bodyValue(request)
+                .retrieve()
+                .bodyToMono(PythonAiDto.RewriteQueryResponse.class)
+                .timeout(Duration.ofSeconds(chatTimeoutSeconds))
+                .retryWhen(Retry.max(1).filter(this::isConnectionFailure))
                 .onErrorMap(this::handleError)
                 .block();
     }
@@ -86,7 +96,7 @@ public class AIClientService {
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(PythonAiDto.EmbedResponse.class)
-                .timeout(Duration.ofSeconds(MODEL_WARMUP_TIMEOUT_SECONDS))
+                .timeout(Duration.ofSeconds(Math.max(MODEL_WARMUP_TIMEOUT_SECONDS, embeddingTimeoutSeconds)))
                 .retryWhen(Retry.max(1).filter(this::isConnectionFailure))
                 .onErrorMap(this::handleError)
                 .block();
@@ -120,7 +130,7 @@ public class AIClientService {
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(responseType)
-                .timeout(Duration.ofSeconds(CHAT_TIMEOUT_SECONDS))
+                .timeout(Duration.ofSeconds(chatTimeoutSeconds))
                 .retryWhen(Retry.backoff(MAX_RETRIES, Duration.ofMillis(200))
                         .filter(throwable -> isRetryableError(throwable))
                         .doBeforeRetry(retrySignal ->
@@ -162,6 +172,12 @@ public class AIClientService {
                 PythonAiDto.ChatFinetunedBatchResponse.class);
     }
 
+    public PythonAiDto.OfficialRagasBatchResponse callOfficialRagasBatch(
+            PythonAiDto.OfficialRagasBatchRequest request) {
+        return callBenchmarkBatch("/api/evaluation/ragas/batch", request,
+                PythonAiDto.OfficialRagasBatchResponse.class);
+    }
+
     private <T> T callBenchmarkBatch(String path, Object request, Class<T> responseType) {
         log.info("Calling Python AI Engine {}", path);
         return webClient.post()
@@ -169,7 +185,7 @@ public class AIClientService {
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(responseType)
-                .timeout(Duration.ofSeconds(BENCHMARK_BATCH_TIMEOUT_SECONDS))
+                .timeout(Duration.ofSeconds(benchmarkTimeoutSeconds))
                 .retryWhen(Retry.max(1)
                         .filter(this::isConnectionFailure)
                         .doBeforeRetry(signal -> log.warn("Retrying {} after connection failure: {}",

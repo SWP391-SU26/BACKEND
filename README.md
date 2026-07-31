@@ -219,7 +219,7 @@ Chạy LoRA/QLoRA:
 python experiments\train_lora.py --config experiments\lora_config.json
 ```
 
-Cấu hình mặc định sử dụng `Qwen/Qwen2.5-0.5B-Instruct` để làm baseline nhỏ. QLoRA cần CUDA GPU và `bitsandbytes`. Nếu không có GPU, có thể đặt `use_qlora` thành `false`, nhưng quá trình LoRA trên CPU vẫn rất chậm.
+Cấu hình mặc định sử dụng `Qwen/Qwen2.5-1.5B-Instruct` cho cả hai baseline. QLoRA cần CUDA GPU và `bitsandbytes`; cấu hình hiện tại dùng NF4 4-bit để chạy trên GPU 4 GB. Nếu không có GPU, không chạy benchmark chính thức vì thời gian LoRA/inference trên CPU không phù hợp.
 
 API hỗ trợ frontend:
 
@@ -227,6 +227,19 @@ API hỗ trợ frontend:
 POST /api/finetuning/prepare
 GET  /api/finetuning/status
 ```
+
+### Research baseline v1
+
+The locked research corpus is `data/corpus/triethoc_mac_lenin.pdf`; versioned
+train, validation, test, and robustness data live in
+`data/research/triethoc-v1`. The official adapter path is
+`models/qwen2.5-1.5b-triethoc-lora-v1`. The older `models/qwen-rag-lora`
+artifact remains unverified and is not selected by runtime.
+
+`BASE_RAG` uses Qwen2.5-1.5B base plus BGE-M3 retrieval.
+`FINE_TUNED_ONLY` uses the same base plus LoRA without retrieval context.
+OpenAI is only the official RAGAS judge through
+`POST /api/evaluation/ragas/batch`.
 
 ## Local LoRA inference
 

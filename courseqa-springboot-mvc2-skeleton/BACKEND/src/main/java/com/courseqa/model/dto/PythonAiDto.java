@@ -36,6 +36,31 @@ public class PythonAiDto {
         public String question;
         public List<GenerateContext> contexts;
         public Boolean strict;
+        public String standalone_query;
+        public List<ChatHistoryItem> history;
+        public String answer_profile;
+        public String answer_depth;
+    }
+
+    public static class ChatHistoryItem {
+        public String role;
+        public String content;
+    }
+
+    public static class RewriteQueryRequest {
+        public String question;
+        public List<ChatHistoryItem> history;
+        public String intent;
+        public Integer attempt;
+        public List<String> evidence_hints;
+    }
+
+    public static class RewriteQueryResponse {
+        public String standalone_query;
+        public String language;
+        public String intent;
+        public Integer attempt;
+        public String base_model;
     }
 
     public static class GenerateContext {
@@ -52,12 +77,30 @@ public class PythonAiDto {
         public String answer;
         public Boolean is_out_of_scope;
         public List<Map<String, Object>> sources;
+        public String provider_used;
+        public String base_model;
+        public String adapter_version;
+        public String embedding_model;
+        public String generation_mode;
+        public String dataset_version;
+        public String prompt_version;
+        public List<String> used_chunk_ids;
+        public Long peak_vram_bytes;
+        public String grounding_status;
+        public String fallback_reason;
+        public Double grounding_score;
+        public Boolean repair_attempted;
+        public Integer unsupported_sentence_count;
     }
 
     public static class GenerateBatchItem {
         public String request_id;
         public String question;
         public List<GenerateContext> contexts;
+        public String standalone_query;
+        public List<ChatHistoryItem> history;
+        public String answer_profile;
+        public String answer_depth;
     }
 
     public static class GenerateBatchRequest {
@@ -71,6 +114,20 @@ public class PythonAiDto {
         public Boolean is_out_of_scope;
         public List<Map<String, Object>> sources;
         public String error;
+        public String provider_used;
+        public String base_model;
+        public String adapter_version;
+        public String embedding_model;
+        public String generation_mode;
+        public String dataset_version;
+        public String prompt_version;
+        public List<String> used_chunk_ids;
+        public Long peak_vram_bytes;
+        public String grounding_status;
+        public String fallback_reason;
+        public Double grounding_score;
+        public Boolean repair_attempted;
+        public Integer unsupported_sentence_count;
     }
 
     public static class GenerateBatchResponse {
@@ -78,6 +135,8 @@ public class PythonAiDto {
         public Integer batch_size;
         public Integer max_input_tokens;
         public Integer max_new_tokens;
+        public Integer effective_batch_size;
+        public Integer oom_fallback_count;
     }
 
     public static class ChatFinetunedRequest {
@@ -92,17 +151,29 @@ public class PythonAiDto {
         public Double scope_confidence;
         public Boolean model_ready;
         public String status_code;
+        public String provider_used;
+        public String base_model;
+        public String adapter_version;
+        public String generation_mode;
+        public String dataset_version;
+        public String prompt_version;
+        public Long peak_vram_bytes;
+        public String verification_status;
+        public Boolean quality_gate_passed;
     }
 
     public static class ChatFinetunedBatchItem {
         public String request_id;
         public String question;
         public List<String> document_filenames;
+        public String answer_depth;
     }
 
     public static class ChatFinetunedBatchRequest {
         public List<ChatFinetunedBatchItem> items;
         public Boolean strict;
+        public Boolean allow_unverified;
+        public Boolean benchmark_mode;
     }
 
     public static class ChatFinetunedBatchResult {
@@ -110,7 +181,17 @@ public class PythonAiDto {
         public String answer;
         public String error;
         public Boolean is_out_of_scope;
+        public Boolean model_inference_executed;
         public Double scope_confidence;
+        public String provider_used;
+        public String base_model;
+        public String adapter_version;
+        public String generation_mode;
+        public String dataset_version;
+        public String prompt_version;
+        public Long peak_vram_bytes;
+        public String verification_status;
+        public Boolean quality_gate_passed;
     }
 
     public static class ChatFinetunedBatchResponse {
@@ -118,6 +199,41 @@ public class PythonAiDto {
         public Integer batch_size;
         public Integer max_input_tokens;
         public Integer max_new_tokens;
+        public Integer effective_batch_size;
+        public Integer oom_fallback_count;
+    }
+
+    public static class OfficialRagasItem {
+        public String request_id;
+        public String question;
+        public String response;
+        public String reference;
+        public List<String> contexts;
+    }
+
+    public static class OfficialRagasBatchRequest {
+        public List<OfficialRagasItem> items;
+    }
+
+    public static class OfficialRagasResult {
+        public String request_id;
+        public Double faithfulness;
+        public Double answer_relevancy;
+        public Double context_precision;
+        public Double context_recall;
+        public String error;
+        public String metric_standard;
+        public String judge_model;
+        public String embedding_model;
+        public String prompt_version;
+    }
+
+    public static class OfficialRagasBatchResponse {
+        public List<OfficialRagasResult> items;
+        public String metric_standard;
+        public String judge_model;
+        public String evaluator_embedding;
+        public String prompt_version;
     }
 
     // What we send to POST /api/benchmarks/run

@@ -25,6 +25,7 @@ import com.courseqa.repository.EvaluationQuestionRepository;
 import com.courseqa.repository.ExperimentRepository;
 import com.courseqa.repository.ExperimentResultRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -48,14 +49,15 @@ class EvaluationServiceFlow5Test {
     @Mock CourseDocumentRepository documents;
     @Mock CourseWorkspaceRepository workspaces;
     @Mock LearningScopeService scopes;
-    @Mock ChatService chatService;
+    @Mock BenchmarkInferenceService benchmarkInferenceService;
     @Mock AIClientService aiClientService;
     private EvaluationService service;
 
     @BeforeEach
     void setUp() {
         service = new EvaluationService(datasets, datasetDocuments, questions, experiments, results, courses,
-                documents, workspaces, scopes, chatService, aiClientService, Runnable::run, new ObjectMapper());
+                documents, workspaces, scopes, benchmarkInferenceService, aiClientService,
+                Runnable::run, new ObjectMapper());
     }
 
     @Test
@@ -127,7 +129,7 @@ class EvaluationServiceFlow5Test {
         verify(experiments).save(running);
 
         ReflectionTestUtils.invokeMethod(service, "executeBenchmark", experimentId);
-        verifyNoInteractions(chatService);
+        verifyNoInteractions(benchmarkInferenceService);
     }
 
     @Test
@@ -155,7 +157,7 @@ class EvaluationServiceFlow5Test {
 
         assertEquals("CANCELLED", cancelled.getStatus());
         ReflectionTestUtils.invokeMethod(service, "executeBenchmark", experimentId);
-        verifyNoInteractions(chatService);
+        verifyNoInteractions(benchmarkInferenceService);
     }
 
     @Test
@@ -175,15 +177,90 @@ class EvaluationServiceFlow5Test {
     }
 
     @Test
+    void secondExperimentOfSameTypeCannotStartWhileSiblingIsRunning() {
+        UUID datasetId = UUID.randomUUID();
+        Experiment pending = experiment(UUID.randomUUID(), datasetId, "RAG");
+        pending.setStatus("PENDING");
+        Experiment running = experiment(UUID.randomUUID(), datasetId, "RAG");
+        running.setStatus("RUNNING");
+        when(experiments.findById(pending.getExperimentId())).thenReturn(Optional.of(pending));
+        when(experiments.findByDatasetIdOrderByCreatedAtDesc(datasetId))
+                .thenReturn(List.of(running, pending));
+
+        ResponseStatusException error = assertThrows(
+                ResponseStatusException.class,
+                () -> service.startBenchmark(pending.getExperimentId(), false));
+
+        assertEquals(409, error.getStatusCode().value());
+        assertTrue(error.getReason().contains("already queued or running"));
+    }
+
+    @Test
+    void completedExperimentCannotRerunWhileRagasIsStillRunning() {
+        UUID datasetId = UUID.randomUUID();
+        Experiment experiment = experiment(UUID.randomUUID(), datasetId, "FINE_TUNED");
+        experiment.setStatus("COMPLETED");
+        experiment.setRagasStatus("RUNNING");
+        when(experiments.findById(experiment.getExperimentId())).thenReturn(Optional.of(experiment));
+
+        ResponseStatusException error = assertThrows(
+                ResponseStatusException.class,
+                () -> service.startBenchmark(experiment.getExperimentId(), true));
+
+        assertEquals(409, error.getStatusCode().value());
+        assertTrue(error.getReason().contains("RAGAS is still running"));
+    }
+
+    @Test
+    void staleRunningExperimentIsMarkedFailedInsteadOfBlockingForever() {
+        Experiment stale = experiment(UUID.randomUUID(), UUID.randomUUID(), "RAG");
+        stale.setStatus("RUNNING");
+        stale.setUpdatedAt(LocalDateTime.now().minusMinutes(31));
+        when(experiments.findAll()).thenReturn(List.of(stale));
+        when(experiments.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<Experiment> listed = service.listExperiments();
+
+        assertEquals("FAILED", listed.get(0).getStatus());
+        assertTrue(listed.get(0).getErrorMessage().contains("interrupted"));
+        verify(experiments).save(stale);
+    }
+
+    @Test
     void benchmarkProfileLocksFullBatchConfiguration() throws Exception {
         String config = ReflectionTestUtils.invokeMethod(service, "withBenchmarkProfile", "{}", 50);
         var parsed = new ObjectMapper().readTree(config).path("benchmarkProfile");
 
-        assertEquals("full-batch-v1", parsed.path("version").asText());
+        assertEquals("qwen1.5b-batched-v3", parsed.path("version").asText());
         assertEquals(50, parsed.path("questionCount").asInt());
         assertEquals(4, parsed.path("batchSize").asInt());
-        assertEquals(448, parsed.path("maxInputTokens").asInt());
-        assertEquals(64, parsed.path("maxNewTokens").asInt());
+        assertEquals(1, parsed.path("repetitions").asInt());
+        assertEquals(1024, parsed.path("tokenBudgets").path("SHORT").path("maxInputTokens").asInt());
+        assertEquals(160, parsed.path("tokenBudgets").path("STANDARD").path("maxNewTokens").asInt());
+        assertEquals(192, parsed.path("tokenBudgets").path("DEEP").path("maxNewTokens").asInt());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void modelReadinessReadsSharedRuntimeMetadataFromGenerationBlock() {
+        when(aiClientService.getModelStatus()).thenReturn(Map.of(
+                "base_rag_status", "BASE_RAG_READY",
+                "fine_tuned_status", "QUALITY_GATE_FAILED",
+                "benchmark_eligible", true,
+                "generation", Map.of(
+                        "base_model", "Qwen/Qwen2.5-1.5B-Instruct",
+                        "adapter_version", "qwen2.5-1.5b-triethoc-lora-v1",
+                        "model_verification_status", "UNVERIFIED",
+                        "adapter_verified", false)));
+
+        Map<String, Object> readiness = service.modelReadiness();
+
+        assertEquals("Qwen/Qwen2.5-1.5B-Instruct", readiness.get("baseModel"));
+        assertEquals("qwen2.5-1.5b-triethoc-lora-v1", readiness.get("adapterVersion"));
+        assertEquals("UNVERIFIED", readiness.get("modelVerificationStatus"));
+        assertEquals(false, readiness.get("qualityGatePassed"));
+        assertEquals("BASE_RAG_READY", readiness.get("baseRagStatus"));
+        assertEquals("QUALITY_GATE_FAILED", readiness.get("fineTunedStatus"));
     }
 
     @Test
@@ -225,14 +302,14 @@ class EvaluationServiceFlow5Test {
         Map<String, Object> fineSummary = (Map<String, Object>) report.get("fineTunedExperiment");
         Map<String, Object> row = ((List<Map<String, Object>>) report.get("perQuestion")).get(0);
 
-        assertEquals("LOCAL_PROXY", report.get("metricStandard"));
-        assertEquals("token-overlap-v1", report.get("formulaVersion"));
+        assertEquals("RAGAS_OFFICIAL", report.get("metricStandard"));
+        assertEquals("ragas-0.4", report.get("formulaVersion"));
         assertEquals("Research snapshot", metadata.get("name"));
         assertEquals(1, metadata.get("questionCount"));
         assertNull(fineSummary.get("faithfulness"));
         assertNull(fineSummary.get("contextPrecision"));
         assertNull(row.get("fineTunedContextRecall"));
-        assertEquals(0.3, row.get("answerCorrectnessDelta"));
+        assertEquals(0.3, row.get("tokenOverlapProxyDelta"));
     }
 
     private Experiment experiment(UUID id, UUID datasetId, String type) {
@@ -243,6 +320,8 @@ class EvaluationServiceFlow5Test {
         value.setExperimentType(type);
         value.setDatasetChecksum("checksum");
         value.setStatus("COMPLETED");
+        value.setRagasStatus("COMPLETED");
+        value.setRagasProgress(100);
         value.setSuccessCount(1);
         value.setFailureCount(0);
         value.setConfigJson("{\"benchmarkProfile\":{\"version\":\"full-batch-v1\"}}");
@@ -259,6 +338,8 @@ class EvaluationServiceFlow5Test {
         value.setAnswerCorrectness(correctness);
         value.setAnswerRelevance(correctness);
         value.setSemanticSimilarity(correctness);
+        value.setMetricStandard("RAGAS_OFFICIAL");
+        value.setRagasStatus("COMPLETED");
         value.setLatencyMs(1000);
         return value;
     }

@@ -68,6 +68,7 @@ public static class CreateEmbeddingModelRequest {
         public List<UUID> documentIds;
         public UUID semesterId;
         public String scopeType;
+        public String originalQueryText;
         public String queryText;
         public UUID embeddingModelId;
         public Integer topK;

@@ -14,6 +14,7 @@ import com.courseqa.repository.CourseRepository;
 import com.courseqa.repository.CourseWorkspaceRepository;
 import com.courseqa.repository.DocumentChapterRangeRepository;
 import com.courseqa.repository.SemesterWorkspaceRepository;
+import com.courseqa.repository.UserRepository;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,7 +36,8 @@ class LearningScopeServiceTest {
                 mock(CourseWorkspaceRepository.class),
                 documents,
                 mock(ChapterRepository.class),
-                mock(DocumentChapterRangeRepository.class));
+                mock(DocumentChapterRangeRepository.class),
+                mock(UserRepository.class));
     }
 
     @Test
@@ -80,7 +82,8 @@ class LearningScopeServiceTest {
     @Test
     void courseWithoutProcessedDocumentReceivesForbidden() {
         Fixture fixture = fixture("DRAFT", "ACTIVE", true);
-        when(documents.existsByCourseIdAndProcessingStatus(fixture.courseId, "PROCESSED"))
+        when(documents.existsByCourseIdAndProcessingStatusAndIndexingStatus(
+                fixture.courseId, "PROCESSED", "INDEXED"))
                 .thenReturn(false);
 
         ResponseStatusException error = assertThrows(ResponseStatusException.class,
@@ -101,7 +104,8 @@ class LearningScopeServiceTest {
         when(semester.getStatus()).thenReturn(semesterStatus);
         when(courses.findById(courseId)).thenReturn(Optional.of(course));
         when(semesters.findById(semesterId)).thenReturn(Optional.of(semester));
-        when(documents.existsByCourseIdAndProcessingStatus(courseId, "PROCESSED")).thenReturn(true);
+        when(documents.existsByCourseIdAndProcessingStatusAndIndexingStatus(
+                courseId, "PROCESSED", "INDEXED")).thenReturn(true);
         return new Fixture(courseId, course);
     }
 

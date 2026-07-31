@@ -46,6 +46,66 @@ public class ExperimentResult {
     @Column(name = "semantic_similarity")
     private Double semanticSimilarity;
 
+    @Column(name = "provider_used")
+    private String providerUsed;
+
+    @Column(name = "base_model")
+    private String baseModel;
+
+    @Column(name = "adapter_version")
+    private String adapterVersion;
+
+    @Column(name = "embedding_model")
+    private String embeddingModel;
+
+    @Column(name = "generation_mode")
+    private String generationMode;
+
+    @Column(name = "dataset_version")
+    private String datasetVersion;
+
+    @Column(name = "prompt_version")
+    private String promptVersion;
+
+    @Column(name = "metric_standard")
+    private String metricStandard;
+
+    @Column(name = "ragas_status")
+    private String ragasStatus;
+
+    @Column(name = "ragas_error", columnDefinition = "NVARCHAR(MAX)")
+    private String ragasError;
+
+    @Column(name = "ragas_evaluated_at")
+    private LocalDateTime ragasEvaluatedAt;
+
+    @Column(name = "judge_model")
+    private String judgeModel;
+
+    @Column(name = "evaluator_embedding")
+    private String evaluatorEmbedding;
+
+    @Column(name = "source_hit")
+    private Boolean sourceHit;
+
+    @Column(name = "page_hit")
+    private Boolean pageHit;
+
+    @Column(name = "refusal_correct")
+    private Boolean refusalCorrect;
+
+    @Column(name = "throughput_qps")
+    private Double throughputQps;
+
+    @Column(name = "peak_vram_bytes")
+    private Long peakVramBytes;
+
+    @Column(name = "model_verification_status")
+    private String modelVerificationStatus;
+
+    @Column(name = "quality_gate_passed")
+    private Boolean qualityGatePassed;
+
     @Column(name = "latency_ms")
     private Integer latencyMs;
 
@@ -119,6 +179,70 @@ public class ExperimentResult {
 
     public Double getSemanticSimilarity() { return semanticSimilarity; }
     public void setSemanticSimilarity(Double semanticSimilarity) { this.semanticSimilarity = semanticSimilarity; }
+
+    public String getProviderUsed() { return providerUsed; }
+    public void setProviderUsed(String providerUsed) { this.providerUsed = providerUsed; }
+
+    public String getBaseModel() { return baseModel; }
+    public void setBaseModel(String baseModel) { this.baseModel = baseModel; }
+
+    public String getAdapterVersion() { return adapterVersion; }
+    public void setAdapterVersion(String adapterVersion) { this.adapterVersion = adapterVersion; }
+
+    public String getEmbeddingModel() { return embeddingModel; }
+    public void setEmbeddingModel(String embeddingModel) { this.embeddingModel = embeddingModel; }
+
+    public String getGenerationMode() { return generationMode; }
+    public void setGenerationMode(String generationMode) { this.generationMode = generationMode; }
+
+    public String getDatasetVersion() { return datasetVersion; }
+    public void setDatasetVersion(String datasetVersion) { this.datasetVersion = datasetVersion; }
+
+    public String getPromptVersion() { return promptVersion; }
+    public void setPromptVersion(String promptVersion) { this.promptVersion = promptVersion; }
+
+    public String getMetricStandard() { return metricStandard; }
+    public void setMetricStandard(String metricStandard) { this.metricStandard = metricStandard; }
+
+    public String getRagasStatus() { return ragasStatus; }
+    public void setRagasStatus(String ragasStatus) { this.ragasStatus = ragasStatus; }
+
+    public String getRagasError() { return ragasError; }
+    public void setRagasError(String ragasError) { this.ragasError = ragasError; }
+
+    public LocalDateTime getRagasEvaluatedAt() { return ragasEvaluatedAt; }
+    public void setRagasEvaluatedAt(LocalDateTime ragasEvaluatedAt) { this.ragasEvaluatedAt = ragasEvaluatedAt; }
+
+    public String getJudgeModel() { return judgeModel; }
+    public void setJudgeModel(String judgeModel) { this.judgeModel = judgeModel; }
+
+    public String getEvaluatorEmbedding() { return evaluatorEmbedding; }
+    public void setEvaluatorEmbedding(String evaluatorEmbedding) { this.evaluatorEmbedding = evaluatorEmbedding; }
+
+    public Boolean getSourceHit() { return sourceHit; }
+    public void setSourceHit(Boolean sourceHit) { this.sourceHit = sourceHit; }
+
+    public Boolean getPageHit() { return pageHit; }
+    public void setPageHit(Boolean pageHit) { this.pageHit = pageHit; }
+
+    public Boolean getRefusalCorrect() { return refusalCorrect; }
+    public void setRefusalCorrect(Boolean refusalCorrect) { this.refusalCorrect = refusalCorrect; }
+
+    public Double getThroughputQps() { return throughputQps; }
+    public void setThroughputQps(Double throughputQps) { this.throughputQps = throughputQps; }
+
+    public Long getPeakVramBytes() { return peakVramBytes; }
+    public void setPeakVramBytes(Long peakVramBytes) { this.peakVramBytes = peakVramBytes; }
+
+    public String getModelVerificationStatus() { return modelVerificationStatus; }
+    public void setModelVerificationStatus(String modelVerificationStatus) {
+        this.modelVerificationStatus = modelVerificationStatus;
+    }
+
+    public Boolean getQualityGatePassed() { return qualityGatePassed; }
+    public void setQualityGatePassed(Boolean qualityGatePassed) {
+        this.qualityGatePassed = qualityGatePassed;
+    }
 
     public Integer getLatencyMs() { return latencyMs; }
     public void setLatencyMs(Integer latencyMs) { this.latencyMs = latencyMs; }

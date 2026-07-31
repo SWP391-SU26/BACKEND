@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 // DTOs for chat session, ask request, answer response, citations.
@@ -57,6 +58,7 @@ public class ChatDto {
         public Integer pageStart;
         public Integer pageEnd;
         public String quoteText;
+        public Double retrievalScore;
 
         public CitationItem(String documentTitle, Integer pageStart, Integer pageEnd, String quoteText) {
             this.documentTitle = documentTitle;
@@ -94,6 +96,25 @@ public class ChatDto {
         public String answerMode;
         public String modelName;
         public String generationMode;
+        public String providerUsed;
+        public String baseModel;
+        public String adapterVersion;
+        public String embeddingModel;
+        public String datasetVersion;
+        public String promptVersion;
+        public List<String> usedChunkIds;
+        public Long peakVramBytes;
+        public String groundingStatus;
+        public String fallbackReason;
+        public Double groundingScore;
+        public Boolean repairAttempted;
+        public Integer unsupportedSentenceCount;
+        public String modelVerificationStatus;
+        public Boolean qualityGatePassed;
+        public Integer latencyMs;
+        public String answerDepth;
+        public String questionIntent;
+        public List<ProcessingTraceItem> processingTrace;
         public UUID retrievalQueryId;
         public List<CitationItem> citations;
 
@@ -140,6 +161,18 @@ public class ChatDto {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    public static class ProcessingTraceItem {
+        private String step;
+        private String status;
+        private String messageKey;
+        private Integer elapsedMs;
+        private Map<String, Object> metadata;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class SessionResponse {
         private UUID chatSessionId;
         private UUID userId;
@@ -151,8 +184,24 @@ public class ChatDto {
         private String scopeLabel;
         private String sessionTitle;
         private Boolean isActive;
+        private Boolean isPinned;
+        private LocalDateTime pinnedAt;
         private LocalDateTime startedAt;
         private LocalDateTime updatedAt;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class RenameSessionRequest {
+        private String title;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class PinSessionRequest {
+        private Boolean pinned;
     }
 
     @Data
@@ -169,6 +218,9 @@ public class ChatDto {
         private Integer outputTokens;
         private Integer totalTokens;
         private Integer latencyMs;
+        private String answerDepth;
+        private String questionIntent;
+        private List<ProcessingTraceItem> processingTrace;
         private LocalDateTime createdAt;
         private List<CitationResponse> citations;
     }

@@ -1,0 +1,291 @@
+{
+  "runAt": "2026-07-29T01:23:08",
+  "sessionId": "b1124681-8dc3-4a01-ac7b-b6d3673fc21f",
+  "results": [
+    {
+      "index": 2,
+      "category": "Câu hỏi trực tiếp",
+      "question": "Vấn đề cơ bản của triết học gồm mấy mặt?",
+      "elapsedMs": 20488,
+      "answer": "đặc biệt là của triết học hiện đại. là vấn đề quan hệ giữa tư duy với tồn tại\". cái chung trong các học thuyết triết học là nghiên cứu những vấn đề chung nhất của giới tự nhiên. của xã hội và con người. mối quan hệ của con người nói chung. của tư duy con người nói riêng với thế giới xung quanh. Vấn đề cơ bản của triết học Tri",
+      "groundingStatus": "PARTIAL_GROUNDED",
+      "fallbackReason": null,
+      "citationCount": 2,
+      "citations": [
+        {
+          "citationId": "4d7115e0-fd20-4b5b-835e-9f4dea69fe3c",
+          "assistantMessageId": "84708f38-4aab-4931-969e-b84ce6fa9455",
+          "retrievalResultId": "c6eb13c9-48e1-437c-b6e2-98dd8747747f",
+          "chunkId": "d898a813-bf2a-4ef8-bfa0-905a23a80061",
+          "documentId": "9f217b5b-c0b5-402f-ab10-c111f0b43d0e",
+          "documentTitle": "75770b9b-cdbf-4038-90e2-f25e1f4426fe_triethocmaclenin",
+          "pageStart": 5,
+          "pageEnd": 5,
+          "quoteText": "cơ bản của triết học Triết học cũng như những khoa học khác phải giải quyết rất nhiều vấn đề có liên quan với nhau, trong đó vấn đề cực kỳ quan trọng là nền tảng và là điểm xuất phát để giải quyết những vấn đề còn lại được gọi là vấn đề cơ bản của triết học. Theo Ăngghen: \"Vấn đề",
+          "retrievalScore": 0.7673375635640125
+        },
+        {
+          "citationId": "aa617ecd-0681-4d1d-9ca3-ff7fc346d119",
+          "assistantMessageId": "84708f38-4aab-4931-969e-b84ce6fa9455",
+          "retrievalResultId": "d2e78dab-5d35-4ac7-8acc-a2e3605d623a",
+          "chunkId": "634f2aed-9ea9-4bae-901d-e634d8f346af",
+          "documentId": "9f217b5b-c0b5-402f-ab10-c111f0b43d0e",
+          "documentTitle": "75770b9b-cdbf-4038-90e2-f25e1f4426fe_triethocmaclenin",
+          "pageStart": 5,
+          "pageEnd": 5,
+          "quoteText": "của mình là tiếp tục giải quyết mối quan hệ giữa vật chất và ý thức trên lập trường duy vật triệt để và nghiên cứu những quy luật chung nhất của tự nhiên, xã hội và tư duy. Triết học nghiên cứu thế giới bằng phương pháp của riêng mình khác với mọi khoa học cụ thể. Nó xem xét thế ",
+          "retrievalScore": 0.7518710050670221
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "category": "Câu hỏi trực tiếp",
+      "question": "Ý thức có những nguồn gốc nào?",
+      "elapsedMs": 8900,
+      "answer": "Ý thức có nguồn gốc tự nhiên và nguồn gốc xã hội. Nguồn gốc tự nhiên của ý thức bao gồm sự tác động của thế giới bên ngoài lên các giác quan và qua đó đến bộ óc. Nguồn gốc xã hội bao gồm lao động và thực tiễn xã hội.",
+      "groundingStatus": "GROUNDED",
+      "fallbackReason": null,
+      "citationCount": 3,
+      "citations": [
+        {
+          "citationId": "bc039ff5-0c5d-4485-b654-a7f838c53376",
+          "assistantMessageId": "96b84b12-ebb6-44e2-9c36-d0f97f4468d1",
+          "retrievalResultId": "dad64d9c-5e4d-46ea-bf70-5aac13385386",
+          "chunkId": "c640a593-181b-438e-b6b6-ab08f977334a",
+          "documentId": "9f217b5b-c0b5-402f-ab10-c111f0b43d0e",
+          "documentTitle": "75770b9b-cdbf-4038-90e2-f25e1f4426fe_triethocmaclenin",
+          "pageStart": 85,
+          "pageEnd": 85,
+          "quoteText": "của ý thức Có thể khái quát ý thức có hai nguồn gốc: Nguồn gốc tự nhiên và nguồn gốc xã hội. a) Nguồn gốc tự nhiên Chủ nghĩa duy tâm cho rằng ý thức có trước, vật chất có sau, ý thức sinh ra vật\n\n4. V.I.Lênin: Toàn tập, Nxb. Tiến bộ, Mátxcơva, 1980, t.18, tr. 211 và 225.\n\n84",
+          "retrievalScore": 0.7732600028802935
+        },
+        {
+          "citationId": "c7079f13-da83-46a5-ba57-bc3a0d93ef8e",
+          "assistantMessageId": "96b84b12-ebb6-44e2-9c36-d0f97f4468d1",
+          "retrievalResultId": "c1332175-aadc-414d-a9e7-9c0ba5a9c1eb",
+          "chunkId": "b4babe64-9af7-41e9-8256-a6f345643e01",
+          "documentId": "9f217b5b-c0b5-402f-ab10-c111f0b43d0e",
+          "documentTitle": "75770b9b-cdbf-4038-90e2-f25e1f4426fe_triethocmaclenin",
+          "pageStart": 87,
+          "pageEnd": 87,
+          "quoteText": "ý thức con người, nằm trong con người, không thể tách rời con người. Như vậy, ý thức bắt nguồn từ một thuộc tính của vật chất - thuộc tính phản ánh - phát triển thành. ý thức ra đời là kết quả phát triển lâu dài của thuộc tính phản ánh của vật chất. Nội dung của ý thức là thông t",
+          "retrievalScore": 0.7794548684448492
+        },
+        {
+          "citationId": "89ada60d-38ad-4435-a966-2d5f7d8018f2",
+          "assistantMessageId": "96b84b12-ebb6-44e2-9c36-d0f97f4468d1",
+          "retrievalResultId": "85337c09-4ea5-46c2-bbdd-3ef87d19dcaa",
+          "chunkId": "2acd3e94-6848-4331-a912-4abc65c21ba9",
+          "documentId": "9f217b5b-c0b5-402f-ab10-c111f0b43d0e",
+          "documentTitle": "75770b9b-cdbf-4038-90e2-f25e1f4426fe_triethocmaclenin",
+          "pageStart": 88,
+          "pageEnd": 88,
+          "quoteText": "hiện tượng cá nhân mà là một hiện tượng xã hội, do đó không có phương tiện trao đổi xã hội về mặt ngôn ngữ thì ý thức không thể hình thành và phát triển được. Vậy, nguồn gốc trực tiếp quan trọng nhất quyết định sự ra đời và phát triển của ý thức là lao động, là thực tiễn xã hội. ",
+          "retrievalScore": 0.7111668864759418
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "category": "Câu hỏi trực tiếp",
+      "question": "Thực tiễn là gì?",
+      "elapsedMs": 9189,
+      "answer": "Trong lịch sử, thực tiễn được hiểu là hoạt động tinh thần tạo ra thế giới của con người, không phải là hoạt động vật chất, lịch sử xã hội. Thực tiễn là một hành động vật chất của con người, nhưng lại được hiểu là hoạt động con buôn, đê tiện, bẩn thỉu bởi những người chủ nghĩa duy tâm. Thực tiễn là một quá trình vận động, phát triển không ngừng và ngày càng có vai trò quan trọng đối với nhận thức.",
+      "groundingStatus": "GROUNDED",
+      "fallbackReason": null,
+      "citationCount": 2,
+      "citations": [
+        {
+          "citationId": "02aaab2c-93a9-450a-a813-fea0124427d3",
+          "assistantMessageId": "6eaac83a-358b-40a3-983a-07aa60469f48",
+          "retrievalResultId": "f0c882fa-4806-433d-8754-8c17b929dca6",
+          "chunkId": "2ae3d20a-0104-4afc-a509-813ee8dc2571",
+          "documentId": "9f217b5b-c0b5-402f-ab10-c111f0b43d0e",
+          "documentTitle": "75770b9b-cdbf-4038-90e2-f25e1f4426fe_triethocmaclenin",
+          "pageStart": 138,
+          "pageEnd": 138,
+          "quoteText": "này. Chẳng hạn chủ nghĩa duy tâm chỉ hiểu thực tiễn như là hoạt động tinh thần sáng tạo ra thế giới của con người, chứ không xem nó là hoạt động vật chất, là hoạt động lịch sử xã hội. Ngược lại, chủ nghĩa duy vật trước Mác, mặc dù đã hiểu thực tiễn là một hành động vật chất của c",
+          "retrievalScore": 0.8468671332171867
+        },
+        {
+          "citationId": "08051eae-5248-4511-8d52-f7f63eddd1e3",
+          "assistantMessageId": "6eaac83a-358b-40a3-983a-07aa60469f48",
+          "retrievalResultId": "54b506a4-a020-42ab-a6c9-dfd0097b7356",
+          "chunkId": "544f092b-7f61-47b0-8f81-4243a5647e7c",
+          "documentId": "9f217b5b-c0b5-402f-ab10-c111f0b43d0e",
+          "documentTitle": "75770b9b-cdbf-4038-90e2-f25e1f4426fe_triethocmaclenin",
+          "pageStart": 139,
+          "pageEnd": 139,
+          "quoteText": "động thực nghiệm mà sai lầm, không khoa học sẽ kìm hãm sự phát triển của hoạt động sản xuất vật chất. Chính sự tác động qua lại lẫn nhau của các hình thức hoạt động cơ bản đó làm cho thực tiễn vận động, phát triển không ngừng và ngày càng có vai trò quan trọng đối với nhận thức. ",
+          "retrievalScore": 0.8046804598116749
+        }
+      ]
+    },
+    {
+      "index": 10,
+      "category": "Câu hỏi giải thích",
+      "question": "Vì sao thực tiễn là tiêu chuẩn kiểm tra chân lý?",
+      "elapsedMs": 45574,
+      "answer": "Hệ thống AI đang bận hoặc chưa sẵn sàng. Bạn có thể thử gửi lại câu hỏi sau ít phút.",
+      "groundingStatus": null,
+      "fallbackReason": null,
+      "citationCount": 0,
+      "citations": []
+    },
+    {
+      "index": 13,
+      "category": "Câu hỏi so sánh",
+      "question": "Nhận thức cảm tính và nhận thức lý tính khác nhau như thế nào?",
+      "elapsedMs": 34890,
+      "answer": "Không tìm thấy nội dung phù hợp trong tài liệu của môn học.",
+      "groundingStatus": "OUT_OF_SCOPE",
+      "fallbackReason": "GROUNDING_FAILED",
+      "citationCount": 0,
+      "citations": []
+    },
+    {
+      "index": 15,
+      "category": "Câu hỏi tổng hợp",
+      "question": "Hãy tóm tắt hai nguyên lý cơ bản của phép biện chứng duy vật.",
+      "elapsedMs": 32199,
+      "answer": "Phép biện chứng duy vật, được trình bày trong hai nguyên lý cơ bản, giúp hiểu rõ về các mối liên hệ và sự vận động của mọi thứ trong thế giới. Nguyên lý thứ nhất, \"vật chất\", đề cập đến các yếu tố vật chất trong thế giới, bao gồm cả ý thức và vận động. Nguyên lý thứ hai. phản ánh sự vận động và phát triển của mọi thứ.",
+      "groundingStatus": "PARTIAL_GROUNDED",
+      "fallbackReason": null,
+      "citationCount": 6,
+      "citations": [
+        {
+          "citationId": "60f1bca3-643f-4e14-b839-3672178c86f3",
+          "assistantMessageId": "3f087458-1658-4a2f-9c33-b1ae517e77ed",
+          "retrievalResultId": "f30ba346-ae14-4131-88f8-6c6f850db136",
+          "chunkId": "40beb3ec-96b9-43fa-81ff-10ee3318db55",
+          "documentId": "9f217b5b-c0b5-402f-ab10-c111f0b43d0e",
+          "documentTitle": "75770b9b-cdbf-4038-90e2-f25e1f4426fe_triethocmaclenin",
+          "pageStart": 95,
+          "pageEnd": 95,
+          "quoteText": "Chương VI  Hai nguyên lý của phép biện chứng duy vật",
+          "retrievalScore": 0.8085886948163975
+        },
+        {
+          "citationId": "0c6cbefa-6e0e-4f15-b4d4-9ef3d6f3ed49",
+          "assistantMessageId": "3f087458-1658-4a2f-9c33-b1ae517e77ed",
+          "retrievalResultId": "2cd92f87-f84e-4a90-80f1-f7041a21d0f9",
+          "chunkId": "822f48c4-3335-4053-a71f-305474e869ec",
+          "documentId": "9f217b5b-c0b5-402f-ab10-c111f0b43d0e",
+          "documentTitle": "75770b9b-cdbf-4038-90e2-f25e1f4426fe_triethocmaclenin",
+          "pageStart": 56,
+          "pageEnd": 56,
+          "quoteText": "2. Giai đoạn đề xuất những nguyên lý triết học duy vật biện chứng và duy vật lịch sử Thời gian từ năm 1844 đến năm 1848 là quá trình Mác - Ăngghen từng bước xây dựng những nguyên lý triết học duy vật biện chứng và duy vật lịch sử. Trong tác phẩm Bản thảo kinh tế - triết học năm 1",
+          "retrievalScore": 0.6190320961515178
+        },
+        {
+          "citationId": "96743313-3b16-4a34-b158-61d171f63ef6",
+          "assistantMessageId": "3f087458-1658-4a2f-9c33-b1ae517e77ed",
+          "retrievalResultId": "d1ca0871-3e29-4612-8f6a-b703414c0c38",
+          "chunkId": "a389c06c-fa7c-416c-984a-e962194dcec9",
+          "documentId": "9f217b5b-c0b5-402f-ab10-c111f0b43d0e",
+          "documentTitle": "75770b9b-cdbf-4038-90e2-f25e1f4426fe_triethocmaclenin",
+          "pageStart": 96,
+          "pageEnd": 96,
+          "quoteText": "hoạt động của mình. Phép biện chứng duy vật nghiên cứu các mối liên hệ phổ biến chi phối sự vận động và phát triển của sự vật, hiện tượng. 3. Ý nghĩa phương pháp luận Nghiên cứu nguyên lý về mối liên hệ phổ biến có thể rút ra ý nghĩa về phương pháp luận sau: - Vì các mối liên hệ ",
+          "retrievalScore": 0.6178054247559484
+        },
+        {
+          "citationId": "5dc91762-e780-4232-97c2-613fd8ebb9d7",
+          "assistantMessageId": "3f087458-1658-4a2f-9c33-b1ae517e77ed",
+          "retrievalResultId": "6f1f7758-0523-403f-a5b6-9aec46b8741e",
+          "chunkId": "0fa0f8d2-e5e3-4dcb-b9d5-1198049836f9",
+          "documentId": "9f217b5b-c0b5-402f-ab10-c111f0b43d0e",
+          "documentTitle": "75770b9b-cdbf-4038-90e2-f25e1f4426fe_triethocmaclenin",
+          "pageStart": 106,
+          "pageEnd": 106,
+          "quoteText": "định sẽ phải thừa nhận rằng nguyên nhân của thế giới vật chất nằm ngoài thế giới vật chất, tức nằm ở thế giới tinh thần. Cần phân biệt nguyên nhân với nguyên cớ và nguyên nhân với điều kiện. Nguyên cớ và điều kiện không sinh ra kết quả, mặc dù nó xuất hiện cùng với nguyên nhân. T",
+          "retrievalScore": 0.6447541190452984
+        },
+        {
+          "citationId": "3a8b25ee-d62c-4b44-a3df-d83da2196f6c",
+          "assistantMessageId": "3f087458-1658-4a2f-9c33-b1ae517e77ed",
+          "retrievalResultId": "1d7b72af-7a51-42b9-b884-edc543c1a39f",
+          "chunkId": "f24befd2-3ace-4005-b701-5f558c17266b",
+          "documentId": "9f217b5b-c0b5-402f-ab10-c111f0b43d0e",
+          "documentTitle": "75770b9b-cdbf-4038-90e2-f25e1f4426fe_triethocmaclenin",
+          "pageStart": 101,
+          "pageEnd": 101,
+          "quoteText": "trên một lĩnh vực nhất định của hiện thực thuộc phạm vi nghiên cứu của môn khoa học chuyên ngành. Khác với điều đó, các phạm trù của phép biện chứng duy vật như \"vật chất\", \"ý thức\", \"vận động\", \"đứng im\", \"mâu thuẫn\", \"số lượng\", \"chất lượng\", \"nguyên nhân\", \"kết quả\", v.v. là n",
+          "retrievalScore": 0.6474404805180468
+        },
+        {
+          "citationId": "69fd960d-8169-467c-a36f-da89ab1a15d6",
+          "assistantMessageId": "3f087458-1658-4a2f-9c33-b1ae517e77ed",
+          "retrievalResultId": "de8d65cf-623c-47d5-9cf8-9e6801c75977",
+          "chunkId": "928acba1-e040-4b55-9361-724882d0b568",
+          "documentId": "9f217b5b-c0b5-402f-ab10-c111f0b43d0e",
+          "documentTitle": "75770b9b-cdbf-4038-90e2-f25e1f4426fe_triethocmaclenin",
+          "pageStart": 122,
+          "pageEnd": 122,
+          "quoteText": "tác động trong tất cả các lĩnh vực tự nhiên, xã hội và tư duy của con người. Các quy luật cơ bản của phép biện chứng duy vật phản ánh sự vận động, phát triển dưới những phương diện cơ bản nhất. Quy luật chuyển hóa từ những thay đổi về lượng thành những thay đổi về chất và ngược l",
+          "retrievalScore": 0.6258822253251849
+        }
+      ]
+    },
+    {
+      "index": 17,
+      "category": "Câu hỏi vận dụng",
+      "question": "Việc học lý thuyết nhưng không thực hành có thể được giải thích bằng quan điểm triết học nào?",
+      "elapsedMs": 15040,
+      "answer": "Theo quan điểm triết học của chủ nghĩa duy vật biện chứng, việc học lý thuyết nhưng không thực hành có thể được giải thích bằng quan điểm về vai trò quyết định của nhân tố tinh thần trong xã hội. Chủ nghĩa duy vật biện chứng nhấn mạnh vai trò quan trọng của lao động trí óc trong quá trình phát triển xã hội, và việc học lý thuyết mà không thực hành có thể hiểu là không tận dụng được sức mạnh của lao động trí óc, dẫn đến sự suy giảm hiệu quả của quá trình học tập và phát triển tri thức.",
+      "groundingStatus": "GROUNDED",
+      "fallbackReason": null,
+      "citationCount": 3,
+      "citations": [
+        {
+          "citationId": "0ae680f8-b513-45bb-8b3d-0f9e53ba0526",
+          "assistantMessageId": "124e2225-4888-4111-9c96-95fd06bae5ae",
+          "retrievalResultId": "f982d71d-3beb-4b28-b92f-0b5d3a24c2f5",
+          "chunkId": "c511becd-4e2f-47d1-a057-c132297d3b59",
+          "documentId": "9f217b5b-c0b5-402f-ab10-c111f0b43d0e",
+          "documentTitle": "75770b9b-cdbf-4038-90e2-f25e1f4426fe_triethocmaclenin",
+          "pageStart": 137,
+          "pageEnd": 137,
+          "quoteText": "điểm chủ yếu của toàn bộ chủ nghĩa duy vật từ trước tới nay kể cả chủ nghĩa duy vật của Phoiơbắc là sự vật, hiện thực, cái cảm giác được, chỉ được nhận thức dưới hình thức khách thể hay hình thức trực quan, chứ không được nhận thức là hoạt động cảm giác của con người, là thực tiễ",
+          "retrievalScore": 0.5962642533946995
+        },
+        {
+          "citationId": "2d88de73-3b6e-4fce-830f-05ac623c1688",
+          "assistantMessageId": "124e2225-4888-4111-9c96-95fd06bae5ae",
+          "retrievalResultId": "e3d25d0c-e3d0-4583-8d88-4dac345a456a",
+          "chunkId": "b9c4c4b5-9555-4aee-be2f-ca22ddefef83",
+          "documentId": "9f217b5b-c0b5-402f-ab10-c111f0b43d0e",
+          "documentTitle": "75770b9b-cdbf-4038-90e2-f25e1f4426fe_triethocmaclenin",
+          "pageStart": 9,
+          "pageEnd": 9,
+          "quoteText": "xã hội. Sự tách rời lao động trí óc với lao động chân tay và địa vị thống trị của lao động trí óc đối với lao động chân tay trong các xã hội cũ đã tạo ra quan niệm về vai trò quyết định của nhân tố tinh thần. Các giai cấp thống trị và những lực lượng xã hội phản động ủng hộ, sử d",
+          "retrievalScore": 0.5917352544595096
+        },
+        {
+          "citationId": "114ca278-f6d4-4e2f-ae4d-4220d9ffe612",
+          "assistantMessageId": "124e2225-4888-4111-9c96-95fd06bae5ae",
+          "retrievalResultId": "30a3e517-633a-42bc-b569-e3bd03513a41",
+          "chunkId": "98417193-7851-447a-a732-2eb95d7c3723",
+          "documentId": "9f217b5b-c0b5-402f-ab10-c111f0b43d0e",
+          "documentTitle": "75770b9b-cdbf-4038-90e2-f25e1f4426fe_triethocmaclenin",
+          "pageStart": 68,
+          "pageEnd": 68,
+          "quoteText": "với lý luận khoa học, không quan tâm nghiên cứu sự phát triển của tri thức khoa học, cho rằng các tri thức khoa học chỉ tích luỹ về lượng. Họ cho rằng khoa học tiến bộ thông qua con đường cách mạng trong tri thức, do đó phải tiến hành sự phân tích lịch sử khoa học theo trạng thái",
+          "retrievalScore": 0.5830067704578538
+        }
+      ]
+    },
+    {
+      "index": 20,
+      "category": "Câu hỏi ngoài phạm vi",
+      "question": "Giá Bitcoin hiện nay là bao nhiêu theo tài liệu này?",
+      "elapsedMs": 52,
+      "answer": "Mình chỉ trả lời dựa trên tài liệu môn học đã chọn. Câu hỏi này chưa thấy liên quan đến tài liệu, bạn hỏi lại về nội dung trong tài liệu nhé.",
+      "groundingStatus": "OUT_OF_SCOPE",
+      "fallbackReason": "NO_RELEVANT_CONTEXT",
+      "citationCount": 0,
+      "citations": []
+    }
+  ]
+}

@@ -1,5 +1,28 @@
 # Fine-tuning Training
 
+## Baseline chinh thuc: Triet hoc Mac - Lenin v1
+
+Artifact `models/qwen-rag-lora` la adapter cu, khong co manifest dat quality gate
+va khong duoc runtime chon. Baseline chinh thuc dung:
+
+- Corpus: `data/corpus/triethoc_mac_lenin.pdf`
+- Dataset: `data/research/triethoc-v1`
+- Base model: `Qwen/Qwen2.5-1.5B-Instruct`
+- Adapter: `models/qwen2.5-1.5b-triethoc-lora-v1`
+- Train/validation/test: `250/50/50`
+- Robustness test: 10 cau ngoai pham vi
+
+```powershell
+.\.venv\Scripts\python.exe experiments\build_triethoc_research_dataset.py
+.\.venv\Scripts\python.exe experiments\train_lora.py
+.\.venv\Scripts\python.exe experiments\validate_finetuned_adapter.py `
+  --adapter models\qwen2.5-1.5b-triethoc-lora-v1
+```
+
+Runtime chi bao `FINE_TUNED_READY` khi manifest, checksum va tat ca quality gate
+dat. RAG dung Qwen base khong LoRA + BGE-M3; Fine-tuned-only dung LoRA va khong
+nhan retrieval context. OpenAI chi lam judge cho RAGAS chinh thuc.
+
 File này hướng dẫn team chạy Fine-tuning bằng một file CSV được chỉ định. Không hard-code môn học hay đường dẫn máy cá nhân.
 
 ## 1. Pull về test model đã train sẵn

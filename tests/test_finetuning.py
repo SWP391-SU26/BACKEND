@@ -83,6 +83,19 @@ def test_training_source_names_only_returns_sources_used_by_the_model(tmp_path: 
     assert selected_sources_are_trained([], {"philosophy.pdf"}) is False
 
 
+def test_selected_source_matches_training_source_after_uuid_storage_prefix() -> None:
+    stored_name = "75770b9b-cdbf-4038-90e2-f25e1f4426fe_triethocmaclenin.pdf"
+
+    assert selected_sources_are_trained(
+        ["triethocmaclenin.pdf"],
+        {stored_name},
+    ) is True
+    assert selected_sources_are_trained(
+        [stored_name],
+        {"triethocmaclenin.pdf"},
+    ) is True
+
+
 def test_finetuning_prompt_is_conditioned_on_selected_document() -> None:
     prompt = build_finetuning_system_prompt(["Japanese.pdf"])
 

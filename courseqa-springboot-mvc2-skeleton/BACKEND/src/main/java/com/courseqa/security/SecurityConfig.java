@@ -1,6 +1,7 @@
 package com.courseqa.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
 import org.springframework.context.annotation.Bean;
@@ -25,6 +26,7 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/forgot-password").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/error").permitAll()
@@ -56,6 +58,9 @@ public class SecurityConfig {
 
     private static void writeError(HttpServletResponse response, ObjectMapper mapper, int status, String message)
             throws java.io.IOException {
+        if (response.isCommitted()) {
+            return;
+        }
         response.setStatus(status);
         response.setContentType("application/json");
         mapper.writeValue(response.getOutputStream(), Map.of("success", false, "message", message));

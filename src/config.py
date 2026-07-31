@@ -11,9 +11,9 @@ RAW_DIR = DATA_DIR / "raw"
 PROCESSED_DIR = DATA_DIR / "processed"
 DB_DIR = DATA_DIR / "db"
 REPORTS_DIR = BASE_DIR / "reports"
-FINETUNING_DIR = DATA_DIR / "finetuning"
+FINETUNING_DIR = DATA_DIR / "research" / "triethoc-v1"
 MODEL_CACHE_DIR = DATA_DIR / "models_cache"
-LORA_ADAPTER_DIR = BASE_DIR / "models" / "qwen-rag-lora"
+LORA_ADAPTER_DIR = BASE_DIR / "models" / "qwen2.5-1.5b-triethoc-lora-v1"
 
 
 @dataclass(frozen=True)
@@ -25,21 +25,25 @@ class AppSettings:
     finetuning_dir: Path = FINETUNING_DIR
     model_cache_dir: Path = MODEL_CACHE_DIR / "hub"
     lora_adapter_dir: Path = LORA_ADAPTER_DIR
-    top_k: int = 10
-    chunk_size: int = 700
-    chunk_overlap: int = 120
+    top_k: int = 5
+    chunk_size: int = 500
+    chunk_overlap: int = 50
     min_retrieval_score: float = 0.2
     semantic_weight: float = 0.4
     embedding_provider: str = "sentence-transformers"
     embedding_model: str = "BAAI/bge-m3"
+    embedding_device: str = "cpu"
     openai_api_key: str | None = None
     openai_chat_model: str = "gpt-4o-mini"
     generation_provider: str = "auto"
-    local_base_model: str = "Qwen/Qwen2.5-0.5B-Instruct"
-    local_max_new_tokens: int = 40
+    local_base_model: str = "Qwen/Qwen2.5-1.5B-Instruct"
+    local_max_input_tokens: int = 2048
+    local_max_new_tokens: int = 256
     benchmark_batch_size: int = 4
-    benchmark_max_new_tokens: int = 64
-    benchmark_max_input_tokens: int = 448
+    benchmark_max_new_tokens: int = 192
+    benchmark_max_input_tokens: int = 1536
+    dataset_version: str = "triethoc-v1"
+    prompt_version: str = "triethoc-grounded-v1"
     finetuned_scope_min_similarity: float = 0.60
     allow_unverified_finetuned: bool = False
 
@@ -50,8 +54,6 @@ def load_settings() -> AppSettings:
     adapter_value = Path(os.getenv("LORA_ADAPTER_DIR", LORA_ADAPTER_DIR))
     if not adapter_value.is_absolute():
         adapter_value = BASE_DIR / adapter_value
-    if not adapter_value.exists() and LORA_ADAPTER_DIR.exists():
-        adapter_value = LORA_ADAPTER_DIR
     return AppSettings(
         raw_dir=Path(os.getenv("RAW_DIR", RAW_DIR)),
         processed_dir=Path(os.getenv("PROCESSED_DIR", PROCESSED_DIR)),
@@ -60,21 +62,25 @@ def load_settings() -> AppSettings:
         finetuning_dir=Path(os.getenv("FINETUNING_DIR", FINETUNING_DIR)),
         model_cache_dir=Path(os.getenv("MODEL_CACHE_DIR", MODEL_CACHE_DIR / "hub")),
         lora_adapter_dir=adapter_value.resolve(),
-        top_k=int(os.getenv("TOP_K", "10")),
-        chunk_size=int(os.getenv("CHUNK_SIZE", "700")),
-        chunk_overlap=int(os.getenv("CHUNK_OVERLAP", "120")),
+        top_k=int(os.getenv("TOP_K", "5")),
+        chunk_size=int(os.getenv("CHUNK_SIZE", "500")),
+        chunk_overlap=int(os.getenv("CHUNK_OVERLAP", "50")),
         min_retrieval_score=float(os.getenv("MIN_RETRIEVAL_SCORE", "0.2")),
         semantic_weight=float(os.getenv("SEMANTIC_WEIGHT", "0.4")),
         embedding_provider=os.getenv("EMBEDDING_PROVIDER", "sentence-transformers"),
         embedding_model=os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3"),
+        embedding_device=os.getenv("EMBEDDING_DEVICE", "cpu").strip().lower(),
         openai_api_key=os.getenv("OPENAI_API_KEY") or None,
         openai_chat_model=os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini"),
         generation_provider=os.getenv("GENERATION_PROVIDER", "auto"),
-        local_base_model=os.getenv("LOCAL_BASE_MODEL", "Qwen/Qwen2.5-0.5B-Instruct"),
-        local_max_new_tokens=int(os.getenv("LOCAL_MAX_NEW_TOKENS", "40")),
+        local_base_model=os.getenv("LOCAL_BASE_MODEL", "Qwen/Qwen2.5-1.5B-Instruct"),
+        local_max_input_tokens=max(256, int(os.getenv("LOCAL_MAX_INPUT_TOKENS", "2048"))),
+        local_max_new_tokens=max(1, int(os.getenv("LOCAL_MAX_NEW_TOKENS", "256"))),
         benchmark_batch_size=max(1, int(os.getenv("BENCHMARK_BATCH_SIZE", "4"))),
-        benchmark_max_new_tokens=max(1, int(os.getenv("BENCHMARK_MAX_NEW_TOKENS", "64"))),
-        benchmark_max_input_tokens=max(64, int(os.getenv("BENCHMARK_MAX_INPUT_TOKENS", "448"))),
+        benchmark_max_new_tokens=max(1, int(os.getenv("BENCHMARK_MAX_NEW_TOKENS", "192"))),
+        benchmark_max_input_tokens=max(256, int(os.getenv("BENCHMARK_MAX_INPUT_TOKENS", "1536"))),
+        dataset_version=os.getenv("RESEARCH_DATASET_VERSION", "triethoc-v1"),
+        prompt_version=os.getenv("RESEARCH_PROMPT_VERSION", "triethoc-grounded-v1"),
         finetuned_scope_min_similarity=float(os.getenv("FINETUNED_SCOPE_MIN_SIMILARITY", "0.60")),
         allow_unverified_finetuned=os.getenv("FINETUNING_ALLOW_UNVERIFIED", "false").strip().lower()
         in {"1", "true", "yes", "on"},
@@ -103,5 +109,5 @@ def load_dotenv(path: Path) -> None:
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip().strip('"').strip("'")
-        if key == "LORA_ADAPTER_DIR" or (key and key not in os.environ):
+        if key and key not in os.environ:
             os.environ[key] = value
