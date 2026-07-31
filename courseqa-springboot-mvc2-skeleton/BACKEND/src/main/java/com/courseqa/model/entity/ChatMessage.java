@@ -9,10 +9,17 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.*;
 import java.util.UUID;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.List;
+import java.util.Map;
 
 @Entity
 @Table(name = "chat_messages")
 public class ChatMessage {
+    private static final ObjectMapper TRACE_MAPPER = new ObjectMapper();
 @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "message_id")
@@ -41,6 +48,15 @@ public class ChatMessage {
 
     @Column(name = "latency_ms")
     private Integer latencyMs;
+
+    @Column(name = "answer_depth")
+    private String answerDepth;
+
+    @Column(name = "question_intent")
+    private String questionIntent;
+
+    @Column(name = "processing_trace_json", columnDefinition = "NVARCHAR(MAX)")
+    private String processingTraceJson;
 
     @Column(name = "cost")
     private BigDecimal cost;
@@ -76,6 +92,30 @@ public class ChatMessage {
 
     public Integer getLatencyMs() { return latencyMs; }
     public void setLatencyMs(Integer latencyMs) { this.latencyMs = latencyMs; }
+
+    public String getAnswerDepth() { return answerDepth; }
+    public void setAnswerDepth(String answerDepth) { this.answerDepth = answerDepth; }
+
+    public String getQuestionIntent() { return questionIntent; }
+    public void setQuestionIntent(String questionIntent) { this.questionIntent = questionIntent; }
+
+    @JsonIgnore
+    public String getProcessingTraceJson() { return processingTraceJson; }
+    public void setProcessingTraceJson(String processingTraceJson) { this.processingTraceJson = processingTraceJson; }
+
+    @JsonProperty("processingTrace")
+    public List<Map<String, Object>> getProcessingTrace() {
+        if (processingTraceJson == null || processingTraceJson.isBlank()) {
+            return List.of();
+        }
+        try {
+            return TRACE_MAPPER.readValue(
+                    processingTraceJson,
+                    new TypeReference<List<Map<String, Object>>>() { });
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
 
     public BigDecimal getCost() { return cost; }
     public void setCost(BigDecimal cost) { this.cost = cost; }

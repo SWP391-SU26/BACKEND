@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 // DTOs for chat session, ask request, answer response, citations.
@@ -111,6 +112,9 @@ public class ChatDto {
         public String modelVerificationStatus;
         public Boolean qualityGatePassed;
         public Integer latencyMs;
+        public String answerDepth;
+        public String questionIntent;
+        public List<ProcessingTraceItem> processingTrace;
         public UUID retrievalQueryId;
         public List<CitationItem> citations;
 
@@ -151,6 +155,18 @@ public class ChatDto {
                     retrievalQueryId, citations);
             this.generationMode = generationMode;
         }
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ProcessingTraceItem {
+        private String step;
+        private String status;
+        private String messageKey;
+        private Integer elapsedMs;
+        private Map<String, Object> metadata;
     }
 
     @Data
@@ -202,6 +218,9 @@ public class ChatDto {
         private Integer outputTokens;
         private Integer totalTokens;
         private Integer latencyMs;
+        private String answerDepth;
+        private String questionIntent;
+        private List<ProcessingTraceItem> processingTrace;
         private LocalDateTime createdAt;
         private List<CitationResponse> citations;
     }

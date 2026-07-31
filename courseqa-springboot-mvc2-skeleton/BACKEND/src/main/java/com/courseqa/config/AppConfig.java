@@ -38,4 +38,16 @@ public class AppConfig {
         return executor;
     }
 
+    @Bean("documentIndexingTaskExecutor")
+    public Executor documentIndexingTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(1);
+        executor.setQueueCapacity(20);
+        executor.setThreadNamePrefix("document-indexing-");
+        executor.setWaitForTasksToCompleteOnShutdown(false);
+        executor.initialize();
+        return executor;
+    }
+
 }

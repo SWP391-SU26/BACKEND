@@ -39,6 +39,7 @@ public class PythonAiDto {
         public String standalone_query;
         public List<ChatHistoryItem> history;
         public String answer_profile;
+        public String answer_depth;
     }
 
     public static class ChatHistoryItem {
@@ -99,6 +100,7 @@ public class PythonAiDto {
         public String standalone_query;
         public List<ChatHistoryItem> history;
         public String answer_profile;
+        public String answer_depth;
     }
 
     public static class GenerateBatchRequest {
@@ -133,6 +135,8 @@ public class PythonAiDto {
         public Integer batch_size;
         public Integer max_input_tokens;
         public Integer max_new_tokens;
+        public Integer effective_batch_size;
+        public Integer oom_fallback_count;
     }
 
     public static class ChatFinetunedRequest {
@@ -162,12 +166,14 @@ public class PythonAiDto {
         public String request_id;
         public String question;
         public List<String> document_filenames;
+        public String answer_depth;
     }
 
     public static class ChatFinetunedBatchRequest {
         public List<ChatFinetunedBatchItem> items;
         public Boolean strict;
         public Boolean allow_unverified;
+        public Boolean benchmark_mode;
     }
 
     public static class ChatFinetunedBatchResult {
@@ -175,6 +181,7 @@ public class PythonAiDto {
         public String answer;
         public String error;
         public Boolean is_out_of_scope;
+        public Boolean model_inference_executed;
         public Double scope_confidence;
         public String provider_used;
         public String base_model;
@@ -192,6 +199,8 @@ public class PythonAiDto {
         public Integer batch_size;
         public Integer max_input_tokens;
         public Integer max_new_tokens;
+        public Integer effective_batch_size;
+        public Integer oom_fallback_count;
     }
 
     public static class OfficialRagasItem {

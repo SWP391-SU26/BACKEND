@@ -22,6 +22,7 @@ import com.courseqa.repository.UserRoleRepository;
 import com.courseqa.repository.CourseRepository;
 import com.courseqa.repository.SemesterWorkspaceRepository;
 import com.courseqa.repository.CourseDocumentRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.text.Normalizer;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -46,6 +47,7 @@ import org.springframework.stereotype.Service;
 public class ChatService {
 
     private static final Logger log = LoggerFactory.getLogger(ChatService.class);
+    private static final ObjectMapper TRACE_MAPPER = new ObjectMapper();
     private static final String OUT_OF_SCOPE_MESSAGE =
             "Không tìm thấy nội dung phù hợp trong tài liệu của môn học.";
     private static final String FINE_TUNED_REFUSE_MESSAGE =
@@ -267,12 +269,19 @@ public class ChatService {
             boolean strict,
             ChatProgressListener progressListener
     ) {
+        question = QuestionIntentAnalyzer.repairUtf8Mojibake(question);
         long startedAt = System.nanoTime();
         ChatProgressListener progress = progressListener == null ? phase -> { } : progressListener;
         String answerMode = normalizeAnswerMode(requestedAnswerMode);
+        QuestionIntentAnalyzer.QueryIntent questionIntent = QuestionIntentAnalyzer.analyze(question);
+        RetrievalProfile questionProfile = retrievalProfile(questionIntent);
+        List<ChatDto.ProcessingTraceItem> processingTrace = new ArrayList<>();
         log.info("askQuestion - sessionId: {}, mode: {}, question: {}", sessionId, answerMode, question);
 
-        progress.onPhase("SCOPE_CHECK");
+        traceStep(progress, processingTrace, "QUESTION_ANALYSIS", startedAt, Map.of(
+                "answerDepth", questionProfile.answerDepth(),
+                "questionIntent", questionProfile.answerProfile()));
+        traceStep(progress, processingTrace, "SCOPE_CHECK", startedAt, Map.of());
         long scopeStartedAt = System.nanoTime();
         ChatSession session = chatSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("ChatSession not found: " + sessionId));
@@ -298,18 +307,18 @@ public class ChatService {
             ChatMessage assistantMessage = saveMessage(sessionId, "assistant", greeting, "GREETING");
             return completeResponse(new ChatDto.AskResponse(sessionId, savedUserMessage.getMessageId(),
                     assistantMessage.getMessageId(), greeting, "RAG", "local", "GREETING", null, List.of()),
-                    startedAt);
+                    startedAt, questionProfile, processingTrace);
         }
 
         QuestionScopeGuard.GuardDecision preCheck = questionScopeGuard.preCheck(question);
         if (!preCheck.allowed()) {
             return completeResponse(
                     guardedResponse(sessionId, savedUserMessage, preCheck.message(), answerMode, null, null),
-                    startedAt);
+                    startedAt, questionProfile, processingTrace);
         }
 
         if ("FINE_TUNED".equals(answerMode)) {
-            progress.onPhase("GENERATION_START");
+            traceStep(progress, processingTrace, "GENERATION_START", startedAt, Map.of());
             List<String> selectedFilenames = courseDocumentRepository.findAllById(resolvedScope.documentIds()).stream()
                     .map(CourseDocument::getOriginalFilename)
                     .filter(Objects::nonNull)
@@ -317,23 +326,32 @@ public class ChatService {
                     .distinct()
                     .toList();
             return completeResponse(answerWithFineTunedModel(
-                    sessionId, savedUserMessage, question, strict, selectedFilenames, null), startedAt);
+                    sessionId, savedUserMessage, question, strict, selectedFilenames, null),
+                    startedAt, questionProfile, processingTrace);
         }
 
-        progress.onPhase("RETRIEVAL");
+        traceStep(progress, processingTrace, "RETRIEVAL", startedAt, Map.of());
         long retrievalStartedAt = System.nanoTime();
         RagFlowContext ragFlow = runRetrievalFlow(
                 session, resolvedScope, savedUserMessage, question, recentHistory);
         log.info("AI chat retrieval completed in {} ms for session {}",
                 elapsedMs(retrievalStartedAt), sessionId);
         RagDto.RetrievalResponse retrieval = ragFlow.retrieval();
+        if (ragFlow.followUp()) {
+            traceStep(progress, processingTrace, "QUERY_EXPANSION", startedAt, Map.of(
+                    "rewritten", true));
+        }
+        traceStep(progress, processingTrace, "EVIDENCE_SELECTION", startedAt,
+                retrievalTraceMetadata(retrieval));
         QuestionScopeGuard.GuardDecision retrievalCheck = questionScopeGuard.postRetrievalCheck(question, retrieval);
         if (!retrievalCheck.allowed()) {
             return completeResponse(
                     guardedResponse(sessionId, savedUserMessage, retrievalCheck.message(), answerMode,
                             retrieval.embeddingModelName, retrieval.retrievalQueryId),
-                    startedAt);
+                    startedAt, questionProfile, processingTrace);
         }
+        traceStep(progress, processingTrace, "COVERAGE_CHECK", startedAt, Map.of(
+                "answerable", Boolean.TRUE.equals(retrieval.answerable)));
 
         if (!Boolean.TRUE.equals(retrieval.answerable) || retrieval.results == null || retrieval.results.isEmpty()) {
             String message = firstNonBlank(retrieval.noAnswerReason, OUT_OF_SCOPE_MESSAGE);
@@ -348,26 +366,30 @@ public class ChatService {
                     "OUT_OF_SCOPE",
                     retrieval.retrievalQueryId,
                     new ArrayList<>()
-            ), startedAt);
+            ), startedAt, questionProfile, processingTrace);
         }
 
         PythonAiDto.GenerateResponse generated;
         try {
-            progress.onPhase("GENERATION_START");
+            traceStep(progress, processingTrace, "GENERATION_START", startedAt, Map.of(
+                    "model", "Qwen2.5-1.5B-Instruct"));
             long generationStartedAt = System.nanoTime();
             List<PythonAiDto.ChatHistoryItem> generationHistory =
                     ragFlow.followUp() ? recentHistory : List.of();
             generated = aiClientService.callGenerate(
                     toGenerateRequest(question, ragFlow.standaloneQuery(), generationHistory,
-                            ragFlow.answerProfile(), retrieval.results, strict),
+                            ragFlow.answerProfile(), ragFlow.answerDepth(), retrieval.results, strict),
                     PythonAiDto.GenerateResponse.class
             );
             log.info("AI chat generation completed in {} ms for session {}",
                     elapsedMs(generationStartedAt), sessionId);
         } catch (Exception exception) {
             log.error("Python /api/generate failed for sessionId {}: {}", sessionId, exception.getMessage());
-            String answer = buildLocalFallbackAnswer(retrieval.results);
+            String answer = buildLocalFallbackAnswer(question, retrieval.results);
             ChatMessage assistantMessage = saveMessage(sessionId, "assistant", answer, "LOCAL_FALLBACK");
+            traceStep(progress, processingTrace, "GROUNDING_CHECK", startedAt, Map.of(
+                    "fallback", true));
+            traceStep(progress, processingTrace, "CITATION_SAVE", startedAt, Map.of());
             List<String> usedChunkIds = fallbackChunkIds(retrieval.results);
             List<ChatDto.CitationItem> citations = saveCitations(
                     assistantMessage, retrieval.results, List.of(), usedChunkIds);
@@ -384,7 +406,7 @@ public class ChatService {
             );
             response.providerUsed = "spring-local-fallback";
             response.fallbackReason = classifyAiFailure(exception);
-            return completeResponse(response, startedAt);
+            return completeResponse(response, startedAt, questionProfile, processingTrace);
         }
 
         String answer = Boolean.TRUE.equals(generated.is_out_of_scope)
@@ -396,7 +418,13 @@ public class ChatService {
 
         String providerUsed = firstNonBlank(generated.provider_used, "unknown");
         String generationMode = firstNonBlank(generated.generation_mode, "BASE_RAG");
+        traceStep(progress, processingTrace, "GROUNDING_CHECK", startedAt, Map.of(
+                "status", firstNonBlank(generated.grounding_status, "UNKNOWN")));
+        if (Boolean.TRUE.equals(generated.repair_attempted)) {
+            traceStep(progress, processingTrace, "REPAIR", startedAt, Map.of());
+        }
         ChatMessage savedAssistantMessage = saveMessage(sessionId, "assistant", answer, providerUsed);
+        traceStep(progress, processingTrace, "CITATION_SAVE", startedAt, Map.of());
         List<ChatDto.CitationItem> citations = OUT_OF_SCOPE_MESSAGE.equals(answer)
                 ? new ArrayList<>()
                 : saveCitations(savedAssistantMessage, retrieval.results, generated.sources, generated.used_chunk_ids);
@@ -420,7 +448,7 @@ public class ChatService {
         response.groundingScore = generated.grounding_score;
         response.repairAttempted = generated.repair_attempted;
         response.unsupportedSentenceCount = generated.unsupported_sentence_count;
-        return completeResponse(response, startedAt);
+        return completeResponse(response, startedAt, questionProfile, processingTrace);
     }
 
     /**
@@ -450,17 +478,20 @@ public class ChatService {
             QuestionScopeGuard.GuardDecision guard = questionScopeGuard.preCheck(question);
             RagDto.RetrievalResponse retrieval = null;
             String standaloneQuery = question;
-            String answerProfile = answerProfile(QuestionIntentAnalyzer.analyze(question));
+            QuestionIntentAnalyzer.QueryIntent intent = QuestionIntentAnalyzer.analyze(question);
+            String answerProfile = answerProfile(intent);
+            String answerDepth = intent.answerDepth().name();
             if (guard.allowed() && !"FINE_TUNED".equals(answerMode)) {
                 RagFlowContext ragFlow = runRetrievalFlow(
                         session, resolvedScope, userMessage, question, List.of());
                 retrieval = ragFlow.retrieval();
                 standaloneQuery = ragFlow.standaloneQuery();
                 answerProfile = ragFlow.answerProfile();
+                answerDepth = ragFlow.answerDepth();
                 guard = questionScopeGuard.postRetrievalCheck(question, retrieval);
             }
             prepared.add(new BenchmarkQuestionContext(
-                    question, standaloneQuery, answerProfile, userMessage, retrieval, guard));
+                    question, standaloneQuery, answerProfile, answerDepth, userMessage, retrieval, guard));
         }
         List<String> selectedFilenames = courseDocumentRepository.findAllById(resolvedScope.documentIds()).stream()
                 .map(CourseDocument::getOriginalFilename)
@@ -545,6 +576,7 @@ public class ChatService {
                     batchItem.standalone_query = item.standaloneQuery();
                     batchItem.history = List.of();
                     batchItem.answer_profile = item.answerProfile();
+                    batchItem.answer_depth = item.answerDepth();
                     return batchItem;
                 }).toList();
 
@@ -610,16 +642,18 @@ public class ChatService {
     }
 
     private record BenchmarkQuestionContext(
-            String question, String standaloneQuery, String answerProfile,
+            String question, String standaloneQuery, String answerProfile, String answerDepth,
             ChatMessage userMessage, RagDto.RetrievalResponse retrieval,
             QuestionScopeGuard.GuardDecision guard) { }
 
-    private record RetrievalProfile(int initialTopK, int finalTopK, String answerProfile) { }
+    private record RetrievalProfile(
+            int initialTopK, int finalTopK, String answerProfile, String answerDepth) { }
 
     private record RagFlowContext(
             RagDto.RetrievalResponse retrieval,
             String standaloneQuery,
             String answerProfile,
+            String answerDepth,
             boolean followUp
     ) { }
 
@@ -756,7 +790,8 @@ public class ChatService {
         RagDto.RetrievalResponse first = retrieveFromJavaSql(
                 session, scope, userMessage, question, standaloneQuery, profile.initialTopK());
         RagDto.RetrievalResponse retrieval = limitRetrieval(first, profile.finalTopK());
-        return new RagFlowContext(retrieval, standaloneQuery, profile.answerProfile(), followUp);
+        return new RagFlowContext(
+                retrieval, standaloneQuery, profile.answerProfile(), profile.answerDepth(), followUp);
     }
 
     private boolean needsFollowUpRewrite(String question, List<PythonAiDto.ChatHistoryItem> history) {
@@ -821,16 +856,20 @@ public class ChatService {
     }
 
     private RetrievalProfile retrievalProfile(QuestionIntentAnalyzer.QueryIntent intent) {
-        if (intent.summary() || intent.hasSection()) {
-            return new RetrievalProfile(16, 12, "summary");
-        }
-        return switch (intent.form()) {
-            case COMPARISON -> new RetrievalProfile(12, 8, "comparison");
-            case LIST -> new RetrievalProfile(12, 8, "list");
-            case REASONING -> new RetrievalProfile(12, 8, "reasoning");
-            case PROCEDURE -> new RetrievalProfile(12, 8, "procedure");
-            case DEFINITION -> new RetrievalProfile(8, 5, "definition");
-            default -> new RetrievalProfile(8, 5, "factual");
+        String answerProfile = intent.summary() || intent.hasSection()
+                ? "summary"
+                : switch (intent.form()) {
+                    case COMPARISON -> "comparison";
+                    case LIST -> "list";
+                    case REASONING -> "reasoning";
+                    case PROCEDURE -> "procedure";
+                    case DEFINITION -> "definition";
+                    default -> "factual";
+                };
+        return switch (intent.answerDepth()) {
+            case SHORT -> new RetrievalProfile(12, 5, answerProfile, "SHORT");
+            case STANDARD -> new RetrievalProfile(28, 8, answerProfile, "STANDARD");
+            case DEEP -> new RetrievalProfile(40, 12, answerProfile, "DEEP");
         };
     }
 
@@ -960,6 +999,7 @@ public class ChatService {
             String standaloneQuery,
             List<PythonAiDto.ChatHistoryItem> history,
             String answerProfile,
+            String answerDepth,
             List<RagDto.RetrievedChunk> chunks,
             boolean strict
     ) {
@@ -969,6 +1009,7 @@ public class ChatService {
         request.standalone_query = standaloneQuery;
         request.history = history;
         request.answer_profile = answerProfile;
+        request.answer_depth = answerDepth;
         request.contexts = chunks.stream()
                 .map(this::toGenerateContext)
                 .toList();
@@ -1092,39 +1133,148 @@ public class ChatService {
         return response;
     }
 
+    private ChatDto.AskResponse completeResponse(
+            ChatDto.AskResponse response,
+            long startedAt,
+            RetrievalProfile profile,
+            List<ChatDto.ProcessingTraceItem> processingTrace
+    ) {
+        response.answerDepth = profile.answerDepth();
+        response.questionIntent = profile.answerProfile();
+        response.processingTrace = processingTrace == null ? List.of() : List.copyOf(processingTrace);
+        ChatDto.AskResponse completed = completeResponse(response, startedAt);
+        if (completed.assistantMessageId != null) {
+            chatMessageRepository.findById(completed.assistantMessageId).ifPresent(message -> {
+                message.setAnswerDepth(completed.answerDepth);
+                message.setQuestionIntent(completed.questionIntent);
+                try {
+                    message.setProcessingTraceJson(TRACE_MAPPER.writeValueAsString(completed.processingTrace));
+                } catch (Exception exception) {
+                    log.warn("Could not serialize processing trace for message {}",
+                            completed.assistantMessageId, exception);
+                }
+                chatMessageRepository.save(message);
+            });
+        }
+        return completed;
+    }
+
+    private void traceStep(
+            ChatProgressListener listener,
+            List<ChatDto.ProcessingTraceItem> trace,
+            String step,
+            long startedAt,
+            Map<String, Object> metadata
+    ) {
+        listener.onPhase(step);
+        trace.add(ChatDto.ProcessingTraceItem.builder()
+                .step(step)
+                .status("COMPLETED")
+                .messageKey("chat.process." + step.toLowerCase(java.util.Locale.ROOT))
+                .elapsedMs(elapsedMs(startedAt))
+                .metadata(metadata == null ? Map.of() : Map.copyOf(metadata))
+                .build());
+    }
+
+    private Map<String, Object> retrievalTraceMetadata(RagDto.RetrievalResponse retrieval) {
+        if (retrieval == null || retrieval.results == null) {
+            return Map.of("evidenceCount", 0, "pageCount", 0);
+        }
+        long pageCount = retrieval.results.stream()
+                .map(chunk -> chunk.documentId + ":" + chunk.pageStart)
+                .distinct()
+                .count();
+        return Map.of(
+                "evidenceCount", retrieval.results.size(),
+                "pageCount", pageCount);
+    }
+
     private int elapsedMs(long startedAt) {
         long elapsed = (System.nanoTime() - startedAt) / 1_000_000L;
         return (int) Math.min(Integer.MAX_VALUE, Math.max(0L, elapsed));
     }
 
-    String buildLocalFallbackAnswer(List<RagDto.RetrievedChunk> chunks) {
+    String buildLocalFallbackAnswer(String question, List<RagDto.RetrievedChunk> chunks) {
         List<RagDto.RetrievedChunk> usable = chunks == null ? List.of() : chunks.stream()
                 .filter(chunk -> chunk != null && chunk.content != null && !chunk.content.isBlank())
-                .limit(3)
+                .limit(8)
                 .toList();
         if (usable.isEmpty()) {
             return OUT_OF_SCOPE_MESSAGE;
         }
 
         StringBuilder answer = new StringBuilder();
-        answer.append("### Thông tin tạm thời từ tài liệu\n\n")
-                .append("Dịch vụ tạo câu trả lời đang tạm thời chưa sẵn sàng. ")
-                .append("Dưới đây là các đoạn liên quan nhất đã được hệ thống tìm thấy:\n\n");
-        for (int index = 0; index < usable.size(); index++) {
-            answer.append("- ")
-                    .append(cleanFallbackText(usable.get(index).content))
-                    .append("\n");
+        answer.append("### Chưa thể tổng hợp câu trả lời\n\n")
+                .append("Dịch vụ AI đang tạm thời chưa sẵn sàng. ")
+                .append("Hệ thống đã tìm được các câu liên quan nhất để bạn đối chiếu:\n\n");
+        for (String excerpt : selectFallbackSentences(question, usable)) {
+            answer.append("- ").append(excerpt).append("\n");
         }
-        answer.append("\n> Đây là nội dung trích xuất, chưa phải câu trả lời đã được AI tổng hợp. ")
-                .append("Vui lòng đối chiếu các nguồn bên dưới.");
+        answer.append("\n> Đây là câu trích từ tài liệu, không phải câu trả lời do AI tổng hợp. ")
+                .append("Bạn có thể thử gửi lại khi dịch vụ AI sẵn sàng.");
         return answer.toString().trim();
+    }
+
+    private List<String> selectFallbackSentences(
+            String question,
+            List<RagDto.RetrievedChunk> chunks
+    ) {
+        Set<String> queryTerms = fallbackTerms(question);
+        List<Map.Entry<String, Double>> ranked = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (RagDto.RetrievedChunk chunk : chunks) {
+            String cleaned = cleanFallbackText(chunk.content);
+            for (String rawSentence : cleaned.split("(?<=[.!?])\\s+|\\R+")) {
+                String sentence = rawSentence.trim();
+                if (sentence.length() < 35 || sentence.length() > 280) continue;
+                String normalized = normalizeSearchText(sentence);
+                if (!seen.add(normalized) || normalized.contains("http")
+                        || normalized.contains("www")) continue;
+                Set<String> sentenceTerms = fallbackTerms(sentence);
+                long overlap = queryTerms.stream().filter(sentenceTerms::contains).count();
+                double score = queryTerms.isEmpty() ? 0.0 : (double) overlap / queryTerms.size();
+                ranked.add(Map.entry(sentence, score));
+            }
+        }
+        ranked.sort(Map.Entry.<String, Double>comparingByValue().reversed());
+        List<String> selected = ranked.stream()
+                .filter(item -> item.getValue() > 0.0)
+                .limit(5)
+                .map(Map.Entry::getKey)
+                .toList();
+        if (!selected.isEmpty()) return selected;
+        return chunks.stream()
+                .map(chunk -> cleanFallbackText(chunk.content))
+                .filter(text -> !text.isBlank())
+                .limit(2)
+                .toList();
+    }
+
+    private Set<String> fallbackTerms(String text) {
+        Set<String> stopWords = Set.of(
+                "cua", "cho", "la", "gi", "nao", "ve", "va", "co", "tai",
+                "sao", "vi", "the", "duoc", "nhung", "cac", "mot", "trong"
+        );
+        Set<String> terms = new LinkedHashSet<>();
+        for (String token : normalizeSearchText(text).split("[^a-z0-9đ]+")) {
+            if (token.length() > 1 && !stopWords.contains(token)) terms.add(token);
+        }
+        return terms;
+    }
+
+    private String normalizeSearchText(String text) {
+        String normalized = Normalizer.normalize(
+                text == null ? "" : text.toLowerCase(java.util.Locale.ROOT),
+                Normalizer.Form.NFD
+        ).replaceAll("\\p{M}+", "");
+        return normalized.replace('đ', 'd').replaceAll("\\s+", " ").trim();
     }
 
     private List<String> fallbackChunkIds(List<RagDto.RetrievedChunk> chunks) {
         if (chunks == null) return List.of();
         return chunks.stream()
                 .filter(chunk -> chunk != null && chunk.chunkId != null)
-                .limit(3)
+                .limit(8)
                 .map(chunk -> chunk.chunkId.toString())
                 .toList();
     }
@@ -1154,6 +1304,19 @@ public class ChatService {
         if (cleaned.isBlank()) {
             return cleaned;
         }
+        String profile = answerProfile == null
+                ? "factual"
+                : answerProfile.toLowerCase(java.util.Locale.ROOT);
+        boolean structuredDefinition = "definition".equals(profile)
+                && Pattern.compile("(?m)^\\s*\\d+[.)]\\s+\\*\\*[^*]+:\\*\\*")
+                        .matcher(cleaned)
+                        .find();
+        if (structuredDefinition) {
+            return cleaned;
+        }
+        if ("definition".equals(profile)) {
+            return formatDefinitionForDisplay(cleaned);
+        }
         String firstLine = cleaned.split("\\R", 2)[0].trim();
         if (Pattern.compile("(?m)^\\s*(?:[-*+]\\s+|\\|.+\\|\\s*$)")
                 .matcher(cleaned).find()
@@ -1172,45 +1335,68 @@ public class ChatService {
         }
         if (units.size() < 2) return cleaned;
 
-        String profile = answerProfile == null
-                ? "factual"
-                : answerProfile.toLowerCase(java.util.Locale.ROOT);
         if ("reasoning".equals(profile)) {
             StringBuilder formatted = new StringBuilder()
                     .append("**Trả lời trực tiếp:** ").append(units.get(0))
                     .append("\n\n**Các lý do chính:**\n");
-            units.stream().skip(1).limit(4)
-                    .forEach(item -> formatted.append("- ").append(item).append("\n"));
-            return formatted.append("\n**Kết luận:** ").append(units.get(0)).toString().trim();
-        }
-        if ("definition".equals(profile)) {
-            StringBuilder formatted = new StringBuilder()
-                    .append("**Định nghĩa:** ").append(units.get(0))
-                    .append("\n\n**Đặc điểm chính:**\n");
-            units.stream().skip(1).limit(4)
+            units.stream().skip(1)
                     .forEach(item -> formatted.append("- ").append(item).append("\n"));
             return formatted.toString().trim();
         }
         if ("procedure".equals(profile)) {
             StringBuilder formatted = new StringBuilder();
-            for (int index = 0; index < Math.min(units.size(), 7); index++) {
+            for (int index = 0; index < units.size(); index++) {
                 formatted.append(index + 1).append(". ").append(units.get(index)).append("\n");
             }
             return formatted.toString().trim();
         }
         if (Set.of("list", "summary", "comparison").contains(profile)) {
             StringBuilder formatted = new StringBuilder();
-            units.stream().limit(8)
-                    .forEach(item -> formatted.append("- ").append(item).append("\n"));
-            return formatted.toString().trim();
-        }
-        if ("factual".equals(profile) && units.size() >= 3) {
-            StringBuilder formatted = new StringBuilder(units.get(0)).append("\n\n");
-            units.stream().skip(1).limit(4)
+            units.stream()
                     .forEach(item -> formatted.append("- ").append(item).append("\n"));
             return formatted.toString().trim();
         }
         return cleaned;
+    }
+
+    private String formatDefinitionForDisplay(String answer) {
+        String plain = answer
+                .replaceAll("(?iu)\\*\\*(?:Định nghĩa|Definition|Đặc điểm chính|Key points):\\*\\*\\s*", "")
+                .replaceAll("(?m)^\\s*(?:[-*+]\\s+|\\d+[.)]\\s+)", "")
+                .replaceAll("(?iu)\\b([\\p{L}]+)\\s+và\\s+\\1\\b", "$1")
+                .trim();
+        List<String> units = new ArrayList<>();
+        for (String part : plain.split("(?<=[.!?])\\s+|\\R+")) {
+            String unit = part.trim();
+            if (unit.length() >= 8) units.add(unit);
+        }
+        if (units.isEmpty()) return answer;
+
+        StringBuilder paragraph = new StringBuilder();
+        Pattern continuation = Pattern.compile(
+                "^(?:và|về|đồng thời|trong đó|bao gồm|qua đó|từ đó)\\b",
+                Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE
+        );
+        for (String unit : units) {
+            boolean joinsPrevious = paragraph.length() > 0
+                    && (continuation.matcher(unit).find()
+                    || Character.isLowerCase(unit.codePointAt(0)));
+            if (joinsPrevious) {
+                while (paragraph.length() > 0
+                        && ".;:, ".indexOf(paragraph.charAt(paragraph.length() - 1)) >= 0) {
+                    paragraph.deleteCharAt(paragraph.length() - 1);
+                }
+                paragraph.append(", ").append(unit);
+            } else {
+                if (paragraph.length() > 0 && paragraph.charAt(paragraph.length() - 1) != ' ') {
+                    paragraph.append(' ');
+                }
+                paragraph.append(unit);
+            }
+            char last = paragraph.charAt(paragraph.length() - 1);
+            if (last != '.' && last != '!' && last != '?') paragraph.append('.');
+        }
+        return "**Định nghĩa:** " + paragraph;
     }
 
     private ChatMessage saveMessage(UUID sessionId, String role, String content) {
@@ -1294,7 +1480,8 @@ public class ChatService {
             if (availableCourses.isEmpty()) conflict("This semester has no available documents for chat.");
             List<UUID> courseIds = availableCourses.stream().map(Course::getCourseId).toList();
             List<UUID> documentIds = courseDocumentRepository
-                    .findByCourseIdInAndProcessingStatus(courseIds, "PROCESSED").stream()
+                    .findByCourseIdInAndProcessingStatusAndIndexingStatus(
+                            courseIds, "PROCESSED", "INDEXED").stream()
                     .map(CourseDocument::getDocumentId).distinct().toList();
             List<UUID> workspaceIds = availableCourses.stream()
                     .map(course -> learningScopeService.requireActiveWorkspace(course.getCourseId()).getWorkspaceId())
@@ -1313,7 +1500,8 @@ public class ChatService {
                     .map(CourseDocument::getDocumentId).toList();
         } else {
             documentIds = courseDocumentRepository
-                    .findByCourseIdAndProcessingStatusOrderByUploadedAtDesc(course.getCourseId(), "PROCESSED").stream()
+                    .findByCourseIdAndProcessingStatusAndIndexingStatusOrderByUploadedAtDesc(
+                            course.getCourseId(), "PROCESSED", "INDEXED").stream()
                     .map(CourseDocument::getDocumentId).distinct().toList();
         }
         if (documentIds.isEmpty()) conflict("This course has no processed document available for chat.");

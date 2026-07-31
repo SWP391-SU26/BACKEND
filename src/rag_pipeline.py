@@ -380,12 +380,19 @@ class RAGPipeline:
         self,
         items: list[tuple],
     ) -> list[tuple[str, list[RetrievedChunk]]]:
+        results, _telemetry = self.generate_rag_batch_with_telemetry(items)
+        return results
+
+    def generate_rag_batch_with_telemetry(
+        self,
+        items: list[tuple],
+    ):
         generator = self._get_base_generator()
         if not generator:
             raise RuntimeError(
                 self.base_generator_error or "Local base model is not ready."
             )
-        return generator.generate_batch(
+        return generator.generate_batch_with_telemetry(
             items,
             max_new_tokens=self.settings.benchmark_max_new_tokens,
             max_input_tokens=self.settings.benchmark_max_input_tokens,
@@ -397,17 +404,36 @@ class RAGPipeline:
         allowed_sources: list[list[str]] | None = None,
         strict: bool = True,
         allow_unverified: bool = False,
+        answer_depths: list[str] | None = None,
     ) -> list[str]:
+        answers, _telemetry = self.generate_without_retrieval_batch_with_telemetry(
+            questions,
+            allowed_sources=allowed_sources,
+            strict=strict,
+            allow_unverified=allow_unverified,
+            answer_depths=answer_depths,
+        )
+        return answers
+
+    def generate_without_retrieval_batch_with_telemetry(
+        self,
+        questions: list[str],
+        allowed_sources: list[list[str]] | None = None,
+        strict: bool = True,
+        allow_unverified: bool = False,
+        answer_depths: list[str] | None = None,
+    ):
         generator = self._get_local_generator()
         if not generator:
             raise RuntimeError(self.local_generator_error or "Local LoRA model is not ready.")
-        return generator.generate_without_context_batch(
+        return generator.generate_without_context_batch_with_telemetry(
             questions,
             allowed_sources=allowed_sources,
             strict=strict,
             allow_unverified=allow_unverified,
             max_new_tokens=self.settings.benchmark_max_new_tokens,
             max_input_tokens=self.settings.benchmark_max_input_tokens,
+            answer_depths=answer_depths,
         )
 
     def generate_without_retrieval(
@@ -445,6 +471,7 @@ class RAGPipeline:
         history: list[dict[str, str]] | None = None,
         standalone_query: str | None = None,
         answer_profile: str = "default",
+        answer_depth: str = "STANDARD",
         strict_prompt: bool = False,
         max_input_tokens: int | None = None,
         max_new_tokens: int | None = None,
@@ -461,6 +488,7 @@ class RAGPipeline:
             history=history or [],
             standalone_query=standalone_query,
             answer_profile=answer_profile,
+            answer_depth=answer_depth,
             strict_prompt=strict_prompt,
             max_input_tokens=max_input_tokens or self.settings.local_max_input_tokens,
             max_new_tokens=max_new_tokens or self.settings.local_max_new_tokens,
@@ -503,6 +531,35 @@ class RAGPipeline:
             generation_mode="BASE_RAG",
         )
 
+    def repair_grounding_answer_batch(
+        self,
+        items: list[tuple[str, list[str], list[RetrievedChunk]]],
+        *,
+        max_input_tokens: int,
+        max_new_tokens: int,
+    ):
+        generator = self._get_base_generator()
+        if not generator:
+            raise RuntimeError(
+                self.base_generator_error or "Local base model is not ready."
+            )
+        answers, telemetry = generator.repair_unsupported_sentences_batch(
+            items,
+            max_input_tokens=max_input_tokens,
+            max_new_tokens=max_new_tokens,
+        )
+        return (
+            [
+                self._generation_output(
+                    answer,
+                    provider_used="local-base-grounding-repair",
+                    generation_mode="BASE_RAG",
+                )
+                for answer in answers
+            ],
+            telemetry,
+        )
+
     def complete_grounded_answer(
         self,
         question: str,
@@ -510,6 +567,8 @@ class RAGPipeline:
         contexts: list[RetrievedChunk],
         *,
         answer_profile: str,
+        answer_depth: str = "STANDARD",
+        completeness_issues: list[str] | None = None,
         max_input_tokens: int | None = None,
         max_new_tokens: int | None = None,
         max_time_seconds: float | None = None,
@@ -524,6 +583,8 @@ class RAGPipeline:
             current_answer,
             contexts,
             answer_profile=answer_profile,
+            answer_depth=answer_depth,
+            completeness_issues=completeness_issues,
             max_input_tokens=max_input_tokens or self.settings.local_max_input_tokens,
             max_new_tokens=max_new_tokens or min(self.settings.local_max_new_tokens, 240),
             max_time_seconds=max_time_seconds,
@@ -532,6 +593,35 @@ class RAGPipeline:
             answer,
             provider_used="local-base-completeness-repair",
             generation_mode="BASE_RAG",
+        )
+
+    def complete_grounded_answer_batch(
+        self,
+        items,
+        *,
+        max_input_tokens: int,
+        max_new_tokens: int,
+    ):
+        generator = self._get_base_generator()
+        if not generator:
+            raise RuntimeError(
+                self.base_generator_error or "Local base model is not ready."
+            )
+        answers, telemetry = generator.complete_grounded_answer_batch(
+            items,
+            max_input_tokens=max_input_tokens,
+            max_new_tokens=max_new_tokens,
+        )
+        return (
+            [
+                self._generation_output(
+                    answer,
+                    provider_used="local-base-completeness-repair",
+                    generation_mode="BASE_RAG",
+                )
+                for answer in answers
+            ],
+            telemetry,
         )
 
     def rewrite_query(

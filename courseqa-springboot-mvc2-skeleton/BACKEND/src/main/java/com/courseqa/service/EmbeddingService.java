@@ -87,7 +87,6 @@ public class EmbeddingService {
         return RagDto.EmbeddingModelResponse.fromEntity(embeddingModelRepository.save(model));
     }
 
-    @Transactional
     public RagDto.PrepareEmbeddingsResponse prepareEmbeddings(RagDto.PrepareEmbeddingsRequest request) {
         if (request == null || (request.workspaceId == null && request.documentId == null)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "workspaceId or documentId is required.");
@@ -97,35 +96,54 @@ public class EmbeddingService {
         List<DocumentChunk> chunks = request.documentId != null
                 ? documentChunkRepository.findByDocumentIdOrderByChunkIndexAsc(request.documentId)
                 : documentChunkRepository.findByWorkspaceIdOrderByCreatedAtAsc(request.workspaceId);
+        if (request.documentId != null) {
+            List<DocumentChunk> canonical = chunks.stream()
+                    .filter(chunk -> "paragraph_700_120".equalsIgnoreCase(chunk.getChunkStrategy()))
+                    .toList();
+            if (!canonical.isEmpty()) {
+                chunks = canonical;
+            }
+        }
 
         int created = 0;
         int skipped = 0;
         List<DocumentChunk> missingChunks = new ArrayList<>();
+        java.util.Set<UUID> existingChunkIds = chunks.isEmpty()
+                ? java.util.Set.of()
+                : chunkEmbeddingRepository.findByEmbeddingModelIdAndChunkIdIn(
+                                model.getEmbeddingModelId(),
+                                chunks.stream().map(DocumentChunk::getChunkId).toList())
+                        .stream()
+                        .map(ChunkEmbedding::getChunkId)
+                        .collect(java.util.stream.Collectors.toSet());
         for (DocumentChunk chunk : chunks) {
-            boolean exists = chunkEmbeddingRepository
-                    .findByChunkIdAndEmbeddingModelId(chunk.getChunkId(), model.getEmbeddingModelId())
-                    .isPresent();
-            if (exists) {
+            if (existingChunkIds.contains(chunk.getChunkId())) {
                 skipped++;
                 continue;
             }
             missingChunks.add(chunk);
         }
 
-        List<double[]> preparedVectors = embedDocuments(missingChunks, model);
-        for (int index = 0; index < missingChunks.size(); index++) {
-            DocumentChunk chunk = missingChunks.get(index);
-            ChunkEmbedding embedding = new ChunkEmbedding();
-            embedding.setChunkId(chunk.getChunkId());
-            embedding.setEmbeddingModelId(model.getEmbeddingModelId());
-            String embeddingJson = toJsonVector(preparedVectors.get(index));
-            embedding.setEmbeddingJson(embeddingJson);
-            embedding.setEmbeddingCompressed(compressVectorJson(embeddingJson));
-            embedding.setDimension(model.getDimension());
-            embedding.setCreatedAt(LocalDateTime.now());
-            chunkEmbeddingRepository.save(embedding);
-            vectorCache.put(model.getEmbeddingModelId(), chunk.getChunkId(), preparedVectors.get(index));
-            created++;
+        for (int start = 0; start < missingChunks.size(); start += 32) {
+            int end = Math.min(start + 32, missingChunks.size());
+            List<DocumentChunk> batch = missingChunks.subList(start, end);
+            List<double[]> preparedVectors = embedDocuments(batch, model);
+            List<ChunkEmbedding> embeddings = new ArrayList<>(batch.size());
+            for (int index = 0; index < batch.size(); index++) {
+                DocumentChunk chunk = batch.get(index);
+                ChunkEmbedding embedding = new ChunkEmbedding();
+                embedding.setChunkId(chunk.getChunkId());
+                embedding.setEmbeddingModelId(model.getEmbeddingModelId());
+                String embeddingJson = toJsonVector(preparedVectors.get(index));
+                embedding.setEmbeddingJson(embeddingJson);
+                embedding.setEmbeddingCompressed(compressVectorJson(embeddingJson));
+                embedding.setDimension(model.getDimension());
+                embedding.setCreatedAt(LocalDateTime.now());
+                embeddings.add(embedding);
+                vectorCache.put(model.getEmbeddingModelId(), chunk.getChunkId(), preparedVectors.get(index));
+            }
+            chunkEmbeddingRepository.saveAllAndFlush(embeddings);
+            created += embeddings.size();
         }
 
         RagDto.PrepareEmbeddingsResponse response = new RagDto.PrepareEmbeddingsResponse();
@@ -173,6 +191,18 @@ public class EmbeddingService {
             return createHashedVector(text, model.getDimension());
         }
         return callSemanticEmbeddings(List.of(text), model).get(0);
+    }
+
+    public List<double[]> embedTexts(List<String> texts, EmbeddingModel model) {
+        if (texts == null || texts.isEmpty()) {
+            return List.of();
+        }
+        if (!usesSemanticProvider(model)) {
+            return texts.stream()
+                    .map(text -> createHashedVector(text, model.getDimension()))
+                    .toList();
+        }
+        return callSemanticEmbeddings(texts, model);
     }
 
     public double cosineVectorScore(double[] left, double[] right) {

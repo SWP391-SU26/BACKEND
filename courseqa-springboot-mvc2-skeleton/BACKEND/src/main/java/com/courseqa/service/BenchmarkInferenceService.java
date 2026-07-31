@@ -47,16 +47,26 @@ public class BenchmarkInferenceService {
             List<BenchmarkQuestion> questions,
             String requestedMode,
             boolean allowUnverifiedModel) {
-        if (questions == null || questions.isEmpty()) return List.of();
+        return answerBatchWithTelemetry(scope, questions, requestedMode, allowUnverifiedModel).answers();
+    }
+
+    public BenchmarkBatchResult answerBatchWithTelemetry(
+            BenchmarkScope scope,
+            List<BenchmarkQuestion> questions,
+            String requestedMode,
+            boolean allowUnverifiedModel) {
+        if (questions == null || questions.isEmpty()) {
+            return new BenchmarkBatchResult(List.of(), 0, 0, 0);
+        }
         return "FINE_TUNED".equalsIgnoreCase(requestedMode)
                 ? answerFineTuned(scope, questions, allowUnverifiedModel)
                 : answerRag(scope, questions);
     }
 
-    private List<ChatDto.AskResponse> answerRag(
+    private BenchmarkBatchResult answerRag(
             BenchmarkScope scope,
             List<BenchmarkQuestion> questions) {
-        List<RagPrepared> prepared = questions.stream().map(item -> prepareRag(scope, item)).toList();
+        List<RagPrepared> prepared = prepareRagBatch(scope, questions);
         PythonAiDto.GenerateBatchRequest request = new PythonAiDto.GenerateBatchRequest();
         request.strict = true;
         request.items = prepared.stream()
@@ -73,15 +83,20 @@ public class BenchmarkInferenceService {
                     batch.standalone_query = item.standaloneQuery();
                     batch.history = List.of();
                     batch.answer_profile = item.profile().answerProfile();
+                    batch.answer_depth = item.profile().answerDepth();
                     return batch;
                 })
                 .toList();
 
         Map<String, PythonAiDto.GenerateBatchResult> generatedById = new HashMap<>();
+        int effectiveBatchSize = request.items.isEmpty() ? 0 : request.items.size();
+        int oomFallbackCount = 0;
         if (!request.items.isEmpty()) {
             PythonAiDto.GenerateBatchResponse generated = aiClientService.callGenerateBatch(request);
             if (generated != null && generated.items != null) {
                 generated.items.forEach(item -> generatedById.put(item.request_id, item));
+                effectiveBatchSize = valueOrDefault(generated.effective_batch_size, request.items.size());
+                oomFallbackCount = valueOrDefault(generated.oom_fallback_count, 0);
             }
         }
 
@@ -111,10 +126,11 @@ public class BenchmarkInferenceService {
             applyMetadata(response, generated);
             responses.add(response);
         }
-        return responses;
+        return new BenchmarkBatchResult(
+                responses, questions.size(), effectiveBatchSize, oomFallbackCount);
     }
 
-    private List<ChatDto.AskResponse> answerFineTuned(
+    private BenchmarkBatchResult answerFineTuned(
             BenchmarkScope scope,
             List<BenchmarkQuestion> questions,
             boolean allowUnverifiedModel) {
@@ -126,41 +142,46 @@ public class BenchmarkInferenceService {
         PythonAiDto.ChatFinetunedBatchRequest request = new PythonAiDto.ChatFinetunedBatchRequest();
         request.strict = true;
         request.allow_unverified = allowUnverifiedModel;
+        request.benchmark_mode = true;
         request.items = questions.stream()
-                .filter(item -> scopeGuard.preCheck(item.question()).allowed())
                 .map(item -> {
                     PythonAiDto.ChatFinetunedBatchItem batch = new PythonAiDto.ChatFinetunedBatchItem();
                     batch.request_id = item.evaluationQuestionId().toString();
                     batch.question = item.question();
                     batch.document_filenames = filenames;
+                    batch.answer_depth = QuestionIntentAnalyzer.analyze(item.question())
+                            .answerDepth().name();
                     return batch;
                 })
                 .toList();
 
         Map<String, PythonAiDto.ChatFinetunedBatchResult> generatedById = new HashMap<>();
+        int effectiveBatchSize = request.items.isEmpty() ? 0 : request.items.size();
+        int oomFallbackCount = 0;
         if (!request.items.isEmpty()) {
             PythonAiDto.ChatFinetunedBatchResponse generated =
                     aiClientService.callChatFinetunedBatch(request);
             if (generated != null && generated.items != null) {
                 generated.items.forEach(item -> generatedById.put(item.request_id, item));
+                effectiveBatchSize = valueOrDefault(generated.effective_batch_size, request.items.size());
+                oomFallbackCount = valueOrDefault(generated.oom_fallback_count, 0);
             }
         }
 
         List<ChatDto.AskResponse> responses = new ArrayList<>();
         for (BenchmarkQuestion question : questions) {
-            QuestionScopeGuard.GuardDecision guard = scopeGuard.preCheck(question.question());
-            if (!guard.allowed()) {
-                responses.add(new ChatDto.AskResponse(
-                        null, null, null, guard.message(), "FINE_TUNED", "scope-guard",
-                        "SCOPE_GUARD", null, List.of()));
-                continue;
-            }
             String requestId = question.evaluationQuestionId().toString();
             PythonAiDto.ChatFinetunedBatchResult generated = generatedById.get(requestId);
             if (generated == null || generated.error != null
                     || generated.answer == null || generated.answer.isBlank()) {
                 throw new IllegalStateException(
                         "Fine-tuned batch did not return a valid answer for " + requestId);
+            }
+            if (Boolean.TRUE.equals(generated.is_out_of_scope)
+                    && !Boolean.TRUE.equals(generated.model_inference_executed)) {
+                throw new IllegalStateException(
+                        "Fine-tuned benchmark was rejected before model inference for " + requestId
+                                + ". Verify that the frozen dataset documents match the LoRA training sources.");
             }
             ChatDto.AskResponse response = new ChatDto.AskResponse(
                     null, null, null, generated.answer, "FINE_TUNED",
@@ -177,16 +198,61 @@ public class BenchmarkInferenceService {
             response.qualityGatePassed = generated.quality_gate_passed;
             responses.add(response);
         }
-        return responses;
+        if (!questions.isEmpty() && effectiveBatchSize <= 0) {
+            throw new IllegalStateException(
+                    "Fine-tuned benchmark did not execute model inference (effective batch size is 0).");
+        }
+        return new BenchmarkBatchResult(
+                responses, questions.size(), effectiveBatchSize, oomFallbackCount);
     }
 
-    private RagPrepared prepareRag(BenchmarkScope scope, BenchmarkQuestion question) {
-        QuestionScopeGuard.GuardDecision guard = scopeGuard.preCheck(question.question());
-        RetrievalProfile profile = profile(QuestionIntentAnalyzer.analyze(question.question()));
-        if (!guard.allowed()) {
-            return new RagPrepared(question, question.question(), profile, null, guard);
+    private List<RagPrepared> prepareRagBatch(
+            BenchmarkScope scope,
+            List<BenchmarkQuestion> questions) {
+        List<RetrievalProfile> profiles = questions.stream()
+                .map(question -> profile(QuestionIntentAnalyzer.analyze(question.question())))
+                .toList();
+        List<QuestionScopeGuard.GuardDecision> guards = questions.stream()
+                .map(question -> scopeGuard.preCheck(question.question()))
+                .toList();
+        List<Integer> allowedIndices = new ArrayList<>();
+        List<RagDto.RetrievalRequest> initialRequests = new ArrayList<>();
+        for (int index = 0; index < questions.size(); index++) {
+            if (!guards.get(index).allowed()) continue;
+            allowedIndices.add(index);
+            initialRequests.add(retrievalRequest(
+                    scope,
+                    questions.get(index).question(),
+                    profiles.get(index).initialTopK()));
         }
-        RagDto.RetrievalResponse first = retrieve(scope, question.question(), profile.initialTopK());
+        List<RagDto.RetrievalResponse> initialResponses =
+                retrievalService.retrieveBatch(initialRequests);
+        Map<Integer, RagDto.RetrievalResponse> firstByIndex = new HashMap<>();
+        for (int index = 0; index < allowedIndices.size(); index++) {
+            firstByIndex.put(allowedIndices.get(index), initialResponses.get(index));
+        }
+        List<RagPrepared> prepared = new ArrayList<>();
+        for (int index = 0; index < questions.size(); index++) {
+            BenchmarkQuestion question = questions.get(index);
+            QuestionScopeGuard.GuardDecision guard = guards.get(index);
+            RetrievalProfile profile = profiles.get(index);
+            if (!guard.allowed()) {
+                prepared.add(new RagPrepared(
+                        question, question.question(), profile, null, guard));
+                continue;
+            }
+            prepared.add(prepareRag(
+                    scope, question, profile, firstByIndex.get(index), guard));
+        }
+        return prepared;
+    }
+
+    private RagPrepared prepareRag(
+            BenchmarkScope scope,
+            BenchmarkQuestion question,
+            RetrievalProfile profile,
+            RagDto.RetrievalResponse first,
+            QuestionScopeGuard.GuardDecision guard) {
         RagDto.RetrievalResponse retrieval = limit(first, profile.finalTopK());
         String standalone = question.question();
         if (weak(first)) {
@@ -201,6 +267,11 @@ public class BenchmarkInferenceService {
 
     private RagDto.RetrievalResponse retrieve(
             BenchmarkScope scope, String query, int topK) {
+        return retrievalService.retrieve(retrievalRequest(scope, query, topK));
+    }
+
+    private RagDto.RetrievalRequest retrievalRequest(
+            BenchmarkScope scope, String query, int topK) {
         RagDto.RetrievalRequest request = new RagDto.RetrievalRequest();
         request.chatSessionId = null;
         request.userMessageId = null;
@@ -213,7 +284,7 @@ public class BenchmarkInferenceService {
         request.embeddingModelId = scope.embeddingModelId();
         request.topK = topK;
         request.similarityThreshold = retrievalService.getConfiguredSimilarityThreshold();
-        return retrievalService.retrieve(request);
+        return request;
     }
 
     private String rewrite(String question, String intent, RagDto.RetrievalResponse retrieval) {
@@ -351,15 +422,20 @@ public class BenchmarkInferenceService {
     }
 
     private RetrievalProfile profile(QuestionIntentAnalyzer.QueryIntent intent) {
-        if (intent.summary() || intent.hasSection()) return new RetrievalProfile(20, 12, "summary");
+        String depth = intent.answerDepth().name();
+        if (intent.summary() || intent.hasSection()) return new RetrievalProfile(20, 12, "summary", depth);
         return switch (intent.form()) {
-            case COMPARISON -> new RetrievalProfile(12, 8, "comparison");
-            case LIST -> new RetrievalProfile(12, 8, "list");
-            case REASONING -> new RetrievalProfile(12, 8, "reasoning");
-            case PROCEDURE -> new RetrievalProfile(12, 8, "procedure");
-            case DEFINITION -> new RetrievalProfile(8, 5, "definition");
-            default -> new RetrievalProfile(8, 5, "factual");
+            case COMPARISON -> new RetrievalProfile(12, 8, "comparison", depth);
+            case LIST -> new RetrievalProfile(12, 8, "list", depth);
+            case REASONING -> new RetrievalProfile(12, 8, "reasoning", depth);
+            case PROCEDURE -> new RetrievalProfile(12, 8, "procedure", depth);
+            case DEFINITION -> new RetrievalProfile(8, 5, "definition", depth);
+            default -> new RetrievalProfile(8, 5, "factual", depth);
         };
+    }
+
+    private int valueOrDefault(Integer value, int fallback) {
+        return value == null ? fallback : value;
     }
 
     private String normalize(String value) {
@@ -380,7 +456,17 @@ public class BenchmarkInferenceService {
 
     public record BenchmarkQuestion(UUID evaluationQuestionId, String question) { }
 
-    private record RetrievalProfile(int initialTopK, int finalTopK, String answerProfile) { }
+    public record BenchmarkBatchResult(
+            List<ChatDto.AskResponse> answers,
+            int requestedBatchSize,
+            int effectiveBatchSize,
+            int oomFallbackCount) { }
+
+    private record RetrievalProfile(
+            int initialTopK,
+            int finalTopK,
+            String answerProfile,
+            String answerDepth) { }
 
     private record RagPrepared(
             BenchmarkQuestion question,

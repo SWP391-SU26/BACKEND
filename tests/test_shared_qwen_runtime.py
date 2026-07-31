@@ -3,7 +3,12 @@ from types import MethodType
 
 import pytest
 
-from src.shared_qwen import ANSWER_PROFILE_RULES, SharedQwenRuntime
+from src.shared_qwen import (
+    ANSWER_DEPTH_RULES,
+    ANSWER_PROFILE_RULES,
+    BatchTelemetry,
+    SharedQwenRuntime,
+)
 from src.storage import RetrievedChunk
 
 
@@ -19,6 +24,7 @@ def test_batch_uses_standalone_query_and_answer_profile() -> None:
         history,
         standalone_query,
         answer_profile,
+        answer_depth,
         strict_prompt,
         max_input_tokens,
     ):
@@ -27,14 +33,18 @@ def test_batch_uses_standalone_query_and_answer_profile() -> None:
             "history": history,
             "standalone_query": standalone_query,
             "answer_profile": answer_profile,
+            "answer_depth": answer_depth,
             "strict_prompt": strict_prompt,
             "max_input_tokens": max_input_tokens,
         })
         return [{"role": "user", "content": question}], contexts
 
     runtime._build_rag_messages = MethodType(build_messages, runtime)
-    runtime._run_messages = MethodType(
-        lambda self, messages, **kwargs: f"answer:{messages[0]['content']}",
+    runtime._run_messages_batch = MethodType(
+        lambda self, messages, **kwargs: (
+            [f"answer:{item[0]['content']}" for item in messages],
+            BatchTelemetry(len(messages), len(messages), 0),
+        ),
         runtime,
     )
 
@@ -50,8 +60,9 @@ def test_batch_uses_standalone_query_and_answer_profile() -> None:
         "history": [],
         "standalone_query": "Vai trò của vật chất là gì?",
         "answer_profile": "reasoning",
+        "answer_depth": "STANDARD",
         "strict_prompt": True,
-        "max_input_tokens": 1536,
+        "max_input_tokens": 1280,
     }]
 
 
@@ -123,30 +134,186 @@ def test_reasoning_prompt_requires_a_complete_study_answer() -> None:
         history=[],
         standalone_query=None,
         answer_profile="reasoning",
+        answer_depth="STANDARD",
         strict_prompt=False,
         max_input_tokens=10_000,
     )
 
     assert included == [context]
-    assert "**Trả lời trực tiếp:**" in messages[0]["content"]
-    assert "**Các lý do chính:**" in messages[0]["content"]
-    assert "**Kết luận:**" in messages[0]["content"]
-    assert "2-4 gạch đầu dòng" in messages[0]["content"]
+    assert "Mức độ STANDARD" in messages[0]["content"]
+    assert "các lý do khác nhau" in messages[0]["content"]
     assert "không bắt đầu hoặc kết thúc bằng mẩu câu bị cắt" in messages[0]["content"]
     assert "bỏ bối cảnh lịch sử" in messages[0]["content"]
     assert "không tự viết [1], [2]" in messages[0]["content"]
 
 
 @pytest.mark.parametrize(
-    ("profile", "expected"),
-    [
-        ("definition", "**Định nghĩa:**"),
-        ("list", "danh sách Markdown"),
-        ("procedure", "đánh số"),
-        ("comparison", "bảng Markdown"),
-        ("summary", "5-8 gạch đầu dòng"),
-        ("reasoning", "**Kết luận:**"),
-    ],
+    "profile",
+    ["definition", "list", "procedure", "comparison", "summary", "reasoning"],
 )
-def test_answer_profiles_request_adaptive_markdown(profile: str, expected: str) -> None:
-    assert expected in ANSWER_PROFILE_RULES[profile]
+def test_answer_profiles_only_control_structure(profile: str) -> None:
+    assert ANSWER_PROFILE_RULES[profile]
+    assert "khoảng" not in ANSWER_PROFILE_RULES[profile]
+
+
+def test_answer_depth_rules_have_distinct_targets() -> None:
+    assert "40-100" in ANSWER_DEPTH_RULES["SHORT"]
+    assert "140-240" in ANSWER_DEPTH_RULES["STANDARD"]
+    assert "280-450" in ANSWER_DEPTH_RULES["DEEP"]
+
+
+def test_oom_fallback_preserves_answer_order() -> None:
+    runtime = SharedQwenRuntime.__new__(SharedQwenRuntime)
+    runtime._clear_cuda_cache = MethodType(lambda self: None, runtime)
+    calls = []
+
+    def generate_once(self, messages, **_kwargs):
+        calls.append(len(messages))
+        if len(messages) > 2:
+            raise RuntimeError("CUDA out of memory")
+        return [item[0]["content"] for item in messages]
+
+    runtime._generate_messages_once = MethodType(generate_once, runtime)
+    messages = [
+        [{"role": "user", "content": f"q{index}"}]
+        for index in range(4)
+    ]
+
+    answers, effective_size, fallbacks = runtime._generate_with_oom_fallback(
+        messages,
+        use_adapter=False,
+        max_input_tokens=1024,
+        max_new_tokens=128,
+        max_time_seconds=None,
+    )
+
+    assert answers == ["q0", "q1", "q2", "q3"]
+    assert effective_size == 2
+    assert fallbacks == 1
+    assert calls == [4, 2, 2]
+
+
+def test_depth_groups_restore_original_order() -> None:
+    runtime = SharedQwenRuntime.__new__(SharedQwenRuntime)
+
+    def build_messages(self, question, contexts, **_kwargs):
+        return [{"role": "user", "content": question}], contexts
+
+    runtime._build_rag_messages = MethodType(build_messages, runtime)
+    runtime._run_messages_batch = MethodType(
+        lambda self, messages, **_kwargs: (
+            [f"answer:{item[0]['content']}" for item in messages],
+            BatchTelemetry(len(messages), len(messages), 0),
+        ),
+        runtime,
+    )
+
+    results, telemetry = runtime.generate_batch_with_telemetry(
+        [
+            ("short", ["c1"], "short", "definition", "SHORT"),
+            ("deep", ["c2"], "deep", "summary", "DEEP"),
+            ("standard", ["c3"], "standard", "factual", "STANDARD"),
+        ],
+        max_new_tokens=192,
+        max_input_tokens=1536,
+    )
+
+    assert [answer for answer, _contexts in results] == [
+        "answer:short",
+        "answer:deep",
+        "answer:standard",
+    ]
+    assert telemetry.requested_batch_size == 3
+
+
+def test_grounding_repairs_are_generated_in_one_batch() -> None:
+    runtime = SharedQwenRuntime.__new__(SharedQwenRuntime)
+    captured = []
+    runtime._run_messages_batch = MethodType(
+        lambda self, messages, **_kwargs: (
+            captured.extend(messages) or [
+                f"repair-{index}" for index, _messages in enumerate(messages)
+            ],
+            BatchTelemetry(len(messages), len(messages), 0),
+        ),
+        runtime,
+    )
+    context = RetrievedChunk(
+        chunk_id="chunk-1",
+        document_id="document-1",
+        filename="lesson.pdf",
+        subject="Subject",
+        chapter="Chapter",
+        page=2,
+        content="Evidence from the uploaded lesson.",
+        score=0.9,
+        semantic_score=0.9,
+        lexical_score=0.8,
+    )
+
+    answers, telemetry = runtime.repair_unsupported_sentences_batch(
+        [
+            ("Question 1", ["Unsupported 1"], [context]),
+            ("Question 2", ["Unsupported 2"], [context]),
+        ],
+        max_input_tokens=1536,
+        max_new_tokens=192,
+    )
+
+    assert answers == ["repair-0", "repair-1"]
+    assert len(captured) == 2
+    assert telemetry == BatchTelemetry(2, 2, 0)
+
+
+def test_incomplete_answers_are_rewritten_in_one_batch() -> None:
+    runtime = SharedQwenRuntime.__new__(SharedQwenRuntime)
+    captured = []
+    runtime._run_messages_batch = MethodType(
+        lambda self, messages, **_kwargs: (
+            captured.extend(messages) or [
+                f"complete-{index}" for index, _messages in enumerate(messages)
+            ],
+            BatchTelemetry(len(messages), len(messages), 0),
+        ),
+        runtime,
+    )
+    context = RetrievedChunk(
+        chunk_id="chunk-1",
+        document_id="document-1",
+        filename="manual.pdf",
+        subject="Subject",
+        chapter="Chapter",
+        page=4,
+        content="An explicit definition with every required clause.",
+        score=0.9,
+        semantic_score=0.9,
+        lexical_score=0.8,
+    )
+
+    answers, telemetry = runtime.complete_grounded_answer_batch(
+        [
+            (
+                "Khái niệm này là gì?",
+                "Khái niệm này là",
+                [context],
+                "definition",
+                "SHORT",
+                ["Câu cuối chưa kết thúc hoàn chỉnh."],
+            ),
+            (
+                "Nêu quy trình.",
+                "1. Bước đầu",
+                [context],
+                "procedure",
+                "STANDARD",
+                ["Danh sách có một mục đang dang dở."],
+            ),
+        ],
+        max_input_tokens=1536,
+        max_new_tokens=160,
+    )
+
+    assert answers == ["complete-0", "complete-1"]
+    assert len(captured) == 2
+    assert "preserve every essential clause" in captured[0][0]["content"]
+    assert telemetry == BatchTelemetry(2, 2, 0)

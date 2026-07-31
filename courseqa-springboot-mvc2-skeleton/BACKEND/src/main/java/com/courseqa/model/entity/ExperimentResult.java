@@ -70,6 +70,15 @@ public class ExperimentResult {
     @Column(name = "metric_standard")
     private String metricStandard;
 
+    @Column(name = "ragas_status")
+    private String ragasStatus;
+
+    @Column(name = "ragas_error", columnDefinition = "NVARCHAR(MAX)")
+    private String ragasError;
+
+    @Column(name = "ragas_evaluated_at")
+    private LocalDateTime ragasEvaluatedAt;
+
     @Column(name = "judge_model")
     private String judgeModel;
 
@@ -194,6 +203,15 @@ public class ExperimentResult {
 
     public String getMetricStandard() { return metricStandard; }
     public void setMetricStandard(String metricStandard) { this.metricStandard = metricStandard; }
+
+    public String getRagasStatus() { return ragasStatus; }
+    public void setRagasStatus(String ragasStatus) { this.ragasStatus = ragasStatus; }
+
+    public String getRagasError() { return ragasError; }
+    public void setRagasError(String ragasError) { this.ragasError = ragasError; }
+
+    public LocalDateTime getRagasEvaluatedAt() { return ragasEvaluatedAt; }
+    public void setRagasEvaluatedAt(LocalDateTime ragasEvaluatedAt) { this.ragasEvaluatedAt = ragasEvaluatedAt; }
 
     public String getJudgeModel() { return judgeModel; }
     public void setJudgeModel(String judgeModel) { this.judgeModel = judgeModel; }

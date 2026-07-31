@@ -25,6 +25,7 @@ import com.courseqa.repository.EvaluationQuestionRepository;
 import com.courseqa.repository.ExperimentRepository;
 import com.courseqa.repository.ExperimentResultRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -176,15 +177,67 @@ class EvaluationServiceFlow5Test {
     }
 
     @Test
+    void secondExperimentOfSameTypeCannotStartWhileSiblingIsRunning() {
+        UUID datasetId = UUID.randomUUID();
+        Experiment pending = experiment(UUID.randomUUID(), datasetId, "RAG");
+        pending.setStatus("PENDING");
+        Experiment running = experiment(UUID.randomUUID(), datasetId, "RAG");
+        running.setStatus("RUNNING");
+        when(experiments.findById(pending.getExperimentId())).thenReturn(Optional.of(pending));
+        when(experiments.findByDatasetIdOrderByCreatedAtDesc(datasetId))
+                .thenReturn(List.of(running, pending));
+
+        ResponseStatusException error = assertThrows(
+                ResponseStatusException.class,
+                () -> service.startBenchmark(pending.getExperimentId(), false));
+
+        assertEquals(409, error.getStatusCode().value());
+        assertTrue(error.getReason().contains("already queued or running"));
+    }
+
+    @Test
+    void completedExperimentCannotRerunWhileRagasIsStillRunning() {
+        UUID datasetId = UUID.randomUUID();
+        Experiment experiment = experiment(UUID.randomUUID(), datasetId, "FINE_TUNED");
+        experiment.setStatus("COMPLETED");
+        experiment.setRagasStatus("RUNNING");
+        when(experiments.findById(experiment.getExperimentId())).thenReturn(Optional.of(experiment));
+
+        ResponseStatusException error = assertThrows(
+                ResponseStatusException.class,
+                () -> service.startBenchmark(experiment.getExperimentId(), true));
+
+        assertEquals(409, error.getStatusCode().value());
+        assertTrue(error.getReason().contains("RAGAS is still running"));
+    }
+
+    @Test
+    void staleRunningExperimentIsMarkedFailedInsteadOfBlockingForever() {
+        Experiment stale = experiment(UUID.randomUUID(), UUID.randomUUID(), "RAG");
+        stale.setStatus("RUNNING");
+        stale.setUpdatedAt(LocalDateTime.now().minusMinutes(31));
+        when(experiments.findAll()).thenReturn(List.of(stale));
+        when(experiments.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<Experiment> listed = service.listExperiments();
+
+        assertEquals("FAILED", listed.get(0).getStatus());
+        assertTrue(listed.get(0).getErrorMessage().contains("interrupted"));
+        verify(experiments).save(stale);
+    }
+
+    @Test
     void benchmarkProfileLocksFullBatchConfiguration() throws Exception {
         String config = ReflectionTestUtils.invokeMethod(service, "withBenchmarkProfile", "{}", 50);
         var parsed = new ObjectMapper().readTree(config).path("benchmarkProfile");
 
-        assertEquals("qwen1.5b-sequential-v2", parsed.path("version").asText());
+        assertEquals("qwen1.5b-batched-v3", parsed.path("version").asText());
         assertEquals(50, parsed.path("questionCount").asInt());
-        assertEquals(1, parsed.path("batchSize").asInt());
-        assertEquals(1536, parsed.path("maxInputTokens").asInt());
-        assertEquals(192, parsed.path("maxNewTokens").asInt());
+        assertEquals(4, parsed.path("batchSize").asInt());
+        assertEquals(1, parsed.path("repetitions").asInt());
+        assertEquals(1024, parsed.path("tokenBudgets").path("SHORT").path("maxInputTokens").asInt());
+        assertEquals(160, parsed.path("tokenBudgets").path("STANDARD").path("maxNewTokens").asInt());
+        assertEquals(192, parsed.path("tokenBudgets").path("DEEP").path("maxNewTokens").asInt());
     }
 
     @Test
@@ -267,6 +320,8 @@ class EvaluationServiceFlow5Test {
         value.setExperimentType(type);
         value.setDatasetChecksum("checksum");
         value.setStatus("COMPLETED");
+        value.setRagasStatus("COMPLETED");
+        value.setRagasProgress(100);
         value.setSuccessCount(1);
         value.setFailureCount(0);
         value.setConfigJson("{\"benchmarkProfile\":{\"version\":\"full-batch-v1\"}}");
@@ -283,6 +338,8 @@ class EvaluationServiceFlow5Test {
         value.setAnswerCorrectness(correctness);
         value.setAnswerRelevance(correctness);
         value.setSemanticSimilarity(correctness);
+        value.setMetricStandard("RAGAS_OFFICIAL");
+        value.setRagasStatus("COMPLETED");
         value.setLatencyMs(1000);
         return value;
     }

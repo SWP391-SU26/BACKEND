@@ -51,9 +51,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class DocumentService {
-    private static final int CHUNK_SIZE = 260;
-    private static final int CHUNK_OVERLAP = 50;
-    private static final String CHUNK_STRATEGY = "paragraph_260_50";
+    private static final int CHUNK_SIZE = 700;
+    private static final int CHUNK_OVERLAP = 120;
+    private static final String CHUNK_STRATEGY = "paragraph_700_120";
     private static final long PERSONAL_FILE_LIMIT = 20L * 1024 * 1024;
     private static final long PERSONAL_STORAGE_LIMIT = 200L * 1024 * 1024;
     private static final long PERSONAL_DOCUMENT_LIMIT = 20;
@@ -232,6 +232,7 @@ public class DocumentService {
             }
             document.setFileSizeBytes(file.getSize());
             document.setProcessingStatus("PROCESSING");
+            document.setIndexingStatus("PENDING");
             document.setDocumentScope(request.courseId == null ? "PERSONAL" : "COURSE");
             document.setReviewStatus(request.courseId == null ? "NOT_SUBMITTED" : "APPROVED");
             document.setLanguage("und");
@@ -455,6 +456,9 @@ public class DocumentService {
         jdbcTemplate.update("DELETE FROM retrieval_results WHERE document_id = ?", documentId);
         jdbcTemplate.update("DELETE FROM chat_session_documents WHERE document_id = ?", documentId);
         jdbcTemplate.update("UPDATE saved_notes SET document_id = NULL WHERE document_id = ?", documentId);
+        jdbcTemplate.update("UPDATE evaluation_questions SET expected_document_id = NULL WHERE expected_document_id = ?",
+                documentId);
+        jdbcTemplate.update("DELETE FROM evaluation_dataset_documents WHERE document_id = ?", documentId);
 
         documentChapterRangeRepository.findByDocumentIdOrderByPageStartAsc(documentId).stream()
                 .map(com.courseqa.model.entity.DocumentChapterRange::getChapterId).distinct()
@@ -468,7 +472,8 @@ public class DocumentService {
         courseDocumentRepository.delete(document);
         courseDocumentRepository.flush();
 
-        if (courseId != null && !courseDocumentRepository.existsByCourseIdAndProcessingStatus(courseId, "PROCESSED")) {
+        if (courseId != null && !courseDocumentRepository
+                .existsByCourseIdAndProcessingStatusAndIndexingStatus(courseId, "PROCESSED", "INDEXED")) {
             courseRepository.findById(courseId).ifPresent(course -> {
                 course.setIsActive(false);
                 course.setUpdatedAt(LocalDateTime.now());
@@ -676,11 +681,15 @@ public class DocumentService {
             document.setTotalPages(pages.size());
             document.setLanguage(detectDocumentLanguage(extractedPages));
             document.setProcessingStatus(chunks.isEmpty() ? "NO_TEXT" : "PROCESSED");
+            document.setIndexingStatus(chunks.isEmpty() ? "FAILED" : "PENDING");
+            document.setIndexError(chunks.isEmpty() ? "No text chunks were extracted." : null);
             document.setErrorMessage(null);
             document.setUpdatedAt(LocalDateTime.now());
             courseDocumentRepository.save(document);
         } catch (Exception exception) {
             document.setProcessingStatus("FAILED");
+            document.setIndexingStatus("FAILED");
+            document.setIndexError(exception.getMessage());
             document.setErrorMessage(exception.getMessage());
             document.setUpdatedAt(LocalDateTime.now());
             courseDocumentRepository.save(document);
@@ -768,6 +777,33 @@ public class DocumentService {
         }
 
         return documentChunkRepository.saveAll(chunks);
+    }
+
+    @Transactional
+    public List<DocumentChunk> ensureCanonicalChunks(UUID documentId) {
+        CourseDocument document = courseDocumentRepository.findById(documentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
+        List<DocumentChunk> existing = documentChunkRepository.findByDocumentIdOrderByChunkIndexAsc(documentId);
+        List<DocumentChunk> canonical = existing.stream()
+                .filter(chunk -> CHUNK_STRATEGY.equalsIgnoreCase(chunk.getChunkStrategy()))
+                .toList();
+        if (!canonical.isEmpty()) {
+            return canonical;
+        }
+        List<DocumentPage> pages = documentPageRepository.findByDocumentIdOrderByPageNumberAsc(documentId);
+        if (pages.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Document has no extracted pages to reindex.");
+        }
+        return saveChunks(document, pages);
+    }
+
+    public DocumentDto.DocumentResponse requireReindexAccess(UUID documentId, UUID requesterId) {
+        CourseDocument document = courseDocumentRepository.findById(documentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found."));
+        if (!isAdmin(requesterId) && !requesterId.equals(document.getUploadedBy())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You cannot reindex this document.");
+        }
+        return toResponse(document, requesterId);
     }
 
     private DocumentChunk newChunk(
@@ -968,7 +1004,8 @@ public class DocumentService {
                 .filter(course -> semesterWorkspaceRepository.findById(course.getSemesterWorkspaceId())
                         .map(semester -> "ACTIVE".equals(semester.getStatus()))
                         .orElse(false))
-                .filter(course -> courseDocumentRepository.existsByCourseIdAndProcessingStatus(courseId, "PROCESSED"))
+                .filter(course -> courseDocumentRepository
+                        .existsByCourseIdAndProcessingStatusAndIndexingStatus(courseId, "PROCESSED", "INDEXED"))
                 .isPresent();
     }
 

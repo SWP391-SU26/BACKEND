@@ -19,6 +19,12 @@ public interface CourseDocumentRepository extends JpaRepository<CourseDocument, 
     List<CourseDocument> findByCourseIdAndProcessingStatusOrderByUploadedAtDesc(UUID courseId, String processingStatus);
     List<CourseDocument> findByCourseIdInAndProcessingStatus(List<UUID> courseIds, String processingStatus);
     boolean existsByCourseIdAndProcessingStatus(UUID courseId, String processingStatus);
+    List<CourseDocument> findByCourseIdAndProcessingStatusAndIndexingStatusOrderByUploadedAtDesc(
+            UUID courseId, String processingStatus, String indexingStatus);
+    List<CourseDocument> findByCourseIdInAndProcessingStatusAndIndexingStatus(
+            List<UUID> courseIds, String processingStatus, String indexingStatus);
+    boolean existsByCourseIdAndProcessingStatusAndIndexingStatus(
+            UUID courseId, String processingStatus, String indexingStatus);
     List<CourseDocument> findByReviewStatusOrderBySubmittedAtAsc(String reviewStatus);
     long countByUploadedBy(UUID uploadedBy);
     long countByProcessingStatus(String processingStatus);

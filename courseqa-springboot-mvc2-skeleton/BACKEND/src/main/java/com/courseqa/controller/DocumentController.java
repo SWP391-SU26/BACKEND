@@ -74,6 +74,19 @@ public class DocumentController {
         return ApiResponse.ok(response);
     }
 
+    @PostMapping("/{documentId}/reindex")
+    public ApiResponse<DocumentDto.DocumentResponse> reindexDocument(
+            @PathVariable UUID documentId,
+            @AuthenticationPrincipal JwtPrincipal principal
+    ) {
+        DocumentDto.DocumentResponse response =
+                documentService.requireReindexAccess(documentId, principal.userId());
+        documentEmbeddingIndexService.prepareDocument(documentId);
+        response.indexingStatus = "EMBEDDING";
+        response.indexError = null;
+        return ApiResponse.ok(response);
+    }
+
     @GetMapping("/mine")
     public ApiResponse<List<DocumentDto.DocumentResponse>> getMyDocuments(
             @AuthenticationPrincipal JwtPrincipal principal

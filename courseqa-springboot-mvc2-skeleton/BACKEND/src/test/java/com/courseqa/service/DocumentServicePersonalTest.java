@@ -3,6 +3,8 @@ package com.courseqa.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -42,6 +44,7 @@ class DocumentServicePersonalTest {
     private final UserRepository users = mock(UserRepository.class);
     private final UserRoleRepository roles = mock(UserRoleRepository.class);
     private final SemesterWorkspaceRepository semesters = mock(SemesterWorkspaceRepository.class);
+    private final JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
     private DocumentService service;
 
     @BeforeEach
@@ -58,7 +61,7 @@ class DocumentServicePersonalTest {
                 semesters,
                 mock(DocumentChapterRangeRepository.class),
                 mock(DocumentChapterSuggestionRepository.class),
-                mock(JdbcTemplate.class),
+                jdbcTemplate,
                 mock(PersonalWorkspaceService.class),
                 "uploads",
                 "",
@@ -152,5 +155,34 @@ class DocumentServicePersonalTest {
         assertEquals(uploadedAt, response.get(0).uploadedAt);
         assertEquals("Nguyen Van A", response.get(0).uploaderName);
         verify(users).findAllById(any());
+    }
+
+    @Test
+    void adminDeleteDetachesDocumentFromEvaluationDatasetsBeforeRemovingIt() {
+        UUID adminId = UUID.randomUUID();
+        UUID documentId = UUID.randomUUID();
+
+        CourseDocument document = new CourseDocument();
+        document.setDocumentId(documentId);
+        document.setStorageProvider("LOCAL");
+        document.setFilePath("uploads/deleted-document.pdf");
+
+        UserRole adminRole = new UserRole();
+        adminRole.setRoleName("ADMIN");
+
+        when(users.existsById(adminId)).thenReturn(true);
+        when(documents.findById(documentId)).thenReturn(Optional.of(document));
+        when(roles.findByUserIdAndIsActiveTrue(adminId)).thenReturn(List.of(adminRole));
+
+        service.deleteDocument(documentId, adminId);
+
+        verify(jdbcTemplate).update(
+                contains("UPDATE evaluation_questions SET expected_document_id = NULL"),
+                eq(documentId));
+        verify(jdbcTemplate).update(
+                contains("DELETE FROM evaluation_dataset_documents"),
+                eq(documentId));
+        verify(documents).delete(document);
+        verify(documents).flush();
     }
 }

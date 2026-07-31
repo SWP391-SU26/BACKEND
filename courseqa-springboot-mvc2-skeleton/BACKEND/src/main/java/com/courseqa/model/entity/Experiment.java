@@ -54,6 +54,33 @@ public class Experiment {
     @Column(name = "progress")
     private Integer progress;
 
+    @Column(name = "ragas_status")
+    private String ragasStatus;
+
+    @Column(name = "ragas_progress")
+    private Integer ragasProgress;
+
+    @Column(name = "ragas_error", columnDefinition = "NVARCHAR(MAX)")
+    private String ragasError;
+
+    @Column(name = "ragas_started_at")
+    private LocalDateTime ragasStartedAt;
+
+    @Column(name = "ragas_completed_at")
+    private LocalDateTime ragasCompletedAt;
+
+    @Column(name = "local_duration_ms")
+    private Long localDurationMs;
+
+    @Column(name = "requested_batch_size")
+    private Integer requestedBatchSize;
+
+    @Column(name = "effective_batch_size")
+    private Integer effectiveBatchSize;
+
+    @Column(name = "oom_fallback_count")
+    private Integer oomFallbackCount;
+
     @Column(name = "error_message", columnDefinition = "NVARCHAR(MAX)")
     private String errorMessage;
 
@@ -127,6 +154,33 @@ public class Experiment {
 
     public Integer getProgress() { return progress; }
     public void setProgress(Integer progress) { this.progress = progress; }
+
+    public String getRagasStatus() { return ragasStatus; }
+    public void setRagasStatus(String ragasStatus) { this.ragasStatus = ragasStatus; }
+
+    public Integer getRagasProgress() { return ragasProgress; }
+    public void setRagasProgress(Integer ragasProgress) { this.ragasProgress = ragasProgress; }
+
+    public String getRagasError() { return ragasError; }
+    public void setRagasError(String ragasError) { this.ragasError = ragasError; }
+
+    public LocalDateTime getRagasStartedAt() { return ragasStartedAt; }
+    public void setRagasStartedAt(LocalDateTime ragasStartedAt) { this.ragasStartedAt = ragasStartedAt; }
+
+    public LocalDateTime getRagasCompletedAt() { return ragasCompletedAt; }
+    public void setRagasCompletedAt(LocalDateTime ragasCompletedAt) { this.ragasCompletedAt = ragasCompletedAt; }
+
+    public Long getLocalDurationMs() { return localDurationMs; }
+    public void setLocalDurationMs(Long localDurationMs) { this.localDurationMs = localDurationMs; }
+
+    public Integer getRequestedBatchSize() { return requestedBatchSize; }
+    public void setRequestedBatchSize(Integer requestedBatchSize) { this.requestedBatchSize = requestedBatchSize; }
+
+    public Integer getEffectiveBatchSize() { return effectiveBatchSize; }
+    public void setEffectiveBatchSize(Integer effectiveBatchSize) { this.effectiveBatchSize = effectiveBatchSize; }
+
+    public Integer getOomFallbackCount() { return oomFallbackCount; }
+    public void setOomFallbackCount(Integer oomFallbackCount) { this.oomFallbackCount = oomFallbackCount; }
 
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }

@@ -7,12 +7,12 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 class EvaluationAsyncConfigTest {
     @Test
-    void flow5UsesOneWorkerSoExperimentsDoNotCompeteForGpu() {
+    void flow5UsesTwoOrchestrationWorkersWhilePythonSerializesGpuInference() {
         ThreadPoolTaskExecutor executor = (ThreadPoolTaskExecutor) new EvaluationAsyncConfig()
                 .evaluationTaskExecutor();
         try {
-            assertEquals(1, executor.getCorePoolSize());
-            assertEquals(1, executor.getMaxPoolSize());
+            assertEquals(2, executor.getCorePoolSize());
+            assertEquals(2, executor.getMaxPoolSize());
         } finally {
             executor.shutdown();
         }

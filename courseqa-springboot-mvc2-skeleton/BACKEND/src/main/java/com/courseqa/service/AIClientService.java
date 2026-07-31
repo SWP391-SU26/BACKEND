@@ -24,7 +24,6 @@ public class AIClientService {
     private String pythonAiServiceUrl;
 
     private static final int MAX_RETRIES = 3;
-    private static final int BENCHMARK_BATCH_TIMEOUT_SECONDS = 60;
     private static final int MODEL_WARMUP_TIMEOUT_SECONDS = 180;
 
     @Value("${python.ai.service.benchmark-timeout-seconds:1800}")
@@ -33,8 +32,11 @@ public class AIClientService {
     @Value("${python.ai.service.finetuned-timeout-seconds:180}")
     private int finetunedTimeoutSeconds;
 
-    @Value("${python.ai.service.chat-timeout-seconds:45}")
+    @Value("${python.ai.service.chat-timeout-seconds:112}")
     private int chatTimeoutSeconds;
+
+    @Value("${python.ai.service.embedding-timeout-seconds:600}")
+    private int embeddingTimeoutSeconds;
 
     public AIClientService(WebClient webClient) {
         this.webClient = webClient;
@@ -94,7 +96,7 @@ public class AIClientService {
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(PythonAiDto.EmbedResponse.class)
-                .timeout(Duration.ofSeconds(MODEL_WARMUP_TIMEOUT_SECONDS))
+                .timeout(Duration.ofSeconds(Math.max(MODEL_WARMUP_TIMEOUT_SECONDS, embeddingTimeoutSeconds)))
                 .retryWhen(Retry.max(1).filter(this::isConnectionFailure))
                 .onErrorMap(this::handleError)
                 .block();
@@ -183,7 +185,7 @@ public class AIClientService {
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(responseType)
-                .timeout(Duration.ofSeconds(BENCHMARK_BATCH_TIMEOUT_SECONDS))
+                .timeout(Duration.ofSeconds(benchmarkTimeoutSeconds))
                 .retryWhen(Retry.max(1)
                         .filter(this::isConnectionFailure)
                         .doBeforeRetry(signal -> log.warn("Retrying {} after connection failure: {}",

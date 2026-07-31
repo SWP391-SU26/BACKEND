@@ -1,6 +1,7 @@
 package com.courseqa.service;
 
 import java.text.Normalizer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -15,7 +16,8 @@ public final class QuestionIntentAnalyzer {
             Map.entry("vung", "vung"),
             Map.entry("vunng", "vung"),
             Map.entry("nguphap", "ngu phap"),
-            Map.entry("tuvung", "tu vung")
+            Map.entry("tuvung", "tu vung"),
+            Map.entry("tiet", "tiet")
     );
     private static final Set<String> FUZZY_DOMAIN_TOKENS = Set.of(
             "vung", "nghia", "ngu", "phap", "tom", "tat", "tong", "hop", "liet", "ke"
@@ -24,19 +26,52 @@ public final class QuestionIntentAnalyzer {
     private QuestionIntentAnalyzer() { }
 
     public static QueryIntent analyze(String question) {
-        String normalized = normalizeAndCorrect(question);
-        Section section = detectSection(normalized, question == null ? "" : question);
-        String original = question == null ? "" : question;
+        String repairedQuestion = repairUtf8Mojibake(question);
+        String normalized = normalizeAndCorrect(repairedQuestion);
+        Section section = detectSection(normalized, repairedQuestion == null ? "" : repairedQuestion);
+        String original = repairedQuestion == null ? "" : repairedQuestion;
         boolean summary = containsAny(normalized, "tong hop", "tom tat", "summary", "summarize", "noi dung chinh")
                 || containsAny(original, "まとめ", "要約", "概要");
         boolean exhaustive = containsAny(normalized,
-                "tat ca", "toan bo", "liet ke", "danh sach", "tong hop", "day du", "trong file", "trong tai lieu")
+                "tat ca", "toan bo", "liet ke", "danh sach", "tong hop", "day du",
+                "gom nhung", "bao gom", "trong file", "trong tai lieu")
                 || containsAny(original, "すべて", "全部", "一覧");
         boolean asksMeaning = containsAny(normalized,
                 "nghia", "giai nghia", "dich", "translate", "meaning")
                 || containsAny(original, "意味", "とは", "どういう");
         QuestionForm form = detectQuestionForm(normalized, original, summary, exhaustive, asksMeaning);
-        return new QueryIntent(normalized, section, summary, exhaustive, asksMeaning, form);
+        AnswerDepth answerDepth = detectAnswerDepth(normalized, section, summary, exhaustive, form);
+        return new QueryIntent(normalized, section, summary, exhaustive, asksMeaning, form, answerDepth);
+    }
+
+    private static AnswerDepth detectAnswerDepth(
+            String normalized,
+            Section section,
+            boolean summary,
+            boolean exhaustive,
+            QuestionForm form
+    ) {
+        if (containsAny(normalized,
+                "ngan gon", "tra loi ngan", "mot cau", "chi can neu", "briefly", "one sentence")) {
+            return AnswerDepth.SHORT;
+        }
+        if (containsAny(normalized,
+                "chi tiet", "day du", "phan tich", "giai thich ky", "trinh bay", "tong hop",
+                "in detail", "comprehensive")) {
+            return AnswerDepth.DEEP;
+        }
+        boolean broadScope = containsAny(normalized,
+                "mot so", "tieu bieu", "cac hoc thuyet", "nhung hoc thuyet",
+                "cac quan diem", "nhung quan diem", "cac loai", "bao gom nhung");
+        if (summary || exhaustive || section != Section.NONE || broadScope
+                || form == QuestionForm.COMPARISON
+                || form == QuestionForm.PROCEDURE) {
+            return AnswerDepth.DEEP;
+        }
+        if (form == QuestionForm.DEFINITION) {
+            return AnswerDepth.SHORT;
+        }
+        return AnswerDepth.STANDARD;
     }
 
     private static QuestionForm detectQuestionForm(
@@ -56,14 +91,14 @@ public final class QuestionIntentAnalyzer {
         if (containsAny(normalized, "quy trinh", "cac buoc", "trinh tu", "thuc hien nhu the nao", "how to")) {
             return QuestionForm.PROCEDURE;
         }
+        if (asksMeaning || containsAny(normalized, "la gi", "dinh nghia", "khai niem", "duoc hieu", "what is")
+                || containsAny(original, "何ですか")) {
+            return QuestionForm.DEFINITION;
+        }
         if (exhaustive || containsAny(normalized,
                 "gom nhung", "gom may", "may mat", "bao gom", "nhung gi",
                 "cac loai", "ke ten", "which", "what are")) {
             return QuestionForm.LIST;
-        }
-        if (asksMeaning || containsAny(normalized, "la gi", "dinh nghia", "khai niem", "duoc hieu", "what is")
-                || containsAny(original, "何ですか")) {
-            return QuestionForm.DEFINITION;
         }
         return QuestionForm.FACT;
     }
@@ -72,9 +107,11 @@ public final class QuestionIntentAnalyzer {
         if (value == null || value.isBlank()) {
             return "";
         }
-        String withoutMarks = Normalizer.normalize(value, Normalizer.Form.NFD)
+        String withoutMarks = Normalizer.normalize(
+                        repairUtf8Mojibake(value), Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "")
                 .toLowerCase(Locale.ROOT)
+                .replace('\u0111', 'd')
                 .replace('đ', 'd')
                 .replaceAll("[^\\p{L}\\p{N}]+", " ")
                 .trim()
@@ -94,6 +131,26 @@ public final class QuestionIntentAnalyzer {
             corrected.add(replacement == null ? token : replacement);
         }
         return String.join(" ", corrected).replaceAll("\\s+", " ").trim();
+    }
+
+    public static String repairUtf8Mojibake(String value) {
+        if (value == null || value.isBlank()) {
+            return value;
+        }
+        boolean likelyMojibake = value.contains("Ã")
+                || value.contains("Â")
+                || value.contains("Ä")
+                || value.contains("Æ")
+                || value.contains("áº")
+                || value.contains("á»");
+        if (!likelyMojibake) {
+            return value;
+        }
+        String repaired = new String(
+                value.getBytes(StandardCharsets.ISO_8859_1),
+                StandardCharsets.UTF_8
+        );
+        return repaired.contains("\uFFFD") ? value : repaired;
     }
 
     private static Section detectSection(String normalized, String original) {
@@ -158,13 +215,20 @@ public final class QuestionIntentAnalyzer {
         SUMMARY
     }
 
+    public enum AnswerDepth {
+        SHORT,
+        STANDARD,
+        DEEP
+    }
+
     public record QueryIntent(
             String normalized,
             Section section,
             boolean summary,
             boolean exhaustive,
             boolean asksMeaning,
-            QuestionForm form
+            QuestionForm form,
+            AnswerDepth answerDepth
     ) {
         public boolean hasSection() {
             return section != Section.NONE;

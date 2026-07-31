@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import shutil
 import sys
 import importlib.util
@@ -86,6 +87,7 @@ class GenerateRequest(BaseModel):
     standalone_query: str | None = Field(default=None, max_length=4000)
     history: list[ChatHistoryItem] = Field(default_factory=list, max_length=12)
     answer_profile: str = Field(default="default", max_length=40)
+    answer_depth: str = Field(default="STANDARD", pattern="^(SHORT|STANDARD|DEEP)$")
 
 
 class RewriteQueryRequest(BaseModel):
@@ -149,6 +151,7 @@ class GenerateBatchItem(BaseModel):
     standalone_query: str | None = Field(default=None, max_length=4000)
     history: list[ChatHistoryItem] = Field(default_factory=list, max_length=12)
     answer_profile: str = Field(default="default", max_length=40)
+    answer_depth: str = Field(default="STANDARD", pattern="^(SHORT|STANDARD|DEEP)$")
 
 class GenerateBatchRequest(BaseModel):
     items: list[GenerateBatchItem] = Field(min_length=1, max_length=16)
@@ -178,6 +181,8 @@ class GenerateBatchResult(BaseModel):
 class GenerateBatchResponse(BaseModel):
     items: list[GenerateBatchResult]
     batch_size: int
+    effective_batch_size: int
+    oom_fallback_count: int
     max_input_tokens: int
     max_new_tokens: int
 
@@ -206,17 +211,20 @@ class ChatFinetunedBatchItem(BaseModel):
     request_id: str = Field(min_length=1, max_length=100)
     question: str = Field(min_length=1, max_length=4000)
     document_filenames: list[str] = Field(default_factory=list)
+    answer_depth: str = Field(default="STANDARD", pattern="^(SHORT|STANDARD|DEEP)$")
 
 class ChatFinetunedBatchRequest(BaseModel):
     items: list[ChatFinetunedBatchItem] = Field(min_length=1, max_length=16)
     strict: bool = True
     allow_unverified: bool = False
+    benchmark_mode: bool = False
 
 class ChatFinetunedBatchResult(BaseModel):
     request_id: str
     answer: str | None = None
     error: str | None = None
     is_out_of_scope: bool = False
+    model_inference_executed: bool = False
     scope_confidence: float | None = None
     provider_used: str = "local-lora"
     base_model: str | None = None
@@ -231,6 +239,8 @@ class ChatFinetunedBatchResult(BaseModel):
 class ChatFinetunedBatchResponse(BaseModel):
     items: list[ChatFinetunedBatchResult]
     batch_size: int
+    effective_batch_size: int
+    oom_fallback_count: int
     max_input_tokens: int
     max_new_tokens: int
 
@@ -258,12 +268,13 @@ class OfficialRagasBatchRequest(BaseModel):
 class OfficialRagasResult(BaseModel):
     request_id: str
     faithfulness: float | None = None
-    answer_relevancy: float
+    answer_relevancy: float | None = None
     context_precision: float | None = None
     context_recall: float | None = None
-    judge_model: str
-    embedding_model: str
-    prompt_version: str
+    judge_model: str | None = None
+    embedding_model: str | None = None
+    prompt_version: str | None = None
+    error: str | None = None
 
 
 class OfficialRagasBatchResponse(BaseModel):
@@ -315,6 +326,7 @@ pipeline, store = build_pipeline()
 benchmark_runner = BenchmarkRunner(pipeline, store)
 job_manager = BackgroundJobManager(max_workers=1)
 official_ragas_evaluator = None
+official_ragas_semaphore = asyncio.Semaphore(2)
 
 
 def fine_tuned_response_metadata() -> dict[str, Any]:
@@ -538,9 +550,11 @@ def chat(request: ChatRequest) -> ChatResponse:
 @app.post("/api/generate", response_model=GenerateResponse)
 def generate_answer(request: GenerateRequest) -> GenerateResponse:
     from src.grounded_answer import (
+        answer_completeness_issues,
         answer_is_complete,
         answer_is_well_formed,
         ensure_grounded_answer,
+        extract_explicit_definition,
         format_grounded_answer,
         select_context_windows,
     )
@@ -590,11 +604,41 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
             "preview": ctx.content[:280],
             "score": ctx.score,
         })
+
+    explicit_definition = (
+        extract_explicit_definition(request.question, contexts)
+        if request.answer_profile == "definition"
+        else None
+    )
+    if explicit_definition is not None:
+        used_ids = set(explicit_definition.used_chunk_ids)
+        return GenerateResponse(
+            answer=explicit_definition.answer,
+            is_out_of_scope=False,
+            sources=[
+                source
+                for source in sources_dict_list
+                if source["chunk_id"] in used_ids
+            ],
+            provider_used="document-extractive",
+            base_model=pipeline.settings.local_base_model,
+            embedding_model=pipeline.embedding_provider.model,
+            generation_mode="EXTRACTIVE_DEFINITION",
+            dataset_version=pipeline.settings.dataset_version,
+            prompt_version=pipeline.settings.prompt_version,
+            used_chunk_ids=explicit_definition.used_chunk_ids,
+            peak_vram_bytes=0,
+            grounding_status="GROUNDED",
+            grounding_score=1.0,
+            repair_attempted=False,
+            unsupported_sentence_count=0,
+        )
         
     contexts = select_context_windows(
         request.standalone_query or request.question,
         contexts,
         answer_profile=request.answer_profile,
+        answer_depth=request.answer_depth,
     )
     if not contexts:
         return GenerateResponse(
@@ -612,15 +656,32 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
         )
 
     started_at = time.perf_counter()
-    output_tokens = {
-        "definition": 128,
-        "factual": 128,
-        "comparison": 160,
-        "list": 144,
-        "reasoning": 160,
-        "procedure": 144,
-        "summary": 192,
-    }.get(request.answer_profile, 128)
+    depth_budget = {
+        "SHORT": {
+            "input_tokens": 2048,
+            "output_tokens": 192,
+            "generation_seconds": 30,
+            "repair_deadline": 38,
+            "repair_tokens": 128,
+            "repair_seconds": 8,
+        },
+        "STANDARD": {
+            "input_tokens": 3072,
+            "output_tokens": 448,
+            "generation_seconds": 72,
+            "repair_deadline": 90,
+            "repair_tokens": 256,
+            "repair_seconds": 16,
+        },
+        "DEEP": {
+            "input_tokens": 3584,
+            "output_tokens": 512,
+            "generation_seconds": 82,
+            "repair_deadline": 88,
+            "repair_tokens": 256,
+            "repair_seconds": 18,
+        },
+    }[request.answer_depth]
     try:
         generated = pipeline.generate_base_rag_answer(
             request.question,
@@ -628,10 +689,11 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
             history=[item.model_dump() for item in request.history],
             standalone_query=request.standalone_query,
             answer_profile=request.answer_profile,
+            answer_depth=request.answer_depth,
             strict_prompt=True,
-            max_input_tokens=2048,
-            max_new_tokens=output_tokens,
-            max_time_seconds=24,
+            max_input_tokens=depth_budget["input_tokens"],
+            max_new_tokens=depth_budget["output_tokens"],
+            max_time_seconds=depth_budget["generation_seconds"],
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Không thể tạo câu trả lời: {exc}") from exc
@@ -641,13 +703,19 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
         generated.answer,
         contexts,
         embedding_provider=pipeline.embedding_provider,
+        answer_profile=request.answer_profile,
     )
     repair_attempted = (
         (
             bool(grounded.unsupported_sentences)
-            or not answer_is_complete(grounded.answer, request.answer_profile)
+            or not answer_is_complete(
+                grounded.answer,
+                request.answer_profile,
+                request.answer_depth,
+                len(contexts),
+            )
         )
-        and (time.perf_counter() - started_at) < 25
+        and (time.perf_counter() - started_at) < depth_budget["repair_deadline"]
     )
     if repair_attempted:
         try:
@@ -656,15 +724,23 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
                 grounded.answer,
                 contexts,
                 answer_profile=request.answer_profile,
-                max_input_tokens=2048,
-                max_new_tokens=min(output_tokens, 128),
-                max_time_seconds=7,
+                answer_depth=request.answer_depth,
+                completeness_issues=answer_completeness_issues(
+                    grounded.answer,
+                    request.answer_profile,
+                    request.answer_depth,
+                    len(contexts),
+                ),
+                max_input_tokens=depth_budget["input_tokens"],
+                max_new_tokens=depth_budget["repair_tokens"],
+                max_time_seconds=depth_budget["repair_seconds"],
             )
             repaired_grounding = ensure_grounded_answer(
                 request.question,
                 repaired.answer,
                 contexts,
                 embedding_provider=pipeline.embedding_provider,
+                answer_profile=request.answer_profile,
             )
             repaired_is_better = (
                 repaired_grounding.answer
@@ -672,7 +748,12 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
                 and repaired_grounding.support_score
                 >= max(0.44, grounded.support_score - 0.02)
                 and (
-                    answer_is_complete(repaired_grounding.answer, request.answer_profile)
+                    answer_is_complete(
+                        repaired_grounding.answer,
+                        request.answer_profile,
+                        request.answer_depth,
+                        len(contexts),
+                    )
                     or len(repaired_grounding.answer) > len(grounded.answer)
                 )
             )
@@ -772,63 +853,152 @@ def generate_answer_batch(request: GenerateBatchRequest) -> GenerateBatchRespons
             detail=f"Batch contains {len(request.items)} items; maximum is {settings.benchmark_batch_size}.",
         )
 
-    from src.grounded_answer import select_context_windows
+    from src.grounded_answer import extract_explicit_definition, select_context_windows
 
     prepared = []
     source_maps: dict[str, dict[str, dict[str, Any]]] = {}
+    explicit_definitions = {}
     for item in request.items:
         contexts, sources = _to_retrieved_contexts(item.contexts)
+        if item.answer_profile == "definition":
+            explicit = extract_explicit_definition(item.question, contexts)
+            if explicit is not None:
+                explicit_definitions[item.request_id] = explicit
         contexts = select_context_windows(
             item.standalone_query or item.question,
             contexts,
             answer_profile=item.answer_profile,
+            answer_depth=item.answer_depth,
         )
         prepared.append((
             item.question,
             contexts,
             item.standalone_query or item.question,
             item.answer_profile,
+            item.answer_depth,
         ))
         source_maps[item.request_id] = {source["chunk_id"]: source for source in sources}
 
     try:
-        generated = pipeline.generate_rag_batch(prepared)
+        generated, batch_telemetry = pipeline.generate_rag_batch_with_telemetry(prepared)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Batch RAG generation failed: {exc}") from exc
 
-    from src.grounded_answer import ensure_grounded_answer, format_grounded_answer
+    from src.grounded_answer import (
+        GroundedAnswer,
+        answer_completeness_issues,
+        answer_is_well_formed,
+        ensure_grounded_answer,
+        format_grounded_answer,
+    )
 
-    results = []
-    for item, (answer, included_contexts) in zip(request.items, generated):
-        grounded = ensure_grounded_answer(
-            item.question,
-            answer,
-            included_contexts,
-            embedding_provider=pipeline.embedding_provider,
+    grounded_items = []
+    completion_inputs = []
+    repair_indices = []
+    for index, (item, (answer, included_contexts)) in enumerate(
+        zip(request.items, generated)
+    ):
+        explicit = explicit_definitions.get(item.request_id)
+        grounded = (
+            GroundedAnswer(
+                answer=explicit.answer,
+                used_chunk_ids=explicit.used_chunk_ids,
+                support_score=1.0,
+                used_fallback=False,
+                unsupported_sentences=[],
+                unsupported_sentence_count=0,
+            )
+            if explicit is not None
+            else ensure_grounded_answer(
+                item.question,
+                answer,
+                included_contexts,
+                embedding_provider=pipeline.embedding_provider,
+                answer_profile=item.answer_profile,
+            )
         )
-        repair_attempted = bool(grounded.unsupported_sentences)
-        if repair_attempted:
-            try:
-                repaired = pipeline.repair_grounding_answer(
-                    item.question,
-                    grounded.unsupported_sentences,
-                    included_contexts,
-                    max_input_tokens=settings.benchmark_max_input_tokens,
-                    max_new_tokens=settings.benchmark_max_new_tokens,
-                )
-                candidate = " ".join(
-                    part for part in (grounded.answer, repaired.answer) if part
-                ).strip()
+        grounded_items.append(grounded)
+        completeness_issues = answer_completeness_issues(
+            grounded.answer,
+            item.answer_profile,
+            item.answer_depth,
+            evidence_count=len(included_contexts),
+        )
+        profile_needs_coverage = item.answer_profile.lower() in {
+            "list",
+            "reasoning",
+            "comparison",
+            "summary",
+            "procedure",
+        }
+        stripped_answer = grounded.answer.rstrip()
+        prose_profile = item.answer_profile.lower() not in {
+            "list",
+            "procedure",
+            "summary",
+            "comparison",
+        }
+        visibly_truncated = bool(stripped_answer) and (
+            stripped_answer.endswith((": ", ":", ";", ",", "-", "•"))
+            or (prose_profile and stripped_answer[-1:] not in ".?!")
+        )
+        missing_grounded_coverage = bool(grounded.unsupported_sentences) and (
+            bool(completeness_issues)
+            and (
+                profile_needs_coverage
+                or item.answer_depth.upper() == "DEEP"
+            )
+        )
+        if (
+            not answer_is_well_formed(grounded.answer)
+            or visibly_truncated
+            or missing_grounded_coverage
+        ):
+            repair_indices.append(index)
+            completion_inputs.append((
+                item.question,
+                grounded.answer,
+                included_contexts,
+                item.answer_profile,
+                item.answer_depth,
+                completeness_issues,
+            ))
+
+    repair_telemetry = None
+    if completion_inputs:
+        try:
+            repaired_outputs, repair_telemetry = pipeline.complete_grounded_answer_batch(
+                completion_inputs,
+                max_input_tokens=settings.benchmark_max_input_tokens,
+                max_new_tokens=min(settings.benchmark_max_new_tokens, 160),
+            )
+            for item_index, repaired in zip(repair_indices, repaired_outputs):
+                if not repaired.answer:
+                    continue
+                item = request.items[item_index]
+                included_contexts = generated[item_index][1]
                 repaired_grounding = ensure_grounded_answer(
                     item.question,
-                    candidate,
+                    repaired.answer,
                     included_contexts,
                     embedding_provider=pipeline.embedding_provider,
+                    answer_profile=item.answer_profile,
                 )
-                if repaired_grounding.answer:
-                    grounded = repaired_grounding
-            except Exception:
-                pass
+                if (
+                    repaired_grounding.answer
+                    and answer_is_well_formed(repaired_grounding.answer)
+                ):
+                    grounded_items[item_index] = repaired_grounding
+        except Exception:
+            pass
+
+    results = []
+    repaired_index_set = set(repair_indices)
+    for index, (item, (_answer, included_contexts)) in enumerate(
+        zip(request.items, generated)
+    ):
+        grounded = grounded_items[index]
+        repair_attempted = index in repaired_index_set
         normalized = (
             format_grounded_answer(
                 grounded.answer, item.answer_profile, item.question
@@ -871,9 +1041,20 @@ def generate_answer_batch(request: GenerateBatchRequest) -> GenerateBatchRespons
             repair_attempted=repair_attempted,
             unsupported_sentence_count=grounded.unsupported_sentence_count,
         ))
+    effective_batch_size = batch_telemetry.effective_batch_size
+    oom_fallback_count = batch_telemetry.oom_fallback_count
+    if repair_telemetry is not None:
+        oom_fallback_count += repair_telemetry.oom_fallback_count
+        if repair_telemetry.oom_fallback_count:
+            effective_batch_size = min(
+                effective_batch_size,
+                repair_telemetry.effective_batch_size,
+            )
     return GenerateBatchResponse(
         items=results,
         batch_size=len(results),
+        effective_batch_size=effective_batch_size,
+        oom_fallback_count=oom_fallback_count,
         max_input_tokens=settings.benchmark_max_input_tokens,
         max_new_tokens=settings.benchmark_max_new_tokens,
     )
@@ -982,27 +1163,34 @@ def chat_finetuned_batch(request: ChatFinetunedBatchRequest) -> ChatFinetunedBat
                 request_id=item.request_id,
                 answer=FINETUNED_REFUSAL_MESSAGE,
                 is_out_of_scope=True,
+                model_inference_executed=False,
                 scope_confidence=0.0,
                 **fine_tuned_response_metadata(),
             )
             continue
-        scope = pipeline.assess_finetuned_scope(item.question, item.document_filenames)
-        if request.strict and not scope.allowed:
+        scope = (
+            None
+            if request.benchmark_mode
+            else pipeline.assess_finetuned_scope(item.question, item.document_filenames)
+        )
+        if request.strict and scope is not None and not scope.allowed:
             refused[item.request_id] = ChatFinetunedBatchResult(
                 request_id=item.request_id,
                 answer=FINETUNED_REFUSAL_MESSAGE,
                 is_out_of_scope=True,
+                model_inference_executed=False,
                 scope_confidence=scope.confidence,
                 **fine_tuned_response_metadata(),
             )
             continue
-        accepted.append((item, scope.confidence))
+        accepted.append((item, 1.0 if scope is None else scope.confidence))
     try:
-        answers = pipeline.generate_without_retrieval_batch(
+        answers, batch_telemetry = pipeline.generate_without_retrieval_batch_with_telemetry(
             [item.question for item, _confidence in accepted],
             allowed_sources=[item.document_filenames for item, _confidence in accepted],
             strict=request.strict,
             allow_unverified=request.allow_unverified,
+            answer_depths=[item.answer_depth for item, _confidence in accepted],
         )
     except Exception as exc:
         raise HTTPException(
@@ -1017,6 +1205,7 @@ def chat_finetuned_batch(request: ChatFinetunedBatchRequest) -> ChatFinetunedBat
                     request_id=accepted_item.request_id,
                     answer=FINETUNED_REFUSAL_MESSAGE if is_refusal_answer(answer) else answer.strip(),
                     is_out_of_scope=is_refusal_answer(answer),
+                    model_inference_executed=True,
                     scope_confidence=confidence,
                     **fine_tuned_response_metadata(),
                 )
@@ -1026,6 +1215,8 @@ def chat_finetuned_batch(request: ChatFinetunedBatchRequest) -> ChatFinetunedBat
             for item in request.items
         ],
         batch_size=len(request.items),
+        effective_batch_size=batch_telemetry.effective_batch_size,
+        oom_fallback_count=batch_telemetry.oom_fallback_count,
         max_input_tokens=settings.benchmark_max_input_tokens,
         max_new_tokens=settings.benchmark_max_new_tokens,
     )
@@ -1067,20 +1258,31 @@ async def evaluate_official_ragas(
             embedding_provider=pipeline.embedding_provider,
             prompt_version=settings.prompt_version,
         )
-    results = []
-    for item in request.items:
-        scores = await official_ragas_evaluator.evaluate(
-            question=item.question,
-            response=item.response,
-            contexts=item.contexts,
-            reference=item.reference,
-        )
-        results.append(
-            OfficialRagasResult(
+    async def evaluate_item(item: OfficialRagasItem) -> OfficialRagasResult:
+        async with official_ragas_semaphore:
+            last_error: Exception | None = None
+            for attempt in range(3):
+                try:
+                    scores = await official_ragas_evaluator.evaluate(
+                        question=item.question,
+                        response=item.response,
+                        contexts=item.contexts,
+                        reference=item.reference,
+                    )
+                    return OfficialRagasResult(
+                        request_id=item.request_id,
+                        **asdict(scores),
+                    )
+                except Exception as exc:
+                    last_error = exc
+                    if attempt < 2:
+                        await asyncio.sleep(0.75 * (2 ** attempt))
+            return OfficialRagasResult(
                 request_id=item.request_id,
-                **asdict(scores),
+                error=str(last_error)[:500] if last_error else "Unknown RAGAS error",
             )
-        )
+
+    results = await asyncio.gather(*(evaluate_item(item) for item in request.items))
     return OfficialRagasBatchResponse(
         judge_model=official_ragas_evaluator.judge_model,
         evaluator_embedding=official_ragas_evaluator.embedding_model,

@@ -21,6 +21,7 @@ import com.courseqa.repository.EvaluationQuestionRepository;
 import com.courseqa.repository.ExperimentRepository;
 import com.courseqa.repository.ExperimentResultRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -55,12 +56,11 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class EvaluationService {
     private static final Logger log = LoggerFactory.getLogger(EvaluationService.class);
-    private static final Set<String> TERMINAL_STATUSES = Set.of("COMPLETED", "FAILED");
-    private static final int BENCHMARK_BATCH_SIZE = 1;
-    private static final int BENCHMARK_MAX_INPUT_TOKENS = 1536;
-    private static final int BENCHMARK_MAX_NEW_TOKENS = 192;
-    private static final int BENCHMARK_REPETITIONS = 3;
-    private static final String BENCHMARK_PROFILE_VERSION = "qwen1.5b-sequential-v2";
+    private static final Set<String> TERMINAL_STATUSES = Set.of("COMPLETED", "FAILED", "CANCELLED");
+    private static final int BENCHMARK_BATCH_SIZE = 4;
+    private static final int BENCHMARK_REPETITIONS = 1;
+    private static final int RAGAS_BATCH_SIZE = 10;
+    private static final String BENCHMARK_PROFILE_VERSION = "qwen1.5b-batched-v3";
 
     private final EvaluationDatasetRepository datasets;
     private final EvaluationDatasetDocumentRepository datasetDocuments;
@@ -76,6 +76,8 @@ public class EvaluationService {
     private final TaskExecutor taskExecutor;
     private final ObjectMapper objectMapper;
     private final Set<UUID> cancellationRequests = ConcurrentHashMap.newKeySet();
+    private final Set<UUID> ragasQueued = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, UUID> pairedExperiments = new ConcurrentHashMap<>();
 
     public EvaluationService(
             EvaluationDatasetRepository datasets,
@@ -315,14 +317,43 @@ public class EvaluationService {
 
     public List<Experiment> listExperiments() {
         return experiments.findAll().stream()
+                .map(this::reconcileStaleExperiment)
                 .sorted(Comparator.comparing(Experiment::getCreatedAt,
                         Comparator.nullsLast(Comparator.reverseOrder())))
                 .toList();
     }
 
     public Experiment getExperiment(UUID experimentId) {
-        return experiments.findById(experimentId)
+        Experiment experiment = experiments.findById(experimentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Experiment not found with id: " + experimentId));
+        return reconcileStaleExperiment(experiment);
+    }
+
+    private Experiment reconcileStaleExperiment(Experiment experiment) {
+        LocalDateTime updatedAt = experiment.getUpdatedAt();
+        if (updatedAt == null || updatedAt.isAfter(LocalDateTime.now().minusMinutes(30))) {
+            return experiment;
+        }
+        if (Set.of("QUEUED", "RUNNING").contains(experiment.getStatus())) {
+            experiment.setStatus("FAILED");
+            experiment.setErrorMessage(
+                    "Benchmark was interrupted because the backend stopped reporting progress for over 30 minutes.");
+            experiment.setRagasStatus("FAILED");
+            experiment.setRagasError("Local inference did not finish.");
+            experiment.setCompletedAt(LocalDateTime.now());
+            experiment.setUpdatedAt(LocalDateTime.now());
+            return experiments.save(experiment);
+        }
+        if ("COMPLETED".equals(experiment.getStatus())
+                && Set.of("PENDING", "RUNNING").contains(defaultIfBlank(experiment.getRagasStatus(), ""))) {
+            experiment.setRagasStatus("FAILED");
+            experiment.setRagasError(
+                    "Official RAGAS was interrupted because no progress was reported for over 30 minutes.");
+            experiment.setRagasCompletedAt(LocalDateTime.now());
+            experiment.setUpdatedAt(LocalDateTime.now());
+            return experiments.save(experiment);
+        }
+        return experiment;
     }
 
     public List<ExperimentResult> getResults(UUID experimentId) {
@@ -347,9 +378,109 @@ public class EvaluationService {
 
     public synchronized Experiment startBenchmark(UUID experimentId, boolean allowUnverifiedModel) {
         Experiment experiment = getExperiment(experimentId);
+        experiment = prepareBenchmark(experiment, allowUnverifiedModel);
+        UUID queuedId = experimentId;
+        taskExecutor.execute(() -> executeBenchmark(queuedId));
+        return experiment;
+    }
+
+    public synchronized Map<String, Experiment> startBenchmarkPair(
+            UUID ragExperimentId,
+            UUID fineTunedExperimentId,
+            boolean allowUnverifiedModel) {
+        if (ragExperimentId == null || fineTunedExperimentId == null
+                || ragExperimentId.equals(fineTunedExperimentId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Select two different RAG and Fine-tuned experiments.");
+        }
+        Experiment rag = getExperiment(ragExperimentId);
+        Experiment fine = getExperiment(fineTunedExperimentId);
+        if (!"RAG".equals(normalizeExperimentType(rag.getExperimentType()))
+                || !"FINE_TUNED".equals(normalizeExperimentType(fine.getExperimentType()))
+                || !Objects.equals(rag.getDatasetId(), fine.getDatasetId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "The pair must contain one RAG and one Fine-tuned experiment from the same dataset.");
+        }
+        int questionCount = getQuestions(rag.getDatasetId()).size();
+        if (questionCount != 50) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Paired benchmark requires exactly 50 frozen questions.");
+        }
+        validateBenchmarkStart(rag, false);
+        validateBenchmarkStart(fine, allowUnverifiedModel);
+        rag = prepareBenchmark(rag, false);
+        fine = prepareBenchmark(fine, allowUnverifiedModel);
+        if (!Objects.equals(rag.getDatasetChecksum(), fine.getDatasetChecksum())
+                || !Objects.equals(benchmarkProfile(rag), benchmarkProfile(fine))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "The paired experiments must use the same frozen dataset and benchmark profile.");
+        }
+        pairedExperiments.put(ragExperimentId, fineTunedExperimentId);
+        pairedExperiments.put(fineTunedExperimentId, ragExperimentId);
+        taskExecutor.execute(() -> executeBenchmark(ragExperimentId));
+        taskExecutor.execute(() -> executeBenchmark(fineTunedExperimentId));
+        Map<String, Experiment> response = new LinkedHashMap<>();
+        response.put("rag", rag);
+        response.put("fineTuned", fine);
+        return response;
+    }
+
+    private Experiment prepareBenchmark(Experiment experiment, boolean allowUnverifiedModel) {
+        UUID experimentId = experiment.getExperimentId();
+        boolean acknowledgedUnverified = validateBenchmarkStart(experiment, allowUnverifiedModel);
+        EvaluationDataset dataset = freezeDataset(experiment.getDatasetId());
+        cancellationRequests.remove(experimentId);
+        ragasQueued.remove(experimentId);
+        pairedExperiments.remove(experimentId);
+        results.deleteByExperimentId(experimentId);
+        experiment.setDatasetChecksum(dataset.getChecksum());
+        experiment.setConfigJson(withBenchmarkProfile(
+                experiment.getConfigJson(),
+                getQuestions(dataset.getDatasetId()).size(),
+                acknowledgedUnverified,
+                answerDepthCounts(dataset.getDatasetId())));
+        experiment.setStatus("QUEUED");
+        experiment.setProgress(0);
+        experiment.setSuccessCount(0);
+        experiment.setFailureCount(0);
+        experiment.setErrorMessage(null);
+        experiment.setRagasStatus("PENDING");
+        experiment.setRagasProgress(0);
+        experiment.setRagasError(null);
+        experiment.setRagasStartedAt(null);
+        experiment.setRagasCompletedAt(null);
+        experiment.setLocalDurationMs(null);
+        experiment.setRequestedBatchSize(BENCHMARK_BATCH_SIZE);
+        experiment.setEffectiveBatchSize(null);
+        experiment.setOomFallbackCount(0);
+        experiment.setStartedAt(null);
+        experiment.setCompletedAt(null);
+        experiment.setUpdatedAt(LocalDateTime.now());
+        return experiments.save(experiment);
+    }
+
+    private boolean validateBenchmarkStart(Experiment experiment, boolean allowUnverifiedModel) {
         if (Set.of("QUEUED", "RUNNING").contains(experiment.getStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "This experiment is already queued or running.");
         }
+        if ("COMPLETED".equals(experiment.getStatus())
+                && Set.of("PENDING", "RUNNING").contains(defaultIfBlank(experiment.getRagasStatus(), ""))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Official RAGAS is still running for this experiment. Wait for it to finish before rerunning.");
+        }
+        experiments.findByDatasetIdOrderByCreatedAtDesc(experiment.getDatasetId()).stream()
+                .map(this::reconcileStaleExperiment)
+                .filter(other -> !Objects.equals(other.getExperimentId(), experiment.getExperimentId()))
+                .filter(other -> Objects.equals(
+                        normalizeExperimentType(other.getExperimentType()),
+                        normalizeExperimentType(experiment.getExperimentType())))
+                .filter(other -> Set.of("QUEUED", "RUNNING").contains(other.getStatus()))
+                .findFirst()
+                .ifPresent(other -> {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT,
+                            "Another " + normalizeExperimentType(experiment.getExperimentType())
+                                    + " experiment is already queued or running for this dataset.");
+                });
         Map<String, Object> readiness = readiness(experiment.getDatasetId(), experiment.getExperimentType());
         boolean acknowledgedUnverified = "FINE_TUNED".equals(experiment.getExperimentType())
                 && allowUnverifiedModel
@@ -361,26 +492,7 @@ public class EvaluationService {
                     .reduce((left, right) -> left + " " + right).orElse("Experiment is not ready.");
             throw new ResponseStatusException(HttpStatus.CONFLICT, message);
         }
-        EvaluationDataset dataset = freezeDataset(experiment.getDatasetId());
-        cancellationRequests.remove(experimentId);
-        results.deleteByExperimentId(experimentId);
-        experiment.setDatasetChecksum(dataset.getChecksum());
-        experiment.setConfigJson(withBenchmarkProfile(
-                experiment.getConfigJson(),
-                getQuestions(dataset.getDatasetId()).size(),
-                acknowledgedUnverified));
-        experiment.setStatus("QUEUED");
-        experiment.setProgress(0);
-        experiment.setSuccessCount(0);
-        experiment.setFailureCount(0);
-        experiment.setErrorMessage(null);
-        experiment.setStartedAt(null);
-        experiment.setCompletedAt(null);
-        experiment.setUpdatedAt(LocalDateTime.now());
-        experiment = experiments.save(experiment);
-        UUID queuedId = experimentId;
-        taskExecutor.execute(() -> executeBenchmark(queuedId));
-        return experiment;
+        return acknowledgedUnverified;
     }
 
     public synchronized Experiment cancelBenchmark(UUID experimentId) {
@@ -394,7 +506,9 @@ public class EvaluationService {
         experiment.setErrorMessage(null);
         experiment.setCompletedAt(LocalDateTime.now());
         experiment.setUpdatedAt(LocalDateTime.now());
-        return experiments.save(experiment);
+        Experiment cancelled = experiments.save(experiment);
+        queueRagasWhenReady(experimentId);
+        return cancelled;
     }
 
     public Map<String, Object> readiness(UUID datasetId, String requestedType) {
@@ -581,6 +695,10 @@ public class EvaluationService {
             perQuestion.add(row);
         }
         Map<String, Object> response = new LinkedHashMap<>();
+        boolean officialRagas = "COMPLETED".equals(rag.getRagasStatus())
+                && "COMPLETED".equals(fine.getRagasStatus())
+                && ragResults.stream().allMatch(result -> "COMPLETED".equals(result.getRagasStatus()))
+                && fineResults.stream().allMatch(result -> "COMPLETED".equals(result.getRagasStatus()));
         response.put("datasetId", datasetId);
         response.put("datasetChecksum", rag.getDatasetChecksum());
         Map<String, Object> datasetMetadata = new LinkedHashMap<>();
@@ -594,11 +712,11 @@ public class EvaluationService {
         datasetMetadata.put("documentCount", snapshotDocumentIds(datasetId).size());
         datasetMetadata.put("checksum", rag.getDatasetChecksum());
         response.put("dataset", datasetMetadata);
-        response.put("metricStandard", "RAGAS_OFFICIAL");
+        response.put("metricStandard", officialRagas ? "RAGAS_OFFICIAL" : "LOCAL_PROXY");
         response.put("formulaVersion", "ragas-0.4");
         response.put("benchmarkProfile", ragProfile);
         response.put("methodology", Map.of(
-                "officialRagas", true,
+                "officialRagas", officialRagas,
                 "judge", "OpenAI",
                 "evaluatorEmbedding", "BAAI/bge-m3",
                 "proxyNotice", "answerCorrectness and semanticSimilarity are token_overlap_proxy metrics, not RAGAS."));
@@ -619,12 +737,17 @@ public class EvaluationService {
 
     private void executeBenchmarkUntilCancelled(UUID experimentId) {
         if (isCancellationRequested(experimentId)) return;
+        long localStartedAt = System.nanoTime();
         Experiment experiment = getExperiment(experimentId);
         EvaluationDataset dataset = requireDataset(experiment.getDatasetId());
-        List<EvaluationQuestion> benchmarkQuestions = getQuestions(dataset.getDatasetId());
+        List<EvaluationQuestion> benchmarkQuestions = new ArrayList<>(getQuestions(dataset.getDatasetId()));
+        benchmarkQuestions.sort(Comparator.comparingInt(question ->
+                QuestionIntentAnalyzer.analyze(question.getQuestionText()).answerDepth().ordinal()));
         List<UUID> documentIds = snapshotDocumentIds(dataset.getDatasetId());
         int success = 0;
         int failure = 0;
+        int effectiveBatchSize = 0;
+        int oomFallbackCount = 0;
         List<String> errorMessages = new ArrayList<>();
         try {
             String mode = "FINE_TUNED".equals(experiment.getExperimentType()) ? "FINE_TUNED" : "RAG";
@@ -635,54 +758,39 @@ public class EvaluationService {
                             dataset.getSemesterWorkspaceId(),
                             documentIds,
                             experiment.getEmbeddingModelId());
-            if (!benchmarkQuestions.isEmpty()) {
-                EvaluationQuestion warmup = benchmarkQuestions.get(0);
-                benchmarkInferenceService.answerBatch(
-                        benchmarkScope,
-                        List.of(new BenchmarkInferenceService.BenchmarkQuestion(
-                                warmup.getEvaluationQuestionId(), warmup.getQuestionText())),
-                        mode,
-                        allowUnverifiedModel);
-            }
             for (int index = 0; index < benchmarkQuestions.size(); index += BENCHMARK_BATCH_SIZE) {
                 if (isCancellationRequested(experimentId)) return;
                 int end = Math.min(index + BENCHMARK_BATCH_SIZE, benchmarkQuestions.size());
                 List<EvaluationQuestion> batch = benchmarkQuestions.subList(index, end);
+                long batchStartedAt = System.nanoTime();
                 try {
-                    List<ChatDto.AskResponse> answers = List.of();
-                    long repeatedLatency = 0;
-                    for (int repetition = 0; repetition < BENCHMARK_REPETITIONS; repetition++) {
-                        long repetitionStartedAt = System.nanoTime();
-                        answers = benchmarkInferenceService.answerBatch(
-                                benchmarkScope,
-                                batch.stream().map(question ->
-                                        new BenchmarkInferenceService.BenchmarkQuestion(
-                                                question.getEvaluationQuestionId(),
-                                                question.getQuestionText())).toList(),
-                                mode,
-                                allowUnverifiedModel);
-                        repeatedLatency += elapsedMs(repetitionStartedAt);
-                    }
+                    BenchmarkInferenceService.BenchmarkBatchResult generated =
+                            benchmarkInferenceService.answerBatchWithTelemetry(
+                                    benchmarkScope,
+                                    batch.stream().map(question ->
+                                            new BenchmarkInferenceService.BenchmarkQuestion(
+                                                    question.getEvaluationQuestionId(),
+                                                    question.getQuestionText())).toList(),
+                                    mode,
+                                    allowUnverifiedModel);
+                    List<ChatDto.AskResponse> answers = generated.answers();
                     if (isCancellationRequested(experimentId)) return;
                     if (answers.size() != batch.size()) {
                         throw new IllegalStateException("AI batch returned " + answers.size()
                                 + " answers for " + batch.size() + " questions.");
                     }
-                    Map<String, PythonAiDto.OfficialRagasResult> ragasResults =
-                            evaluateWithOfficialRagas(batch, answers);
-                    int batchLatency = Math.max(1, (int) Math.round(
-                            repeatedLatency / (double) BENCHMARK_REPETITIONS));
-                    int effectiveLatency = Math.max(1, (int) Math.round(
-                            repeatedLatency / (double) (BENCHMARK_REPETITIONS * batch.size())));
+                    int batchLatency = Math.max(1, elapsedMs(batchStartedAt));
+                    int effectiveLatency = Math.max(1, batchLatency / batch.size());
+                    effectiveBatchSize = Math.max(effectiveBatchSize, generated.effectiveBatchSize());
+                    oomFallbackCount += generated.oomFallbackCount();
                     for (int offset = 0; offset < batch.size(); offset++) {
                         persistSuccess(experiment, batch.get(offset), answers.get(offset),
-                                ragasResults.get(String.valueOf(batch.get(offset).getEvaluationQuestionId())),
-                                batchLatency, effectiveLatency, batch.size());
+                                batchLatency, effectiveLatency, generated.effectiveBatchSize());
                         success++;
                     }
                 } catch (RuntimeException exception) {
                     if (isCancellationRequested(experimentId)) return;
-                    int batchLatency = 0;
+                    int batchLatency = Math.max(1, elapsedMs(batchStartedAt));
                     int effectiveLatency = Math.max(1, batchLatency / batch.size());
                     for (EvaluationQuestion question : batch) {
                         persistFailure(experiment, question, exception,
@@ -692,16 +800,21 @@ public class EvaluationService {
                     }
                 }
                 int progress = (int) Math.round((end * 100.0) / benchmarkQuestions.size());
-                if (!saveProgressIfRunning(experimentId, success, failure, progress)) return;
+                if (!saveProgressIfRunning(
+                        experimentId, success, failure, progress, effectiveBatchSize, oomFallbackCount)) return;
             }
         } catch (RuntimeException exception) {
             if (isCancellationRequested(experimentId)) return;
             failure = Math.max(1, failure);
             errorMessages.add(exception.getMessage());
         }
-        if (!finishBenchmarkIfRunning(experimentId, success, failure, errorMessages)) return;
+        long localDurationMs = Math.max(1, elapsedMsLong(localStartedAt));
+        if (!finishBenchmarkIfRunning(
+                experimentId, success, failure, errorMessages,
+                localDurationMs, effectiveBatchSize, oomFallbackCount)) return;
         log.info("Flow 5 benchmark {} ended with status {}, success={}, failure={}", experimentId,
                 failure == 0 ? "COMPLETED" : "FAILED", success, failure);
+        queueRagasWhenReady(experimentId);
     }
 
     private boolean isCancellationRequested(UUID experimentId) {
@@ -723,20 +836,38 @@ public class EvaluationService {
         return (int) Math.round((System.nanoTime() - startedAt) / 1_000_000.0);
     }
 
-    private synchronized boolean saveProgressIfRunning(UUID experimentId, int success, int failure, int progress) {
+    private long elapsedMsLong(long startedAt) {
+        return Math.round((System.nanoTime() - startedAt) / 1_000_000.0);
+    }
+
+    private synchronized boolean saveProgressIfRunning(
+            UUID experimentId,
+            int success,
+            int failure,
+            int progress,
+            int effectiveBatchSize,
+            int oomFallbackCount) {
         if (isCancellationRequested(experimentId)) return false;
         Experiment current = getExperiment(experimentId);
         if (!"RUNNING".equals(current.getStatus())) return false;
         current.setSuccessCount(success);
         current.setFailureCount(failure);
         current.setProgress(progress);
+        current.setEffectiveBatchSize(effectiveBatchSize == 0 ? null : effectiveBatchSize);
+        current.setOomFallbackCount(oomFallbackCount);
         current.setUpdatedAt(LocalDateTime.now());
         experiments.save(current);
         return true;
     }
 
-    private synchronized boolean finishBenchmarkIfRunning(UUID experimentId, int success, int failure,
-            List<String> errorMessages) {
+    private synchronized boolean finishBenchmarkIfRunning(
+            UUID experimentId,
+            int success,
+            int failure,
+            List<String> errorMessages,
+            long localDurationMs,
+            int effectiveBatchSize,
+            int oomFallbackCount) {
         if (isCancellationRequested(experimentId)) return false;
         Experiment current = getExperiment(experimentId);
         if (!"RUNNING".equals(current.getStatus())) return false;
@@ -745,10 +876,161 @@ public class EvaluationService {
         current.setProgress(100);
         current.setStatus(failure == 0 ? "COMPLETED" : "FAILED");
         current.setErrorMessage(errorMessages.isEmpty() ? null : String.join(" | ", errorMessages));
+        current.setLocalDurationMs(localDurationMs);
+        current.setEffectiveBatchSize(effectiveBatchSize == 0 ? null : effectiveBatchSize);
+        current.setOomFallbackCount(oomFallbackCount);
+        current.setRagasStatus(failure == 0 ? "PENDING" : "FAILED");
+        current.setRagasProgress(0);
+        current.setRagasError(failure == 0 ? null : "Local inference did not complete successfully.");
         current.setCompletedAt(LocalDateTime.now());
         current.setUpdatedAt(LocalDateTime.now());
         experiments.save(current);
         return true;
+    }
+
+    private synchronized void queueRagasWhenReady(UUID experimentId) {
+        UUID counterpartId = pairedExperiments.get(experimentId);
+        if (counterpartId == null) {
+            queueRagas(experimentId);
+            return;
+        }
+        Experiment counterpart = getExperiment(counterpartId);
+        if (!TERMINAL_STATUSES.contains(counterpart.getStatus())) return;
+        queueRagas(experimentId);
+        queueRagas(counterpartId);
+        pairedExperiments.remove(experimentId);
+        pairedExperiments.remove(counterpartId);
+    }
+
+    private void queueRagas(UUID experimentId) {
+        Experiment experiment = getExperiment(experimentId);
+        if (!"COMPLETED".equals(experiment.getStatus()) || !ragasQueued.add(experimentId)) return;
+        taskExecutor.execute(() -> executeOfficialRagas(experimentId));
+    }
+
+    private void executeOfficialRagas(UUID experimentId) {
+        Experiment experiment = markRagasRunning(experimentId);
+        if (experiment == null) return;
+        List<ExperimentResult> completedResults = results.findByExperimentId(experimentId).stream()
+                .filter(result -> result.getErrorMessage() == null || result.getErrorMessage().isBlank())
+                .toList();
+        Map<UUID, EvaluationQuestion> questionsById = new HashMap<>();
+        questions.findAllById(completedResults.stream()
+                        .map(ExperimentResult::getEvaluationQuestionId).toList())
+                .forEach(question -> questionsById.put(question.getEvaluationQuestionId(), question));
+        int evaluated = 0;
+        int failed = 0;
+        List<String> errors = new ArrayList<>();
+        try {
+            for (int index = 0; index < completedResults.size(); index += RAGAS_BATCH_SIZE) {
+                int end = Math.min(index + RAGAS_BATCH_SIZE, completedResults.size());
+                List<ExperimentResult> batchResults = completedResults.subList(index, end);
+                List<EvaluationQuestion> batchQuestions = batchResults.stream()
+                        .map(result -> questionsById.get(result.getEvaluationQuestionId()))
+                        .toList();
+                List<ChatDto.AskResponse> answers = batchResults.stream()
+                        .map(this::toRagasAnswer)
+                        .toList();
+                Map<String, PythonAiDto.OfficialRagasResult> scores =
+                        evaluateWithOfficialRagas(batchQuestions, answers);
+                for (ExperimentResult result : batchResults) {
+                    String requestId = String.valueOf(result.getEvaluationQuestionId());
+                    PythonAiDto.OfficialRagasResult score = scores.get(requestId);
+                    if (score == null || (score.error != null && !score.error.isBlank())) {
+                        result.setRagasStatus("FAILED");
+                        result.setRagasError(score == null
+                                ? "RAGAS returned no result."
+                                : score.error);
+                        result.setRagasEvaluatedAt(LocalDateTime.now());
+                        failed++;
+                        errors.add("Q " + requestId + ": " + result.getRagasError());
+                    } else {
+                        boolean rag = "RAG".equals(experiment.getExperimentType());
+                        result.setFaithfulness(rag ? score.faithfulness : null);
+                        result.setAnswerRelevance(score.answer_relevancy);
+                        result.setContextPrecision(rag ? score.context_precision : null);
+                        result.setContextRecall(rag ? score.context_recall : null);
+                        result.setMetricStandard("RAGAS_OFFICIAL");
+                        result.setJudgeModel(score.judge_model);
+                        result.setEvaluatorEmbedding(score.embedding_model);
+                        if (score.prompt_version != null && !score.prompt_version.isBlank()) {
+                            result.setPromptVersion(score.prompt_version);
+                        }
+                        result.setRagasStatus("COMPLETED");
+                        result.setRagasError(null);
+                        result.setRagasEvaluatedAt(LocalDateTime.now());
+                        evaluated++;
+                    }
+                    results.save(result);
+                }
+                saveRagasProgress(experimentId, evaluated + failed, completedResults.size());
+            }
+            finishRagas(experimentId, failed, errors);
+        } catch (RuntimeException exception) {
+            errors.add(exception.getMessage());
+            for (ExperimentResult result : results.findByExperimentId(experimentId)) {
+                if (!"PENDING".equals(result.getRagasStatus())) continue;
+                result.setRagasStatus("FAILED");
+                result.setRagasError(exception.getMessage());
+                result.setRagasEvaluatedAt(LocalDateTime.now());
+                results.save(result);
+            }
+            finishRagas(experimentId, Math.max(1, failed), errors);
+        } finally {
+            ragasQueued.remove(experimentId);
+        }
+    }
+
+    private synchronized Experiment markRagasRunning(UUID experimentId) {
+        Experiment current = getExperiment(experimentId);
+        if (!"COMPLETED".equals(current.getStatus())
+                || (!"PENDING".equals(current.getRagasStatus())
+                        && !"FAILED".equals(current.getRagasStatus()))) return null;
+        current.setRagasStatus("RUNNING");
+        current.setRagasProgress(0);
+        current.setRagasError(null);
+        current.setRagasStartedAt(LocalDateTime.now());
+        current.setRagasCompletedAt(null);
+        current.setUpdatedAt(LocalDateTime.now());
+        return experiments.save(current);
+    }
+
+    private synchronized void saveRagasProgress(UUID experimentId, int completed, int total) {
+        Experiment current = getExperiment(experimentId);
+        if (!"RUNNING".equals(current.getRagasStatus())) return;
+        current.setRagasProgress(total == 0 ? 100
+                : (int) Math.round(completed * 100.0 / total));
+        current.setUpdatedAt(LocalDateTime.now());
+        experiments.save(current);
+    }
+
+    private synchronized void finishRagas(UUID experimentId, int failed, List<String> errors) {
+        Experiment current = getExperiment(experimentId);
+        if (!"RUNNING".equals(current.getRagasStatus())) return;
+        current.setRagasStatus(failed == 0 ? "COMPLETED" : "FAILED");
+        current.setRagasProgress(100);
+        current.setRagasError(errors.isEmpty() ? null : String.join(" | ", errors));
+        current.setRagasCompletedAt(LocalDateTime.now());
+        current.setUpdatedAt(LocalDateTime.now());
+        experiments.save(current);
+    }
+
+    private ChatDto.AskResponse toRagasAnswer(ExperimentResult result) {
+        ChatDto.AskResponse answer = new ChatDto.AskResponse(
+                null, null, null, defaultIfBlank(result.getGeneratedAnswer(), ""), List.of());
+        answer.citations = contextsFromJson(result.getRetrievedContextJson()).stream().map(context -> {
+            return new ChatDto.CitationItem(null, null, null, context);
+        }).toList();
+        return answer;
+    }
+
+    private List<String> contextsFromJson(String json) {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<String>>() { });
+        } catch (JsonProcessingException exception) {
+            return List.of();
+        }
     }
 
     private Map<String, PythonAiDto.OfficialRagasResult> evaluateWithOfficialRagas(
@@ -775,18 +1057,11 @@ public class EvaluationService {
         }
         Map<String, PythonAiDto.OfficialRagasResult> byId = new HashMap<>();
         for (PythonAiDto.OfficialRagasResult result : response.items) {
-            if (result.error != null && !result.error.isBlank()) {
-                throw new IllegalStateException("Official RAGAS failed for " + result.request_id + ": "
-                        + result.error);
-            }
             result.metric_standard = response.metric_standard;
             result.judge_model = response.judge_model;
             result.embedding_model = response.evaluator_embedding;
             result.prompt_version = response.prompt_version;
             byId.put(result.request_id, result);
-        }
-        if (byId.size() != batch.size()) {
-            throw new IllegalStateException("Official RAGAS returned incomplete batch results.");
         }
         return byId;
     }
@@ -796,9 +1071,13 @@ public class EvaluationService {
         return Set.of("true", "1", "yes", "y").contains(value.trim().toLowerCase(Locale.ROOT));
     }
 
-    private void persistSuccess(Experiment experiment, EvaluationQuestion question, ChatDto.AskResponse answer,
-            PythonAiDto.OfficialRagasResult ragas,
-            int batchLatencyMs, int effectiveLatencyMs, int batchSize) {
+    private void persistSuccess(
+            Experiment experiment,
+            EvaluationQuestion question,
+            ChatDto.AskResponse answer,
+            int batchLatencyMs,
+            int effectiveLatencyMs,
+            int batchSize) {
         boolean rag = "RAG".equals(experiment.getExperimentType());
         String generated = answer == null ? "" : defaultIfBlank(answer.answer, "");
         List<ChatDto.CitationItem> citations = answer == null || answer.citations == null
@@ -810,10 +1089,10 @@ public class EvaluationService {
         result.setGeneratedAnswer(generated);
         result.setRetrievedContextJson(rag ? toJson(contexts) : null);
         result.setCitationsJson(rag ? toJson(citations) : null);
-        result.setFaithfulness(ragas == null ? null : ragas.faithfulness);
-        result.setAnswerRelevance(ragas == null ? null : ragas.answer_relevancy);
-        result.setContextPrecision(ragas == null ? null : ragas.context_precision);
-        result.setContextRecall(ragas == null ? null : ragas.context_recall);
+        result.setFaithfulness(null);
+        result.setAnswerRelevance(null);
+        result.setContextPrecision(null);
+        result.setContextRecall(null);
         result.setAnswerCorrectness(answerF1);
         result.setSemanticSimilarity(answerF1);
         result.setProviderUsed(answer == null ? null : answer.providerUsed);
@@ -822,11 +1101,13 @@ public class EvaluationService {
         result.setEmbeddingModel(answer == null ? null : answer.embeddingModel);
         result.setGenerationMode(answer == null ? null : answer.generationMode);
         result.setDatasetVersion(answer == null ? null : answer.datasetVersion);
-        result.setPromptVersion(answer != null && answer.promptVersion != null
-                ? answer.promptVersion : (ragas == null ? null : ragas.prompt_version));
-        result.setMetricStandard(ragas == null ? null : ragas.metric_standard);
-        result.setJudgeModel(ragas == null ? null : ragas.judge_model);
-        result.setEvaluatorEmbedding(ragas == null ? null : ragas.embedding_model);
+        result.setPromptVersion(answer == null ? null : answer.promptVersion);
+        result.setMetricStandard("LOCAL_PROXY");
+        result.setRagasStatus("PENDING");
+        result.setRagasError(null);
+        result.setRagasEvaluatedAt(null);
+        result.setJudgeModel(null);
+        result.setEvaluatorEmbedding(null);
         result.setSourceHit(question.getExpectedDocumentId() == null ? null : citations.stream()
                 .anyMatch(citation -> question.getExpectedDocumentId().equals(citation.documentId)));
         result.setPageHit(question.getExpectedPage() == null ? null : citations.stream().anyMatch(citation ->
@@ -849,6 +1130,9 @@ public class EvaluationService {
             int batchLatencyMs, int effectiveLatencyMs, int batchSize) {
         ExperimentResult result = baseResult(experiment, question, batchLatencyMs, effectiveLatencyMs, batchSize);
         result.setErrorMessage(exception.getMessage());
+        result.setMetricStandard("LOCAL_PROXY");
+        result.setRagasStatus("FAILED");
+        result.setRagasError("Local inference failed; RAGAS was not scheduled.");
         results.save(result);
     }
 
@@ -869,7 +1153,8 @@ public class EvaluationService {
     private String withBenchmarkProfile(
             String configJson,
             int questionCount,
-            boolean allowUnverifiedModel
+            boolean allowUnverifiedModel,
+            Map<String, Long> answerDepthCounts
     ) {
         Map<String, Object> root = new LinkedHashMap<>();
         if (configJson != null && !configJson.isBlank()) {
@@ -885,9 +1170,12 @@ public class EvaluationService {
         profile.put("version", BENCHMARK_PROFILE_VERSION);
         profile.put("questionCount", questionCount);
         profile.put("batchSize", BENCHMARK_BATCH_SIZE);
-        profile.put("maxInputTokens", BENCHMARK_MAX_INPUT_TOKENS);
-        profile.put("maxNewTokens", BENCHMARK_MAX_NEW_TOKENS);
-        profile.put("warmupRuns", 1);
+        profile.put("tokenBudgets", Map.of(
+                "SHORT", Map.of("maxInputTokens", 1024, "maxNewTokens", 128),
+                "STANDARD", Map.of("maxInputTokens", 1280, "maxNewTokens", 160),
+                "DEEP", Map.of("maxInputTokens", 1536, "maxNewTokens", 192)));
+        profile.put("answerDepthCounts", answerDepthCounts);
+        profile.put("warmupRuns", 0);
         profile.put("repetitions", BENCHMARK_REPETITIONS);
         profile.put("temperature", 0.0);
         profile.put("seed", 42);
@@ -962,7 +1250,19 @@ public class EvaluationService {
     }
 
     private String withBenchmarkProfile(String configJson, int questionCount) {
-        return withBenchmarkProfile(configJson, questionCount, false);
+        return withBenchmarkProfile(configJson, questionCount, false, Map.of());
+    }
+
+    private Map<String, Long> answerDepthCounts(UUID datasetId) {
+        Map<String, Long> counts = new LinkedHashMap<>();
+        for (QuestionIntentAnalyzer.AnswerDepth depth : QuestionIntentAnalyzer.AnswerDepth.values()) {
+            counts.put(depth.name(), 0L);
+        }
+        for (EvaluationQuestion question : getQuestions(datasetId)) {
+            String depth = QuestionIntentAnalyzer.analyze(question.getQuestionText()).answerDepth().name();
+            counts.put(depth, counts.getOrDefault(depth, 0L) + 1);
+        }
+        return counts;
     }
 
     private boolean allowsUnverifiedModel(Experiment experiment) {
@@ -1016,6 +1316,13 @@ public class EvaluationService {
         summary.put("benchmarkProfile", benchmarkProfile(experiment));
         summary.put("successCount", experiment.getSuccessCount());
         summary.put("failureCount", experiment.getFailureCount());
+        summary.put("ragasStatus", experiment.getRagasStatus());
+        summary.put("ragasProgress", experiment.getRagasProgress());
+        summary.put("ragasError", experiment.getRagasError());
+        summary.put("localDurationMs", experiment.getLocalDurationMs());
+        summary.put("requestedBatchSize", experiment.getRequestedBatchSize());
+        summary.put("effectiveBatchSize", experiment.getEffectiveBatchSize());
+        summary.put("oomFallbackCount", experiment.getOomFallbackCount());
         ExperimentResult firstCompleted = values.stream()
                 .filter(value -> value.getErrorMessage() == null || value.getErrorMessage().isBlank())
                 .findFirst().orElse(null);

@@ -11,6 +11,8 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, UU
     interface CompressedChunkView {
         UUID getChunkId();
         UUID getDocumentId();
+        Integer getChunkIndex();
+        String getChunkStrategy();
         Integer getPageStart();
         Integer getPageEnd();
         byte[] getContentCompressed();
@@ -26,6 +28,7 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, UU
 
     @Query(value = """
             SELECT chunk_id AS chunkId, document_id AS documentId,
+                   chunk_index AS chunkIndex, chunk_strategy AS chunkStrategy,
                    page_start AS pageStart, page_end AS pageEnd,
                    content_compressed AS contentCompressed
             FROM document_chunks
@@ -38,6 +41,7 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, UU
 
     @Query(value = """
             SELECT chunk_id AS chunkId, document_id AS documentId,
+                   chunk_index AS chunkIndex, chunk_strategy AS chunkStrategy,
                    page_start AS pageStart, page_end AS pageEnd,
                    content_compressed AS contentCompressed
             FROM document_chunks

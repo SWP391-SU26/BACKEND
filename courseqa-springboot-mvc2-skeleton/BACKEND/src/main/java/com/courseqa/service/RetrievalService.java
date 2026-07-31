@@ -19,8 +19,11 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -79,9 +82,47 @@ public class RetrievalService {
     @Transactional
     public RagDto.RetrievalResponse retrieve(RagDto.RetrievalRequest request) {
         validateRetrievalRequest(request);
-
-        Instant startedAt = Instant.now();
+        repairRetrievalText(request);
         EmbeddingModel model = embeddingService.resolveModel(request.embeddingModelId);
+        double[] queryVector = embeddingService.embedText(request.queryText, model);
+        return retrievePrepared(request, model, queryVector);
+    }
+
+    @Transactional
+    public List<RagDto.RetrievalResponse> retrieveBatch(List<RagDto.RetrievalRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return List.of();
+        }
+        requests.forEach(this::validateRetrievalRequest);
+        requests.forEach(this::repairRetrievalText);
+        EmbeddingModel model = embeddingService.resolveModel(requests.get(0).embeddingModelId);
+        boolean sameModel = requests.stream().allMatch(request ->
+                request.embeddingModelId == null
+                        || model.getEmbeddingModelId().equals(request.embeddingModelId));
+        if (!sameModel) {
+            return requests.stream().map(this::retrieve).toList();
+        }
+        List<double[]> queryVectors = embeddingService.embedTexts(
+                requests.stream().map(request -> request.queryText).toList(),
+                model);
+        List<RagDto.RetrievalResponse> responses = new ArrayList<>();
+        for (int index = 0; index < requests.size(); index++) {
+            responses.add(retrievePrepared(requests.get(index), model, queryVectors.get(index)));
+        }
+        return responses;
+    }
+
+    private void repairRetrievalText(RagDto.RetrievalRequest request) {
+        request.queryText = QuestionIntentAnalyzer.repairUtf8Mojibake(request.queryText);
+        request.originalQueryText =
+                QuestionIntentAnalyzer.repairUtf8Mojibake(request.originalQueryText);
+    }
+
+    private RagDto.RetrievalResponse retrievePrepared(
+            RagDto.RetrievalRequest request,
+            EmbeddingModel model,
+            double[] queryVector) {
+        Instant startedAt = Instant.now();
         int topK = request.topK == null || request.topK <= 0 ? 5 : Math.min(request.topK, 40);
         double threshold = request.similarityThreshold == null
                 ? configuredSimilarityThreshold : request.similarityThreshold;
@@ -90,7 +131,20 @@ public class RetrievalService {
         if (workspaceChunks.isEmpty()) {
             return emptyRetrievalResponse(model);
         }
-        QuestionIntentAnalyzer.QueryIntent intent = QuestionIntentAnalyzer.analyze(request.queryText);
+        QuestionIntentAnalyzer.QueryIntent rewrittenIntent =
+                QuestionIntentAnalyzer.analyze(request.queryText);
+        QuestionIntentAnalyzer.QueryIntent originalIntent =
+                QuestionIntentAnalyzer.analyze(request.originalQueryText);
+        QuestionIntentAnalyzer.QueryIntent intent =
+                request.originalQueryText != null
+                        && originalIntent.form() != QuestionIntentAnalyzer.QuestionForm.FACT
+                        ? originalIntent
+                        : rewrittenIntent;
+        String evidenceQuery = request.originalQueryText != null
+                && !request.originalQueryText.isBlank()
+                && originalIntent.form() != QuestionIntentAnalyzer.QuestionForm.FACT
+                ? request.originalQueryText
+                : request.queryText;
 
         Map<UUID, double[]> vectorsByChunkId = loadVectorsByChunkId(model, workspaceChunks);
 
@@ -98,7 +152,6 @@ public class RetrievalService {
             return noPreparedEmbeddingsResponse(model);
         }
 
-        double[] queryVector = embeddingService.embedText(request.queryText, model);
         Map<UUID, CourseDocument> documentsById = loadDocumentsById(workspaceChunks);
         Map<UUID, double[]> preparedVectorsByChunkId = vectorsByChunkId;
         List<ScoredChunk> allScoredCandidates = workspaceChunks.stream()
@@ -106,7 +159,7 @@ public class RetrievalService {
                         chunk,
                         preparedVectorsByChunkId.get(chunk.getChunkId()),
                         queryVector,
-                        request.queryText,
+                        evidenceQuery,
                         documentsById.get(chunk.getDocumentId()),
                         intent)
                 )
@@ -166,15 +219,29 @@ public class RetrievalService {
         } else {
             filteredCandidates = scoredCandidates;
         }
+        if (shouldApplyRelativeRelevanceFloor(intent)
+                && !selectedDocumentSection
+                && !selectedDocumentSummary
+                && !(hasDocumentReferenceMatch && isSummaryQuestion(request.queryText))) {
+            filteredCandidates = pruneWeakFocusedCandidates(filteredCandidates, threshold, intent);
+        }
+        if (isBroadIntent(intent)) {
+            filteredCandidates = expandBroadCandidates(
+                    filteredCandidates, allScoredCandidates, threshold);
+        }
         List<ScoredChunk> scoredChunks = selectedDocumentSection
                 ? filteredCandidates.stream().limit(topK).toList()
                 : selectedDocumentSummary
                 ? selectRepresentativeSummaryChunks(filteredCandidates, topK)
                 : (hasDocumentReferenceMatch && isSummaryQuestion(request.queryText))
                 ? selectRepresentativeSummaryChunks(filteredCandidates, topK)
-                : filteredCandidates.stream()
-                .limit(topK)
-                .toList();
+                : intent.form() == QuestionIntentAnalyzer.QuestionForm.DEFINITION
+                ? selectDefinitionEvidence(
+                        filteredCandidates, allScoredCandidates, topK, evidenceQuery, intent)
+                : shouldUseSectionNeighborhood(intent)
+                ? selectBroadSectionChunks(
+                        filteredCandidates, allScoredCandidates, topK, request.queryText, intent)
+                : selectDiverseChunks(filteredCandidates, topK, intent);
         if (noAnswerReason == null && scoredChunks.isEmpty()) {
             noAnswerReason = "Không tìm thấy nội dung phù hợp trong tài liệu của workspace.";
         }
@@ -276,10 +343,21 @@ public class RetrievalService {
         }
 
         Map<UUID, CourseDocument> documents = loadDocumentsById(chunks);
+        Map<UUID, Boolean> hasCanonicalIndex = chunks.stream()
+                .collect(Collectors.groupingBy(
+                        DocumentChunk::getDocumentId,
+                        Collectors.collectingAndThen(
+                                Collectors.toList(),
+                                values -> values.stream().anyMatch(this::isCanonicalChunk))));
         return chunks.stream()
                 .filter(chunk -> {
                     CourseDocument document = documents.get(chunk.getDocumentId());
-                    return document != null && "PROCESSED".equals(document.getProcessingStatus());
+                    boolean canonicalRequired = Boolean.TRUE.equals(
+                            hasCanonicalIndex.get(chunk.getDocumentId()));
+                    return document != null
+                            && "PROCESSED".equals(document.getProcessingStatus())
+                            && "INDEXED".equals(document.getIndexingStatus())
+                            && (!canonicalRequired || isCanonicalChunk(chunk));
                 })
                 .toList();
     }
@@ -308,10 +386,476 @@ public class RetrievalService {
         DocumentChunk chunk = new DocumentChunk();
         chunk.setChunkId(source.getChunkId());
         chunk.setDocumentId(source.getDocumentId());
+        chunk.setChunkIndex(source.getChunkIndex());
+        chunk.setChunkStrategy(source.getChunkStrategy());
         chunk.setPageStart(source.getPageStart());
         chunk.setPageEnd(source.getPageEnd());
         chunk.setContent(EmbeddingService.decompressUnicodeText(source.getContentCompressed()));
         return chunk;
+    }
+
+    private boolean isCanonicalChunk(DocumentChunk chunk) {
+        return chunk != null
+                && "paragraph_700_120".equalsIgnoreCase(chunk.getChunkStrategy());
+    }
+
+    private boolean isBroadIntent(QuestionIntentAnalyzer.QueryIntent intent) {
+        return intent != null && (
+                intent.answerDepth() == QuestionIntentAnalyzer.AnswerDepth.DEEP
+                        || intent.form() == QuestionIntentAnalyzer.QuestionForm.LIST
+                        || intent.form() == QuestionIntentAnalyzer.QuestionForm.COMPARISON
+                        || intent.summary());
+    }
+
+    private boolean shouldUseSectionNeighborhood(QuestionIntentAnalyzer.QueryIntent intent) {
+        return intent != null
+                && intent.answerDepth() == QuestionIntentAnalyzer.AnswerDepth.DEEP
+                && (
+                    intent.form() == QuestionIntentAnalyzer.QuestionForm.LIST
+                            || intent.form() == QuestionIntentAnalyzer.QuestionForm.REASONING
+                );
+    }
+
+    private boolean shouldApplyRelativeRelevanceFloor(QuestionIntentAnalyzer.QueryIntent intent) {
+        if (intent == null || intent.summary() || intent.hasSection()) {
+            return false;
+        }
+        return switch (intent.form()) {
+            case DEFINITION, LIST, PROCEDURE, COMPARISON -> false;
+            default -> intent.answerDepth() != QuestionIntentAnalyzer.AnswerDepth.DEEP;
+        };
+    }
+
+    private List<ScoredChunk> pruneWeakFocusedCandidates(
+            List<ScoredChunk> candidates,
+            double threshold,
+            QuestionIntentAnalyzer.QueryIntent intent
+    ) {
+        if (candidates.size() <= 1) {
+            return candidates;
+        }
+        double topScore = candidates.get(0).score();
+        double allowedDrop = intent.form() == QuestionIntentAnalyzer.QuestionForm.REASONING
+                ? 0.18
+                : 0.16;
+        double relativeFloor = Math.max(threshold, topScore - allowedDrop);
+        return candidates.stream()
+                .filter(candidate -> candidate.score() >= relativeFloor)
+                .toList();
+    }
+
+    private List<ScoredChunk> selectBroadSectionChunks(
+            List<ScoredChunk> candidates,
+            List<ScoredChunk> allCandidates,
+            int topK,
+            String queryText,
+            QuestionIntentAnalyzer.QueryIntent intent
+    ) {
+        if (candidates.isEmpty() || topK <= 0) {
+            return List.of();
+        }
+
+        Set<String> queryTerms = retrievalTerms(queryText);
+        String corePhrase = normalizeLoose(
+                (queryText == null ? "" : queryText.split("[?!.]", 2)[0])
+                        .replaceFirst("(?i)^(tại sao|tai sao|vì sao|vi sao|why)\\s+", ""));
+        ScoredChunk anchor = candidates.stream()
+                .filter(candidate -> corePhrase.length() >= 10
+                        && normalizeLoose(candidate.chunk().getContent()).contains(corePhrase))
+                .max(Comparator.comparingDouble(ScoredChunk::score))
+                .orElseGet(() -> candidates.stream()
+                .max(Comparator
+                        .comparingDouble((ScoredChunk candidate) ->
+                                lexicalCoverage(queryTerms, candidate.chunk().getContent())
+                                        + orderedPhraseCoverage(
+                                                queryText, candidate.chunk().getContent()) * 1.5)
+                        .thenComparingDouble(ScoredChunk::score))
+                .orElse(candidates.get(0)));
+        Integer anchorPage = anchor.chunk().getPageStart();
+        if (anchorPage == null) {
+            return selectDiverseChunks(candidates, topK, null);
+        }
+
+        boolean reasoning = intent.form() == QuestionIntentAnalyzer.QuestionForm.REASONING;
+        int firstPage = reasoning ? anchorPage - 2 : anchorPage;
+        int lastPage = reasoning ? anchorPage + 3 : anchorPage + 5;
+        int neighborhoodLimit = Math.min(6,
+                Math.max(3, Math.min(topK - 2, (int) Math.ceil(topK * 0.7))));
+        List<ScoredChunk> selected = new ArrayList<>();
+        Set<String> selectedPages = new HashSet<>();
+        allCandidates.stream()
+                .filter(candidate -> Objects.equals(
+                        candidate.chunk().getDocumentId(),
+                        anchor.chunk().getDocumentId()))
+                .filter(candidate -> candidate.chunk().getPageStart() != null)
+                .filter(candidate -> candidate.chunk().getPageStart() >= firstPage)
+                .filter(candidate -> candidate.chunk().getPageStart() <= lastPage)
+                .filter(candidate -> candidate.score() >= 0.16)
+                .sorted(Comparator
+                        .comparingInt((ScoredChunk candidate) ->
+                                Math.max(0, candidate.chunk().getPageStart() - anchorPage))
+                        .thenComparingInt(candidate ->
+                                Math.abs(candidate.chunk().getPageStart() - anchorPage))
+                        .thenComparing(Comparator.comparingDouble(ScoredChunk::score).reversed()))
+                .forEach(candidate -> {
+                    String pageKey = candidate.chunk().getDocumentId() + ":"
+                            + candidate.chunk().getPageStart();
+                    if (selected.size() < neighborhoodLimit && selectedPages.add(pageKey)) {
+                        addIfMissing(selected, candidate);
+                    }
+                });
+
+        if (selected.size() < Math.min(3, topK)) {
+            List<ScoredChunk> remaining = candidates.stream()
+                    .filter(candidate -> selected.stream().noneMatch(existing ->
+                            existing.chunk().getChunkId().equals(candidate.chunk().getChunkId())))
+                    .toList();
+            selectDiverseChunks(remaining, topK - selected.size(), null)
+                    .forEach(candidate -> addIfMissing(selected, candidate));
+        }
+        return selected.stream().limit(topK).toList();
+    }
+
+    private List<ScoredChunk> selectDefinitionEvidence(
+            List<ScoredChunk> candidates,
+            List<ScoredChunk> allCandidates,
+            int topK,
+            String queryText,
+            QuestionIntentAnalyzer.QueryIntent intent
+    ) {
+        if (candidates.isEmpty() || topK <= 0) {
+            return List.of();
+        }
+        int definitionLimit = Math.min(topK, intent.exhaustive() ? 2 : 3);
+        ScoredChunk anchor = candidates.stream()
+                .max(Comparator
+                        .comparingDouble((ScoredChunk candidate) ->
+                                definitionEvidencePriority(candidate, queryText, intent))
+                        .thenComparingDouble(ScoredChunk::score))
+                .orElse(candidates.get(0));
+
+        List<ScoredChunk> selected = new ArrayList<>();
+        addIfMissing(selected, anchor);
+        double anchorPriority = definitionEvidencePriority(anchor, queryText, intent);
+        Integer anchorPage = anchor.chunk().getPageStart();
+        if (anchorPage != null) {
+            if (definitionComponentBoost(queryText, anchor.chunk().getContent()) > 0.0) {
+                allCandidates.stream()
+                        .filter(candidate -> Objects.equals(
+                                candidate.chunk().getDocumentId(),
+                                anchor.chunk().getDocumentId()))
+                        .filter(candidate -> Objects.equals(
+                                candidate.chunk().getPageStart(),
+                                anchorPage - 1))
+                        .max(Comparator.comparingDouble(candidate ->
+                                definitionEvidencePriority(candidate, queryText, intent)))
+                        .ifPresent(candidate -> {
+                            if (selected.size() < definitionLimit) {
+                                addIfMissing(selected, candidate);
+                            }
+                        });
+            }
+            allCandidates.stream()
+                    .filter(candidate -> Objects.equals(
+                            candidate.chunk().getDocumentId(),
+                            anchor.chunk().getDocumentId()))
+                    .filter(candidate -> candidate.chunk().getPageStart() != null)
+                    .filter(candidate -> Math.abs(
+                            candidate.chunk().getPageStart() - anchorPage) <= 2)
+                    .filter(candidate ->
+                            candidate.chunk().getChunkId().equals(anchor.chunk().getChunkId())
+                                    || orderedPhraseCoverage(
+                                            definitionSubject(queryText),
+                                            candidate.chunk().getContent()) >= 0.55
+                                    || (candidate.chunk().getPageStart() == anchorPage + 1
+                                            && hasUnclosedQuotation(
+                                                    anchor.chunk().getContent())))
+                    .sorted(Comparator
+                            .comparingDouble((ScoredChunk candidate) ->
+                                    definitionEvidencePriority(candidate, queryText, intent))
+                            .reversed()
+                            .thenComparingInt(candidate -> Math.abs(
+                                    candidate.chunk().getPageStart() - anchorPage))
+                            .thenComparingInt(candidate ->
+                                    candidate.chunk().getPageStart())
+                            .thenComparing(candidate ->
+                                    nullToMax(candidate.chunk().getChunkIndex())))
+                    .forEach(candidate -> {
+                        if (selected.size() < definitionLimit) {
+                            addIfMissing(selected, candidate);
+                        }
+                    });
+        }
+        candidates.stream()
+                .filter(candidate -> candidate.chunk().getChunkId().equals(anchor.chunk().getChunkId())
+                        || (definitionEvidencePriority(candidate, queryText, intent)
+                                >= anchorPriority - 0.35
+                                && orderedPhraseCoverage(
+                                        definitionSubject(queryText),
+                                        candidate.chunk().getContent()) >= 0.55))
+                .sorted(Comparator
+                        .comparingDouble((ScoredChunk candidate) ->
+                                definitionEvidencePriority(candidate, queryText, intent))
+                        .reversed())
+                .forEach(candidate -> {
+                    if (selected.size() < definitionLimit) {
+                        addIfMissing(selected, candidate);
+                    }
+                });
+        return selected.stream()
+                .sorted(Comparator
+                        .comparing((ScoredChunk candidate) ->
+                                candidate.chunk().getDocumentId().toString())
+                        .thenComparing(candidate -> nullToMax(candidate.chunk().getPageStart()))
+                        .thenComparing(candidate -> nullToMax(candidate.chunk().getChunkIndex())))
+                .limit(definitionLimit)
+                .toList();
+    }
+
+    private double definitionEvidencePriority(
+            ScoredChunk candidate,
+            String queryText,
+            QuestionIntentAnalyzer.QueryIntent intent
+    ) {
+        String content = candidate.chunk().getContent();
+        String subject = definitionSubject(queryText);
+        double subjectCoverage = lexicalCoverage(retrievalTerms(subject), content);
+        double subjectPhraseCoverage = orderedPhraseCoverage(subject, content);
+        double exactSubjectPriority = normalizeLoose(content).contains(subject) ? 0.65 : 0.0;
+        boolean containsQuotation = content != null
+                && (content.contains("\"") || content.contains("“") || content.contains("”"));
+        double quotationPriority = containsQuotation && subjectCoverage >= 0.30 ? 0.40 : 0.0;
+        return candidate.score()
+                + exactSubjectPriority
+                + (subjectCoverage * 0.45)
+                + (subjectPhraseCoverage * 0.35)
+                + quotationPriority
+                + attributionEvidenceBoost(queryText, content)
+                + definitionComponentBoost(queryText, content)
+                + definitionCueBoost(intent, queryText, content);
+    }
+
+    private double attributionEvidenceBoost(String queryText, String content) {
+        if (queryText == null || content == null) {
+            return 0.0;
+        }
+        int comma = queryText.indexOf(',');
+        if (comma <= 0) {
+            return 0.0;
+        }
+        String prefix = normalizeLoose(queryText.substring(0, comma));
+        if (!prefix.startsWith("theo ")) {
+            return 0.0;
+        }
+        String attribution = prefix.substring("theo ".length()).trim();
+        Set<String> attributionTerms = retrievalTerms(attribution);
+        if (attributionTerms.isEmpty()) {
+            return 0.0;
+        }
+        double coverage = lexicalCoverage(attributionTerms, content);
+        String normalizedContent = normalizeLoose(content);
+        boolean directAttributedDefinition = normalizedContent.contains("da dinh nghia")
+                || normalizedContent.contains("defines as")
+                || normalizedContent.contains("defined as");
+        if (coverage >= 0.99 && directAttributedDefinition) {
+            return 2.2;
+        }
+        if (coverage >= 0.99) {
+            return 1.0;
+        }
+        return coverage >= 0.50 ? 0.35 : 0.0;
+    }
+
+    private double definitionComponentBoost(String queryText, String content) {
+        String query = normalizeLoose(queryText);
+        boolean asksForComponents = query.contains("gom nhung")
+                || query.contains("bao gom")
+                || query.contains("gom may")
+                || query.contains("may mat")
+                || query.contains("nhung mat nao")
+                || query.contains("thanh phan")
+                || query.contains("cac phan");
+        if (!asksForComponents) {
+            return 0.0;
+        }
+        String normalizedContent = normalizeLoose(content);
+        boolean hasPairedStructure =
+                (normalizedContent.contains("mat thu nhat")
+                        && normalizedContent.contains("mat thu hai"))
+                        || (normalizedContent.contains("phan thu nhat")
+                        && normalizedContent.contains("phan thu hai"))
+                        || (normalizedContent.contains("buoc thu nhat")
+                        && normalizedContent.contains("buoc thu hai"))
+                        || (normalizedContent.contains("mot la")
+                        && normalizedContent.contains("hai la"));
+        if (hasPairedStructure) {
+            return 0.70;
+        }
+        if (normalizedContent.contains("co hai mat")
+                || normalizedContent.contains("bao gom")
+                || normalizedContent.contains("gom hai")) {
+            return 0.35;
+        }
+        return 0.0;
+    }
+
+    private boolean hasUnclosedQuotation(String content) {
+        if (content == null || content.isBlank()) {
+            return false;
+        }
+        long straightQuotes = content.chars().filter(character -> character == '"').count();
+        long openingQuotes = content.chars().filter(character -> character == '“').count();
+        long closingQuotes = content.chars().filter(character -> character == '”').count();
+        return straightQuotes % 2 == 1 || openingQuotes > closingQuotes;
+    }
+
+    private double lexicalCoverage(Set<String> queryTerms, String content) {
+        if (queryTerms.isEmpty()) {
+            return 0.0;
+        }
+        Set<String> contentTerms = retrievalTerms(content);
+        return (double) queryTerms.stream().filter(contentTerms::contains).count()
+                / queryTerms.size();
+    }
+
+    private double orderedPhraseCoverage(String queryText, String content) {
+        Set<String> ignored = Set.of(
+                "tai", "sao", "vi", "giai", "thich", "day", "du", "khia", "canh",
+                "trinh", "bay", "neu", "hay", "mot", "so", "cac", "ve");
+        List<String> queryTokens = java.util.Arrays.stream(normalizeLoose(queryText).split("\\s+"))
+                .filter(token -> (token.length() >= 2 || "y".equals(token))
+                        && !ignored.contains(token))
+                .toList();
+        if (queryTokens.size() < 2) {
+            return 0.0;
+        }
+        String normalizedContent = normalizeLoose(content);
+        int pairs = 0;
+        int matched = 0;
+        for (int index = 0; index < queryTokens.size() - 1; index++) {
+            String left = queryTokens.get(index);
+            String right = queryTokens.get(index + 1);
+            if (left.equals(right)) {
+                continue;
+            }
+            pairs++;
+            if (normalizedContent.contains(left + " " + right)) {
+                matched++;
+            }
+        }
+        return pairs == 0 ? 0.0 : (double) matched / pairs;
+    }
+
+    private List<ScoredChunk> expandBroadCandidates(
+            List<ScoredChunk> filtered,
+            List<ScoredChunk> all,
+            double threshold
+    ) {
+        if (filtered.isEmpty()) {
+            return filtered;
+        }
+        double relaxedThreshold = Math.max(0.16, threshold - 0.10);
+        List<ScoredChunk> anchors = filtered.stream().limit(4).toList();
+        LinkedHashSet<ScoredChunk> expanded = new LinkedHashSet<>(filtered);
+        for (ScoredChunk candidate : all) {
+            if (candidate.score() >= relaxedThreshold || nearAnyAnchor(candidate, anchors, 4)) {
+                expanded.add(candidate);
+            }
+        }
+        return expanded.stream()
+                .sorted(Comparator.comparingDouble(ScoredChunk::score).reversed())
+                .toList();
+    }
+
+    private boolean nearAnyAnchor(ScoredChunk candidate, List<ScoredChunk> anchors, int pageDistance) {
+        Integer page = candidate.chunk().getPageStart();
+        if (page == null) {
+            return false;
+        }
+        return anchors.stream().anyMatch(anchor ->
+                Objects.equals(anchor.chunk().getDocumentId(), candidate.chunk().getDocumentId())
+                        && anchor.chunk().getPageStart() != null
+                        && Math.abs(anchor.chunk().getPageStart() - page) <= pageDistance);
+    }
+
+    private List<ScoredChunk> selectDiverseChunks(
+            List<ScoredChunk> candidates,
+            int topK,
+            QuestionIntentAnalyzer.QueryIntent intent
+    ) {
+        if (candidates.isEmpty() || topK <= 0) {
+            return List.of();
+        }
+        List<ScoredChunk> remaining = new ArrayList<>(candidates);
+        List<ScoredChunk> selected = new ArrayList<>();
+        List<Set<String>> selectedTerms = new ArrayList<>();
+        Map<String, Integer> perPage = new java.util.HashMap<>();
+        int pageLimit = isBroadIntent(intent) ? 2 : 3;
+
+        while (!remaining.isEmpty() && selected.size() < topK) {
+            ScoredChunk best = null;
+            double bestAdjusted = Double.NEGATIVE_INFINITY;
+            Set<String> bestTerms = Set.of();
+            for (ScoredChunk candidate : remaining) {
+                String pageKey = candidate.chunk().getDocumentId() + ":"
+                        + candidate.chunk().getPageStart();
+                if (perPage.getOrDefault(pageKey, 0) >= pageLimit) {
+                    continue;
+                }
+                Set<String> terms = retrievalTerms(candidate.chunk().getContent());
+                double duplicate = selectedTerms.stream()
+                        .mapToDouble(existing -> jaccard(existing, terms))
+                        .max().orElse(0.0);
+                if (duplicate >= 0.88) {
+                    continue;
+                }
+                boolean newPage = !perPage.containsKey(pageKey);
+                double adjusted = candidate.score()
+                        - (duplicate * (isBroadIntent(intent) ? 0.24 : 0.15))
+                        + (newPage && isBroadIntent(intent) ? 0.06 : 0.0);
+                if (adjusted > bestAdjusted) {
+                    bestAdjusted = adjusted;
+                    best = candidate;
+                    bestTerms = terms;
+                }
+            }
+            if (best == null) {
+                break;
+            }
+            selected.add(best);
+            selectedTerms.add(bestTerms);
+            String pageKey = best.chunk().getDocumentId() + ":" + best.chunk().getPageStart();
+            perPage.merge(pageKey, 1, Integer::sum);
+            remaining.remove(best);
+        }
+        return selected;
+    }
+
+    private Set<String> retrievalTerms(String value) {
+        String normalized = normalizeLoose(value);
+        Set<String> stop = Set.of(
+                "la", "va", "cua", "cho", "trong", "mot", "nhung", "cac", "duoc",
+                "voi", "tu", "the", "nay", "do", "khi", "co", "ve",
+                "giai", "thich", "day", "khia", "canh", "trinh", "bay", "neu", "hay",
+                "tai", "sao");
+        Set<String> terms = new HashSet<>();
+        for (String token : normalized.split("\\s+")) {
+            if (token.length() >= 3 && !stop.contains(token)) {
+                terms.add(token);
+            }
+        }
+        return terms;
+    }
+
+    private double jaccard(Set<String> left, Set<String> right) {
+        if (left.isEmpty() || right.isEmpty()) {
+            return 0.0;
+        }
+        Set<String> intersection = new HashSet<>(left);
+        intersection.retainAll(right);
+        Set<String> union = new HashSet<>(left);
+        union.addAll(right);
+        return union.isEmpty() ? 0.0 : (double) intersection.size() / union.size();
     }
 
     private boolean isSelectedDocumentScope(RagDto.RetrievalRequest request) {
@@ -341,21 +885,33 @@ public class RetrievalService {
             QuestionIntentAnalyzer.QueryIntent intent
     ) {
         double exactTokenScore = embeddingService.exactTokenOverlapScore(queryText, chunk.getContent());
+        double lexicalScore = Math.max(
+                exactTokenScore,
+                lexicalCoverage(retrievalTerms(queryText), chunk.getContent())
+        );
+        double phraseScore = orderedPhraseCoverage(queryText, chunk.getContent());
         double documentReferenceScore = documentReferenceScore(queryText, document);
         if (chunkVector == null || chunkVector.length == 0) {
+            double lexicalContentScore = Math.min(
+                    1.0,
+                    (lexicalScore * 0.70)
+                            + (phraseScore * 0.30)
+                            + definitionCueBoost(intent, queryText, chunk.getContent())
+            );
             return new ScoredChunk(
                     chunk,
-                    Math.max(exactTokenScore, documentReferenceScore),
+                    Math.max(lexicalContentScore, documentReferenceScore),
                     documentReferenceScore,
-                    exactTokenScore
+                    lexicalContentScore
             );
         }
         double vectorScore = embeddingService.cosineVectorScore(queryVector, chunkVector);
         double semanticScore = Math.max(0.0, vectorScore);
         double contentScore = Math.min(
                 1.0,
-                (semanticScore * 0.80)
-                        + (exactTokenScore * 0.20)
+                (semanticScore * 0.68)
+                        + (lexicalScore * 0.20)
+                        + (phraseScore * 0.12)
                         + definitionCueBoost(intent, queryText, chunk.getContent())
         );
         return new ScoredChunk(
@@ -375,19 +931,43 @@ public class RetrievalService {
             return 0.0;
         }
 
-        String subject = normalizeLoose(queryText)
-                .replaceFirst("^(dinh nghia|khai niem)\\s+", "")
-                .replaceFirst("\\s+(la gi|duoc hieu nhu the nao|what is)$", "")
-                .trim();
+        String subject = definitionSubject(queryText);
         if (subject.length() < 2) {
             return 0.0;
         }
 
         String normalizedContent = normalizeLoose(content);
+        double subjectCoverage = lexicalCoverage(retrievalTerms(subject), content);
+        boolean hasDefinitionCue = normalizedContent.contains("dinh nghia")
+                || normalizedContent.contains("duoc hieu la")
+                || normalizedContent.contains("co nghia la")
+                || normalizedContent.contains("means ")
+                || normalizedContent.contains("is defined as");
         boolean explicitDefinition = normalizedContent.contains("dinh nghia " + subject)
                 || normalizedContent.contains("khai niem " + subject)
-                || normalizedContent.contains(subject + " la ");
-        return explicitDefinition ? 0.12 : 0.0;
+                || normalizedContent.contains(subject + " la ")
+                || normalizedContent.contains(subject + " duoc dinh nghia");
+        if (explicitDefinition) {
+            return 0.20;
+        }
+        return hasDefinitionCue && subjectCoverage >= 0.60 ? 0.08 : 0.0;
+    }
+
+    private String definitionSubject(String queryText) {
+        String definitionQuery = queryText == null ? "" : queryText.trim();
+        int attributionComma = definitionQuery.indexOf(',');
+        if (attributionComma > 0
+                && normalizeLoose(definitionQuery.substring(0, attributionComma)).startsWith("theo ")) {
+            definitionQuery = definitionQuery.substring(attributionComma + 1);
+        }
+        String subject = normalizeLoose(definitionQuery)
+                .replaceFirst("^(dinh nghia|khai niem)\\s+", "")
+                .replaceFirst(
+                        "\\s+(la gi|duoc dinh nghia nhu the nao|duoc hieu nhu the nao|what is)"
+                                + "(?:\\s+va\\s+.*)?$",
+                        "")
+                .trim();
+        return subject;
     }
 
     private double documentReferenceScore(String queryText, CourseDocument document) {
@@ -609,6 +1189,7 @@ public class RetrievalService {
         String withoutMarks = Normalizer.normalize(value, Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "");
         return withoutMarks.toLowerCase(java.util.Locale.ROOT)
+                .replace('\u0111', 'd')
                 .replaceAll("\\.(pdf|docx|doc|pptx|ppt|txt)$", "")
                 .replaceAll("[^\\p{L}\\p{N}]+", " ")
                 .trim()

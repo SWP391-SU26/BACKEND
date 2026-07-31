@@ -34,7 +34,8 @@ public class Flow2Service {
         return courses.findByIsActiveTrueAndStatusNotOrderByCreatedAtDesc("ARCHIVED").stream()
                 .filter(course -> semesters.findById(course.getSemesterWorkspaceId())
                         .map(s -> "ACTIVE".equals(s.getStatus())).orElse(false))
-                .filter(course -> documents.existsByCourseIdAndProcessingStatus(course.getCourseId(), "PROCESSED"))
+                .filter(course -> documents.existsByCourseIdAndProcessingStatusAndIndexingStatus(
+                        course.getCourseId(), "PROCESSED", "INDEXED"))
                 .map(CourseDto.CourseResponse::fromEntity).toList();
     }
 
@@ -43,7 +44,8 @@ public class Flow2Service {
         boolean visible = Boolean.TRUE.equals(course.getIsActive())
                 && !"ARCHIVED".equals(course.getStatus())
                 && semesters.findById(course.getSemesterWorkspaceId()).map(s -> "ACTIVE".equals(s.getStatus())).orElse(false)
-                && documents.existsByCourseIdAndProcessingStatus(courseId, "PROCESSED");
+                && documents.existsByCourseIdAndProcessingStatusAndIndexingStatus(
+                        courseId, "PROCESSED", "INDEXED");
         if (!visible) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This course is not currently available.");
     }
 
@@ -58,7 +60,8 @@ public class Flow2Service {
             if ("ARCHIVED".equals(course.getStatus())) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Archived courses cannot be activated.");
             }
-            if (!documents.existsByCourseIdAndProcessingStatus(id, "PROCESSED")) {
+            if (!documents.existsByCourseIdAndProcessingStatusAndIndexingStatus(
+                    id, "PROCESSED", "INDEXED")) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                         "Course needs at least one processed document before activation.");
             }
@@ -100,7 +103,8 @@ public class Flow2Service {
         CourseDto.PublishChecklistResponse response = new CourseDto.PublishChecklistResponse();
         response.semesterActive = semesters.findById(course.getSemesterWorkspaceId())
                 .map(s -> "ACTIVE".equals(s.getStatus())).orElse(false);
-        response.processedDocument = documents.existsByCourseIdAndProcessingStatus(courseId, "PROCESSED");
+        response.processedDocument = documents.existsByCourseIdAndProcessingStatusAndIndexingStatus(
+                courseId, "PROCESSED", "INDEXED");
         response.confirmedChapter = !chapters.findByCourseIdAndIsActiveTrueOrderByOrderIndexAsc(courseId).isEmpty();
         response.assignedStudent = memberships.findByCourseIdAndStatus(courseId, "ACTIVE").stream()
                 .anyMatch(m -> "STUDENT".equalsIgnoreCase(m.getMembershipRole()));

@@ -64,7 +64,8 @@ class Flow2ServiceTest {
         Course course = mock(Course.class);
         when(course.getStatus()).thenReturn("DRAFT");
         when(courses.findById(courseId)).thenReturn(Optional.of(course));
-        when(documents.existsByCourseIdAndProcessingStatus(courseId, "PROCESSED")).thenReturn(true);
+        when(documents.existsByCourseIdAndProcessingStatusAndIndexingStatus(
+                courseId, "PROCESSED", "INDEXED")).thenReturn(true);
         when(courses.save(course)).thenReturn(course);
         CourseDto.UpdateCourseRequest request = new CourseDto.UpdateCourseRequest();
         request.isActive = true;
@@ -89,7 +90,8 @@ class Flow2ServiceTest {
         when(courses.findByIsActiveTrueAndStatusNotOrderByCreatedAtDesc("ARCHIVED"))
                 .thenReturn(List.of(course));
         when(semesters.findById(semesterId)).thenReturn(Optional.of(semester));
-        when(documents.existsByCourseIdAndProcessingStatus(courseId, "PROCESSED")).thenReturn(true);
+        when(documents.existsByCourseIdAndProcessingStatusAndIndexingStatus(
+                courseId, "PROCESSED", "INDEXED")).thenReturn(true);
 
         List<CourseDto.CourseResponse> result = service.getMyCourses(UUID.randomUUID());
 

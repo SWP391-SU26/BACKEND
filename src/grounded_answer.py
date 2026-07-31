@@ -36,24 +36,218 @@ class GroundedAnswer:
     unsupported_sentence_count: int
 
 
+@dataclass(frozen=True)
+class ExplicitDefinitionEvidence:
+    answer: str
+    used_chunk_ids: list[str]
+
+
+def extract_explicit_definition(
+    question: str,
+    contexts: Sequence[RetrievedChunk],
+) -> ExplicitDefinitionEvidence | None:
+    """Return an exact quoted definition when the selected evidence contains one."""
+    normalized_question = normalize_text(question)
+    asks_for_components = any(
+        marker in normalized_question
+        for marker in (
+            "gom nhung",
+            "bao gom",
+            "gom may",
+            "may mat",
+            "nhung mat nao",
+            "thanh phan",
+            "cac phan",
+            "cac buoc",
+        )
+    )
+    query_terms = (
+        content_terms(question)
+        - VIETNAMESE_STOPWORDS
+        - GENERIC_QUESTION_TERMS
+        - {"dinh", "nghia", "khai", "niem", "nhu", "what", "defined", "definition"}
+    )
+    if not contexts or not query_terms:
+        return None
+
+    grouped: dict[str, list[RetrievedChunk]] = {}
+    for context in contexts:
+        grouped.setdefault(context.document_id, []).append(context)
+
+    best: tuple[float, str, list[str]] | None = None
+    best_components: tuple[float, list[tuple[str, str]], list[str]] | None = None
+    attribution_prefix = question.split(",", 1)[0] if "," in question else ""
+    attribution_terms = (
+        content_terms(attribution_prefix)
+        - VIETNAMESE_STOPWORDS
+        - GENERIC_QUESTION_TERMS
+        - {"ph", "mr", "mrs", "dr", "professor"}
+    )
+    for document_contexts in grouped.values():
+        ordered = sorted(
+            document_contexts,
+            key=lambda item: (item.page if item.page is not None else 10**9, item.chunk_id),
+        )
+        combined_parts: list[str] = []
+        ranges: list[tuple[int, int, str]] = []
+        cursor = 0
+        for context in ordered:
+            content = " ".join((context.content or "").split())
+            content = re.sub(r"\s+\d{1,4}\s*$", "", content)
+            if not content:
+                continue
+            if combined_parts:
+                combined_parts.append("\n")
+                cursor += 1
+            start = cursor
+            combined_parts.append(content)
+            cursor += len(content)
+            ranges.append((start, cursor, context.chunk_id))
+        combined = "".join(combined_parts)
+        if asks_for_components:
+            component_pattern = re.compile(
+                r"\b(M\u1eb7t|Ph\u1ea7n|B\u01b0\u1edbc|Mat|Phan|Buoc)\s+"
+                r"(?:th\u1ee9|thu)\s+"
+                r"(nh\u1ea5t|hai|ba|t\u01b0|tu|b\u1ed1n|bon)\s*:",
+                flags=re.I,
+            )
+            component_matches = list(component_pattern.finditer(combined))
+            extracted_components: list[tuple[str, str]] = []
+            component_ids: list[str] = []
+            for index, component_match in enumerate(component_matches):
+                value_start = component_match.end()
+                value_end = (
+                    component_matches[index + 1].start()
+                    if index + 1 < len(component_matches)
+                    else min(len(combined), value_start + 500)
+                )
+                value = " ".join(combined[value_start:value_end].split()).strip()
+                sentence_match = re.match(r"(.{10,360}?[.!?])(?:\s|$)", value)
+                if sentence_match:
+                    value = sentence_match.group(1).strip()
+                if len(content_terms(value)) < 3:
+                    continue
+                label = " ".join(component_match.group(0).rstrip(":").split())
+                extracted_components.append((label, value))
+                component_ids.extend(
+                    chunk_id
+                    for start, end, chunk_id in ranges
+                    if start < value_end and end > component_match.start()
+                )
+            if len(extracted_components) >= 2:
+                unique_component_ids = list(dict.fromkeys(component_ids))
+                component_score = len(extracted_components) + len(unique_component_ids) / 10
+                if best_components is None or component_score > best_components[0]:
+                    best_components = (
+                        component_score,
+                        extracted_components,
+                        unique_component_ids,
+                    )
+
+        if attribution_terms:
+            attribution_pattern = re.compile(
+                r"(?:Theo|According to)\s+([^:\n]{2,100})\s*:\s*"
+                r"(?:\"|\u201c)(.{20,700}?)(?:\"|\u201d)",
+                flags=re.I | re.S,
+            )
+            for match in attribution_pattern.finditer(combined):
+                cited_name_terms = content_terms(match.group(1))
+                if not attribution_terms.issubset(cited_name_terms):
+                    continue
+                quote = " ".join(match.group(2).split()).strip()
+                if not 5 <= len(content_terms(quote)) <= 100:
+                    continue
+                used_ids = [
+                    chunk_id
+                    for start, end, chunk_id in ranges
+                    if start < match.end() and end > match.start()
+                ]
+                overlap = len(query_terms & content_terms(quote)) / max(1, len(query_terms))
+                score = 2.0 + overlap
+                if used_ids and (best is None or score > best[0]):
+                    best = (score, quote, used_ids)
+
+        definition_patterns = (
+            (
+                re.compile(
+                    r"(?:định nghĩa|dinh nghia|definition|defined as)\s*:\s*[\"“](.{30,700}?)[\"”]",
+                    flags=re.I | re.S,
+                ),
+                True,
+            ),
+            (re.compile(r"[\"“](.{30,700}?)[\"”]", flags=re.S), False),
+        )
+        for pattern, direct_definition in definition_patterns:
+            for match in pattern.finditer(combined):
+                quote = " ".join(match.group(1).split()).strip()
+                quote_terms = content_terms(quote)
+                if (
+                    len(quote_terms) < 12
+                    or len(quote_terms) > 90
+                    or re.match(r"^\d+\s*\(", quote)
+                ):
+                    continue
+                overlap = len(query_terms & quote_terms) / max(1, len(query_terms))
+                prefix = normalize_text(combined[max(0, match.start() - 260):match.start()])
+                has_definition_cue = direct_definition or any(
+                    cue in prefix
+                    for cue in (
+                        "dinh nghia",
+                        "khai niem",
+                        "duoc hieu",
+                        "definition",
+                        "defined as",
+                    )
+                )
+                if overlap < 0.25 or not has_definition_cue:
+                    continue
+                used_ids = [
+                    chunk_id
+                    for start, end, chunk_id in ranges
+                    if start < match.end() and end > match.start()
+                ]
+                if not used_ids:
+                    continue
+                score = overlap + min(len(quote_terms), 80) / 400
+                if direct_definition:
+                    score += 1.0
+                if best is None or score > best[0]:
+                    best = (score, quote, used_ids)
+
+    if asks_for_components:
+        if best is None or best_components is None:
+            return None
+        component_lines = [
+            f"{index}. **{label}:** {value}"
+            for index, (label, value) in enumerate(best_components[1], start=1)
+        ]
+        return ExplicitDefinitionEvidence(
+            answer=(
+                f"**Ph\u00e1t bi\u1ec3u:** \u201c{best[1]}\u201d\n\n"
+                f"**C\u00e1c m\u1eb7t/ph\u1ea7n ch\u00ednh:**\n"
+                + "\n".join(component_lines)
+            ),
+            used_chunk_ids=list(dict.fromkeys(best[2] + best_components[2])),
+        )
+
+    if best is None:
+        return None
+    return ExplicitDefinitionEvidence(
+        answer=f"**Định nghĩa:** “{best[1]}”",
+        used_chunk_ids=best[2],
+    )
+
+
 def select_context_windows(
     question: str,
     contexts: Sequence[RetrievedChunk],
     *,
     answer_profile: str = "factual",
+    answer_depth: str = "STANDARD",
 ) -> list[RetrievedChunk]:
     """Keep compact evidence windows and discard common document noise."""
-    limits = {
-        "definition": 5,
-        "factual": 5,
-        "short": 5,
-        "comparison": 8,
-        "list": 8,
-        "procedure": 8,
-        "reasoning": 8,
-        "summary": 12,
-    }
-    limit = limits.get(answer_profile, 5)
+    depth_limits = {"SHORT": 5, "STANDARD": 8, "DEEP": 12}
+    limit = depth_limits.get((answer_depth or "STANDARD").upper(), 8)
     query_terms = content_terms(question)
     selected: list[RetrievedChunk] = []
     selected_terms: list[set[str]] = []
@@ -69,12 +263,20 @@ def select_context_windows(
         if answer_profile == "reasoning" and not asks_for_historical_context(question):
             sentences = [
                 sentence for sentence in sentences
-                if not is_historical_background(sentence)
+                if (
+                    not is_historical_background(sentence)
+                    and not is_methodology_guidance(sentence)
+                )
             ]
         if not sentences:
             continue
 
-        if answer_profile == "summary":
+        if (
+            (answer_depth or "STANDARD").upper() == "DEEP"
+            and answer_profile in {"list", "comparison", "summary"}
+        ):
+            window = sentences[:8]
+        elif answer_profile == "summary":
             window = sentences[:2]
         else:
             scored = [
@@ -86,6 +288,8 @@ def select_context_windows(
             forward_neighbors = 2 if answer_profile in {
                 "comparison", "list", "procedure", "reasoning"
             } else 1
+            if (answer_depth or "STANDARD").upper() == "DEEP":
+                forward_neighbors += 1
             end = min(len(sentences), anchor + forward_neighbors + 1)
             window = sentences[start:end]
 
@@ -128,6 +332,23 @@ def is_historical_background(sentence: str) -> bool:
     )
 
 
+def is_methodology_guidance(sentence: str) -> bool:
+    """Identify practical lessons that must not be presented as causal evidence."""
+    normalized = normalize_text(sentence)
+    return any(
+        marker in normalized
+        for marker in (
+            "y nghia phuong phap luan",
+            "bai hoc rut ra",
+            "con nguoi phai ton trong",
+            "phai ton trong khach quan",
+            "phat huy tinh nang dong chu quan",
+            "trong hoat dong thuc tien can",
+            "trong hoat dong nhan thuc can",
+        )
+    )
+
+
 def jaccard_similarity(left: set[str], right: set[str]) -> float:
     union = left | right
     return len(left & right) / len(union) if union else 0.0
@@ -140,6 +361,7 @@ def ensure_grounded_answer(
     *,
     minimum_support: float = 0.44,
     embedding_provider: Any | None = None,
+    answer_profile: str = "factual",
 ) -> GroundedAnswer:
     sentences = split_answer_sentences(generated_answer)
     if not sentences or contains_cjk(generated_answer) or looks_mostly_english(generated_answer):
@@ -150,7 +372,9 @@ def ensure_grounded_answer(
     if required_overlap and len(question_terms & answer_terms) < required_overlap:
         return GroundedAnswer("", [], 0.0, True, sentences, len(sentences))
     key_phrases = question_key_phrases(question)
-    if len(key_phrases) >= 2:
+    if len(key_phrases) >= 2 and answer_profile not in {
+        "list", "summary", "comparison", "procedure"
+    }:
         normalized_answer = normalize_text(generated_answer)
         matched_phrases = sum(phrase in normalized_answer for phrase in key_phrases)
         if matched_phrases < 2:
@@ -172,6 +396,10 @@ def ensure_grounded_answer(
         if (
             has_unrequested_proper_name(sentence, question)
             or (explanatory_question and is_historical_background(sentence))
+            or (
+                answer_profile == "list"
+                and not list_item_label_supported(sentence, contexts)
+            )
         ):
             unsupported.extend(sentence_claims)
             claim_index += len(sentence_claims)
@@ -180,6 +408,13 @@ def ensure_grounded_answer(
         unsupported_claims: list[str] = []
         sentence_chunks: list[RetrievedChunk] = []
         for claim in sentence_claims:
+            if explanatory_question and (
+                is_methodology_guidance(claim)
+                or not claim_explains_requested_relation(question, claim)
+            ):
+                unsupported_claims.append(claim)
+                claim_index += 1
+                continue
             lexical_score, lexical_chunk = best_lexical_chunk(claim, contexts)
             semantic_chunk, semantic_score = best_semantic_chunk(
                 claim_index, contexts, semantic_scores
@@ -207,6 +442,14 @@ def ensure_grounded_answer(
                 supported_claims.append(claim)
                 if chosen not in sentence_chunks:
                     sentence_chunks.append(chosen)
+
+        if answer_profile in {
+            "definition", "list", "summary", "comparison", "procedure"
+        } and unsupported_claims:
+            # Removing one clause from a structured point can change its meaning
+            # or leave a dangling fragment. Let the repair pass rewrite it whole.
+            unsupported.extend(sentence_claims)
+            continue
 
         if supported_claims and sentence_chunks:
             supported_text = (
@@ -237,6 +480,42 @@ def ensure_grounded_answer(
         unsupported_sentences=unsupported,
         unsupported_sentence_count=len(unsupported),
     )
+
+
+def claim_explains_requested_relation(question: str, claim: str) -> bool:
+    """Keep causal claims aligned with the direction explicitly asked by the user."""
+    normalized_question = normalize_text(question)
+    relation = re.search(
+        r"(?:tai sao|vi sao|why)\s+(.{1,80}?)\s+quyet dinh\s+(.+?)(?:\?|$)",
+        normalized_question,
+    )
+    if relation is None:
+        return True
+
+    subject_terms = (
+        content_terms(relation.group(1))
+        - GENERIC_QUESTION_TERMS
+        - VIETNAMESE_STOPWORDS
+    )
+    normalized_claim = normalize_text(claim)
+    claim_terms = content_terms(claim)
+    subject_present = bool(subject_terms & claim_terms)
+    causal_marker_present = any(
+        marker in normalized_claim
+        for marker in (
+            "quyet dinh",
+            "nguon goc",
+            "co truoc",
+            "sinh ra",
+            "quy dinh",
+            "phan anh",
+            "tac dong len",
+            "nen tang",
+            "dieu kien",
+            "hinh thanh",
+        )
+    )
+    return subject_present and causal_marker_present
 
 
 def preserve_supported_markdown(original: str, supported: Sequence[str]) -> str:
@@ -289,6 +568,14 @@ def format_grounded_answer(answer: str, answer_profile: str, question: str = "")
         cleaned,
         flags=re.IGNORECASE,
     )
+    cleaned = _deduplicate_markdown_items(cleaned)
+    cleaned = _sanitize_named_entity_list(cleaned, question)
+    profile = (answer_profile or "factual").strip().lower()
+    if profile == "reasoning":
+        cleaned = _polish_reasoning_markdown(cleaned, question)
+    if profile == "definition":
+        return _format_definition(cleaned, question)
+
     first_line = cleaned.splitlines()[0].strip()
     if (
         re.search(r"(?m)^\s*(?:[-*+]\s+|\|.+\|\s*$)", cleaned)
@@ -305,29 +592,171 @@ def format_grounded_answer(answer: str, answer_profile: str, question: str = "")
         return cleaned
 
     labels = _format_labels(question)
-    if answer_profile == "reasoning":
+    if profile == "reasoning":
         direct = units[0]
-        details = units[1:5]
+        details = units[1:]
         bullets = "\n".join(f"- {item}" for item in details)
         return (
             f"**{labels['direct']}:** {direct}\n\n"
-            f"**{labels['reasons']}:**\n{bullets}\n\n"
-            f"**{labels['conclusion']}:** {direct}"
+            f"**{labels['reasons']}:**\n{bullets}"
         )
-    if answer_profile == "definition":
-        details = "\n".join(f"- {item}" for item in units[1:5])
-        return (
-            f"**{labels['definition']}:** {units[0]}\n\n"
-            f"**{labels['features']}:**\n{details}"
-        )
-    if answer_profile == "procedure":
-        return "\n".join(f"{index}. {item}" for index, item in enumerate(units[:7], start=1))
-    if answer_profile in {"list", "summary", "comparison"}:
-        return "\n".join(f"- {item}" for item in units[:8])
-    if answer_profile == "factual" and len(units) >= 3:
-        details = "\n".join(f"- {item}" for item in units[1:5])
-        return f"{units[0]}\n\n{details}"
+    if profile == "procedure":
+        return "\n".join(f"{index}. {item}" for index, item in enumerate(units, start=1))
+    if profile in {"list", "summary", "comparison"}:
+        return "\n".join(f"- {item}" for item in units)
     return cleaned
+
+
+def _polish_reasoning_markdown(answer: str, question: str) -> str:
+    """Remove repeated fragments from small-model reasoning without adding facts."""
+    marker = re.compile(r"^(\s*[-*+]\s+)(.*)$")
+    direct_terms: set[str] = set()
+    bullets: list[tuple[str, set[str]]] = []
+    output: list[str] = []
+
+    for line in answer.splitlines():
+        match = marker.match(line)
+        if match is None:
+            output.append(line)
+            if line.strip() and not line.strip().startswith("**Các lý do"):
+                direct_terms |= content_terms(line.replace("**", ""))
+            continue
+
+        content = match.group(2).strip().strip("\"'“”").strip()
+        content = re.sub(r"^(?:và|đồng thời|bên cạnh đó)\s+", "", content, flags=re.I)
+        if not content:
+            continue
+        terms = content_terms(content)
+        if not terms:
+            continue
+        if direct_terms and terms <= direct_terms:
+            continue
+        if any(jaccard_similarity(terms, previous) >= 0.72 for _, previous in bullets):
+            continue
+        content = _ensure_sentence_end(content)
+        bullets.append((content, terms))
+        output.append(f"{match.group(1)}{content}")
+
+    if len(bullets) < 2:
+        normalized_question = normalize_text(question)
+        note = (
+            "_Các đoạn được truy xuất chỉ cung cấp trực tiếp luận cứ trên; "
+            "tài liệu chưa đủ bằng chứng để tách thêm các khía cạnh độc lập._"
+            if any(
+                token in normalized_question
+                for token in ("tai sao", "vi sao", "giai thich")
+            )
+            else ""
+        )
+        if note:
+            output.extend(["", note])
+    return "\n".join(output).strip()
+
+
+def _deduplicate_markdown_items(answer: str) -> str:
+    """Remove repeated list points while preserving the model's Markdown order."""
+    seen_terms: list[set[str]] = []
+    output: list[str] = []
+    marker = re.compile(r"^(\s*(?:[-*+]\s+|\d+[.)]\s+))(.*)$")
+    for line in answer.splitlines():
+        match = marker.match(line)
+        if not match:
+            output.append(line)
+            continue
+        terms = content_terms(match.group(2))
+        if terms and any(
+            jaccard_similarity(terms, previous) >= 0.86
+            for previous in seen_terms
+        ):
+            continue
+        if terms:
+            seen_terms.append(terms)
+        output.append(line)
+    return "\n".join(output).strip()
+
+
+def _sanitize_named_entity_list(answer: str, question: str) -> str:
+    """Keep named items when a small model pads a requested entity list with background."""
+    normalized_question = normalize_text(question)
+    if "hoc thuyet" not in normalized_question:
+        return answer
+
+    marker = re.compile(r"^(\s*(?:[-*+]\s+|\d+[.)]\s+))(.*)$")
+    output: list[str] = []
+    kept_items = 0
+    for line in answer.splitlines():
+        match = marker.match(line)
+        if not match:
+            output.append(line)
+            continue
+        prefix, content = match.groups()
+        parts = [part.strip() for part in content.split(":")]
+        if len(parts) >= 3:
+            final_clause = parts[-1]
+            entity_match = re.match(
+                r"(?P<name>[\wÀ-ỹĐđ][\wÀ-ỹĐđ -]{1,45}?)\s+là\b",
+                final_clause,
+                flags=re.IGNORECASE,
+            )
+            if entity_match:
+                name = entity_match.group("name").strip(" -*")
+                content = f"**{name}:** {final_clause}"
+
+        label = content.split(":", 1)[0].replace("**", "").strip()
+        normalized_label = normalize_text(label)
+        if normalized_label.startswith("hoan canh") or normalized_label.startswith(
+            "triet hoc trung hoa"
+        ):
+            continue
+        output.append(f"{prefix}{content}")
+        kept_items += 1
+
+    if 0 < kept_items < 3:
+        output.extend([
+            "",
+            "_Tài liệu được truy xuất hiện chỉ nêu rõ các học thuyết trên; "
+            "không có đủ bằng chứng để liệt kê thêm._",
+        ])
+    return "\n".join(output).strip()
+
+
+def _format_definition(answer: str, question: str) -> str:
+    """Join verified definition clauses into a coherent paragraph."""
+    plain = re.sub(
+        r"\*\*(?:Định nghĩa|Definition|Đặc điểm chính|Key points):\*\*\s*",
+        "",
+        answer,
+        flags=re.IGNORECASE,
+    )
+    plain = re.sub(r"(?m)^\s*(?:[-*+]\s+|\d+[.)]\s+)", "", plain)
+    units = split_answer_sentences(plain)
+    if not units:
+        return answer.strip()
+
+    merged: list[str] = []
+    continuation = re.compile(
+        r"^(?:và|về|đồng thời|trong đó|bao gồm|qua đó|từ đó)\b",
+        flags=re.IGNORECASE,
+    )
+    for unit in units:
+        unit = re.sub(
+            r"\b([\wÀ-ỹĐđ]+)\s+và\s+\1\b",
+            r"\1",
+            unit,
+            flags=re.IGNORECASE,
+        ).strip()
+        if merged and (continuation.match(unit) or unit[:1].islower()):
+            merged[-1] = merged[-1].rstrip(".;:, ") + ", " + unit
+        else:
+            merged.append(unit)
+
+    paragraph = " ".join(_ensure_sentence_end(unit) for unit in merged).strip()
+    return f"**{_format_labels(question)['definition']}:** {paragraph}"
+
+
+def _ensure_sentence_end(text: str) -> str:
+    cleaned = text.strip()
+    return cleaned if not cleaned or cleaned[-1] in ".!?" else cleaned + "."
 
 
 def _format_labels(question: str) -> dict[str, str]:
@@ -351,23 +780,83 @@ def _format_labels(question: str) -> dict[str, str]:
     }
 
 
-def answer_is_complete(answer: str, answer_profile: str) -> bool:
-    """Reject grounded fragments that are too small to answer the requested intent."""
+def answer_completeness_issues(
+    answer: str,
+    answer_profile: str,
+    answer_depth: str = "STANDARD",
+    evidence_count: int | None = None,
+) -> list[str]:
+    """Describe missing coverage without asking the model to invent unsupported points."""
+    issues: list[str] = []
     if not answer or contains_cjk(answer) or looks_mostly_english(answer):
-        return False
+        return ["Câu trả lời rỗng hoặc sai ngôn ngữ."]
+
+    stripped = answer.rstrip()
+    profile = (answer_profile or "factual").lower()
+    depth = (answer_depth or "STANDARD").upper()
+    if stripped.endswith((": ", ":", ";", ",", "-", "•")):
+        issues.append("Câu trả lời kết thúc giữa một ý.")
+    last_line = stripped.splitlines()[-1].strip()
+    if re.fullmatch(r"(?:[-*+]|\d+[.)])", last_line):
+        issues.append("Danh sách có một mục đang dang dở.")
+    if profile != "comparison" and stripped[-1:] not in ".?!":
+        issues.append("Câu cuối chưa kết thúc hoàn chỉnh.")
+
     sentences = split_answer_sentences(answer)
     word_count = len(content_tokens(answer))
-    requirements = {
-        "definition": (2, 28),
-        "factual": (2, 28),
-        "comparison": (3, 45),
-        "list": (3, 40),
-        "procedure": (3, 40),
-        "reasoning": (3, 45),
-        "summary": (4, 70),
+    minimum_words = {
+        "SHORT": 18,
+        "STANDARD": 45,
+        "DEEP": 150,
+    }.get(depth, 45)
+    available_evidence = max(1, evidence_count or 1)
+    if depth == "DEEP" and available_evidence <= 2:
+        minimum_words = 55
+    elif depth == "DEEP" and available_evidence <= 4:
+        minimum_words = 80
+    if word_count < minimum_words:
+        issues.append(
+            f"Câu trả lời mới có {word_count} từ, chưa đủ độ sâu {depth.lower()}."
+        )
+
+    coverage_targets = {
+        "list": 3,
+        "reasoning": 3,
+        "comparison": 2,
+        "summary": 5,
+        "procedure": 3,
     }
-    minimum_sentences, minimum_words = requirements.get(answer_profile, (2, 28))
-    return len(sentences) >= minimum_sentences and word_count >= minimum_words
+    target = coverage_targets.get(profile, 1)
+    target = min(target, available_evidence)
+    markdown_points = len(re.findall(r"(?m)^\s*(?:[-*+]\s+|\d+[.)]\s+)", answer))
+    markdown_contents = re.findall(
+        r"(?m)^\s*(?:[-*+]\s+|\d+[.)]\s+)(.+)$",
+        answer,
+    )
+    normalized_points = [normalize_text(item) for item in markdown_contents]
+    if len(normalized_points) != len(set(normalized_points)):
+        issues.append("Danh sách còn lặp lại cùng một ý.")
+    covered_points = markdown_points or len(sentences)
+    if covered_points < target:
+        issues.append(
+            f"Cần bao phủ ít nhất {target} ý riêng biệt từ bằng chứng đã tìm thấy."
+        )
+    return issues
+
+
+def answer_is_complete(
+    answer: str,
+    answer_profile: str,
+    answer_depth: str = "STANDARD",
+    evidence_count: int | None = None,
+) -> bool:
+    """Reject truncated or under-covered grounded answers."""
+    return not answer_completeness_issues(
+        answer,
+        answer_profile,
+        answer_depth,
+        evidence_count,
+    )
 
 
 def answer_is_well_formed(answer: str) -> bool:
@@ -462,6 +951,28 @@ def critical_identifiers_supported(
     )
 
 
+def list_item_label_supported(
+    sentence: str,
+    contexts: Sequence[RetrievedChunk],
+) -> bool:
+    """Reject a named list item when its label never appears in the evidence."""
+    plain = re.sub(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)", "", sentence).strip()
+    plain = plain.replace("**", "")
+    if ":" not in plain:
+        return True
+
+    label = plain.split(":", 1)[0].strip(" .,-")
+    label_terms = content_terms(label)
+    if len(label_terms) < 2:
+        return True
+
+    normalized_label = normalize_text(label)
+    normalized_evidence = normalize_text(
+        " ".join(context.content for context in contexts)
+    )
+    return normalized_label in normalized_evidence
+
+
 def sentence_relevance(sentence: str, query_terms: set[str]) -> float:
     terms = content_terms(sentence)
     if not terms or not query_terms:
@@ -488,7 +999,7 @@ def split_answer_sentences(text: str) -> list[str]:
             continue
         filtered_lines.append(stripped)
     cleaned = "\n".join(filtered_lines)
-    parts = re.split(r"(?<=[.!?;])\s+|\n+", cleaned)
+    parts = re.split(r"(?<=[.!?])\s+|\n+", cleaned)
     return [part.strip(" -\t") for part in parts if len(part.strip()) >= 12]
 
 

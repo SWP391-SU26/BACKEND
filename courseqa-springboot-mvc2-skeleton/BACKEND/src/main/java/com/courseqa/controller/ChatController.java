@@ -151,7 +151,7 @@ public class ChatController {
             @AuthenticationPrincipal JwtPrincipal principal,
             @Valid @RequestBody AskQuestionRequest request) {
         chatService.requireSessionOwner(sessionId, principal.userId());
-        SseEmitter emitter = new SseEmitter(60_000L);
+        SseEmitter emitter = new SseEmitter(125_000L);
         AtomicBoolean terminal = new AtomicBoolean(false);
         long startedAt = System.nanoTime();
 
@@ -161,7 +161,7 @@ public class ChatController {
                         request.getQuestion(),
                         request.getAnswerMode(),
                         "FINE_TUNED".equalsIgnoreCase(request.getAnswerMode()),
-                        phase -> sendPhase(emitter, terminal, phase)
+                        phase -> sendPhase(emitter, terminal, phase, startedAt)
                 ), CompletableFuture.delayedExecutor(25, TimeUnit.MILLISECONDS, chatTaskExecutor));
 
         task.whenComplete((response, error) -> {
@@ -196,7 +196,7 @@ public class ChatController {
             try {
                 send(emitter, "ERROR", Map.of(
                         "code", "CHAT_DEADLINE_EXCEEDED",
-                        "message", "Quá trình trả lời đã vượt quá 55 giây. Vui lòng thử lại.",
+                        "message", "Quá trình trả lời đã vượt quá 120 giây. Vui lòng thử lại.",
                         "elapsedMs", elapsedMs(startedAt),
                         "retryable", true
                 ));
@@ -204,7 +204,7 @@ public class ChatController {
             } catch (IOException exception) {
                 emitter.complete();
             }
-        }, CompletableFuture.delayedExecutor(55, TimeUnit.SECONDS));
+        }, CompletableFuture.delayedExecutor(120, TimeUnit.SECONDS));
 
         emitter.onTimeout(() -> {
             if (terminal.compareAndSet(false, true)) {
@@ -219,10 +219,22 @@ public class ChatController {
         return emitter;
     }
 
-    private static void sendPhase(SseEmitter emitter, AtomicBoolean terminal, String phase) {
+    private static void sendPhase(
+            SseEmitter emitter,
+            AtomicBoolean terminal,
+            String phase,
+            long startedAt
+    ) {
         if (terminal.get()) return;
         try {
-            send(emitter, phase, Map.of("message", phaseMessage(phase)));
+            send(emitter, phase, Map.of(
+                    "step", phase,
+                    "status", "STARTED",
+                    "messageKey", "chat.process." + phase.toLowerCase(java.util.Locale.ROOT),
+                    "message", phaseMessage(phase),
+                    "elapsedMs", elapsedMs(startedAt),
+                    "metadata", Map.of()
+            ));
         } catch (IOException exception) {
             throw new IllegalStateException("SSE client disconnected.", exception);
         }
@@ -234,9 +246,16 @@ public class ChatController {
 
     private static String phaseMessage(String phase) {
         return switch (phase) {
+            case "QUESTION_ANALYSIS" -> "Đang phân tích câu hỏi";
             case "SCOPE_CHECK" -> "Đang kiểm tra phạm vi tài liệu";
+            case "QUERY_EXPANSION" -> "Đang làm rõ truy vấn";
             case "RETRIEVAL" -> "Đang tìm nội dung liên quan";
+            case "EVIDENCE_SELECTION" -> "Đang chọn nguồn đa dạng";
+            case "COVERAGE_CHECK" -> "Đang kiểm tra độ bao phủ bằng chứng";
             case "GENERATION_START" -> "Đang tạo câu trả lời";
+            case "GROUNDING_CHECK" -> "Đang kiểm tra câu trả lời với tài liệu";
+            case "REPAIR" -> "Đang hoàn thiện câu trả lời";
+            case "CITATION_SAVE" -> "Đang lưu trích dẫn";
             default -> "Đang xử lý";
         };
     }

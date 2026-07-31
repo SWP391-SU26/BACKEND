@@ -105,7 +105,8 @@ public class LearningScopeService {
         SemesterWorkspace semester = semesters.findById(course.getSemesterWorkspaceId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Semester not found."));
         if (!visible(course, semester)
-                || !documents.existsByCourseIdAndProcessingStatus(courseId, "PROCESSED")) {
+                || !documents.existsByCourseIdAndProcessingStatusAndIndexingStatus(
+                        courseId, "PROCESSED", "INDEXED")) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This course is not currently available.");
         }
         return course;
@@ -124,7 +125,8 @@ public class LearningScopeService {
         SemesterWorkspace semester = requireAccessibleSemester(semesterId);
         return courses.findBySemesterWorkspaceIdOrderByCreatedAtDesc(semesterId).stream()
                 .filter(course -> visible(course, semester))
-                .filter(course -> documents.existsByCourseIdAndProcessingStatus(course.getCourseId(), "PROCESSED"))
+                .filter(course -> documents.existsByCourseIdAndProcessingStatusAndIndexingStatus(
+                        course.getCourseId(), "PROCESSED", "INDEXED"))
                 .toList();
     }
 

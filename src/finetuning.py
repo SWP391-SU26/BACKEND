@@ -11,10 +11,17 @@ from typing import Any
 
 
 FINETUNED_REFUSAL_MESSAGE = "Tôi chưa tìm thấy thông tin này trong tài liệu đã được huấn luyện."
+UUID_FILENAME_PREFIX = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}[_-]",
+    re.IGNORECASE,
+)
 
 
 def normalize_source_name(value: str) -> str:
-    return Path(value.strip()).name.casefold() if value and value.strip() else ""
+    if not value or not value.strip():
+        return ""
+    filename = Path(value.strip()).name
+    return UUID_FILENAME_PREFIX.sub("", filename).casefold()
 
 
 def build_finetuning_system_prompt(allowed_sources: list[str] | set[str] | tuple[str, ...]) -> str:
@@ -55,7 +62,12 @@ def selected_sources_are_trained(selected_filenames: list[str], trained_sources:
         for filename in selected_filenames
         if filename and filename.strip()
     }
-    return bool(selected) and selected.issubset(trained_sources)
+    normalized_trained = {
+        normalize_source_name(filename)
+        for filename in trained_sources
+        if filename and filename.strip()
+    }
+    return bool(selected) and selected.issubset(normalized_trained)
 
 
 @dataclass(frozen=True)

@@ -9,9 +9,11 @@ import static org.mockito.Mockito.when;
 import com.courseqa.model.entity.EvaluationDataset;
 import com.courseqa.model.entity.Experiment;
 import com.courseqa.model.dto.EvaluationDto.RunExperimentRequest;
+import com.courseqa.model.dto.EvaluationDto.RunPairRequest;
 import com.courseqa.security.JwtPrincipal;
 import com.courseqa.service.EvaluationService;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -84,6 +86,23 @@ class EvaluationControllerTest {
 
         assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
         verify(evaluationService).startBenchmark(experimentId, true);
+    }
+
+    @Test
+    void pairEndpointQueuesBothExperimentsWithOneRequest() {
+        UUID ragId = UUID.randomUUID();
+        UUID fineId = UUID.randomUUID();
+        RunPairRequest request = new RunPairRequest();
+        request.ragExperimentId = ragId;
+        request.fineTunedExperimentId = fineId;
+        request.allowUnverifiedModel = true;
+        when(evaluationService.startBenchmarkPair(ragId, fineId, true))
+                .thenReturn(Map.of("rag", new Experiment(), "fineTuned", new Experiment()));
+
+        var response = new EvaluationController(evaluationService).runBenchmarkPair(request);
+
+        assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
+        verify(evaluationService).startBenchmarkPair(ragId, fineId, true);
     }
 
     @Test

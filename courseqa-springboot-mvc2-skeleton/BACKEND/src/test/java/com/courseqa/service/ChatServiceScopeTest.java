@@ -1,6 +1,7 @@
 package com.courseqa.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -166,7 +167,8 @@ class ChatServiceScopeTest {
         when(roles.findByUserIdAndIsActiveTrue(userId)).thenReturn(List.of());
         when(learningScope.requireAccessibleCourse(courseId, userId, false)).thenReturn(course(courseId, semesterId));
         when(learningScope.requireActiveWorkspace(courseId)).thenReturn(workspace(UUID.randomUUID(), courseId));
-        when(documents.findByCourseIdAndProcessingStatusOrderByUploadedAtDesc(courseId, "PROCESSED"))
+        when(documents.findByCourseIdAndProcessingStatusAndIndexingStatusOrderByUploadedAtDesc(
+                courseId, "PROCESSED", "INDEXED"))
                 .thenReturn(List.of(available));
         when(messages.save(any(ChatMessage.class))).thenAnswer(invocation -> {
             ChatMessage message = invocation.getArgument(0);
@@ -188,12 +190,15 @@ class ChatServiceScopeTest {
         RagDto.RetrievedChunk second = new RagDto.RetrievedChunk();
         second.content = "Ý thức phản ánh thế giới vật chất thông qua bộ óc con người.";
 
-        String answer = service.buildLocalFallbackAnswer(List.of(first, second));
+        String answer = service.buildLocalFallbackAnswer(
+                "Vật chất và ý thức có quan hệ thế nào?",
+                List.of(first, second)
+        );
 
-        assertTrue(answer.startsWith("### Thông tin tạm thời từ tài liệu"));
+        assertTrue(answer.startsWith("### Chưa thể tổng hợp câu trả lời"));
         assertTrue(answer.contains("- Vật chất tồn tại khách quan"));
         assertTrue(answer.contains("- Ý thức phản ánh thế giới vật chất"));
-        assertTrue(answer.contains("chưa phải câu trả lời đã được AI tổng hợp"));
+        assertTrue(answer.contains("không phải câu trả lời do AI tổng hợp"));
     }
 
     @Test
@@ -207,7 +212,33 @@ class ChatServiceScopeTest {
         assertTrue(answer.startsWith("**Trả lời trực tiếp:** Vật chất quyết định ý thức."));
         assertTrue(answer.contains("\n- Vật chất là nguồn gốc của ý thức."));
         assertTrue(answer.contains("\n- Ý thức tác động trở lại vật chất"));
-        assertTrue(answer.endsWith("**Kết luận:** Vật chất quyết định ý thức."));
+        assertFalse(answer.contains("**Kết luận:** Vật chất quyết định ý thức."));
+    }
+
+    @Test
+    void definitionFormatterKeepsClausesInOneCoherentParagraph() {
+        String raw = "**Định nghĩa:** Triết học là hệ thống tri thức lý luận chung nhất "
+                + "của con người về thế giới;\n\n"
+                + "**Đặc điểm chính:**\n"
+                + "- nghiên cứu những quy luật chung của tự nhiên, xã hội và tư duy.\n"
+                + "- về vị trí và vai trò của con người trong thế giới ấy.";
+
+        String answer = service.formatAnswerForDisplay(raw, "definition");
+
+        assertTrue(answer.startsWith("**Định nghĩa:** Triết học là hệ thống"));
+        assertFalse(answer.contains("**Đặc điểm chính:**"));
+        assertFalse(answer.contains("\n- "));
+        assertTrue(answer.contains("về vị trí và vai trò"));
+    }
+
+    @Test
+    void definitionFormatterPreservesStructuredAttributedDefinition() {
+        String markdown = "**Ph\u00e1t bi\u1ec3u:** \u201cA l\u00e0 B.\u201d\n\n"
+                + "**C\u00e1c m\u1eb7t/ph\u1ea7n ch\u00ednh:**\n"
+                + "1. **M\u1eb7t th\u1ee9 nh\u1ea5t:** N\u1ed9i dung m\u1ed9t.\n"
+                + "2. **M\u1eb7t th\u1ee9 hai:** N\u1ed9i dung hai.";
+
+        assertEquals(markdown, service.formatAnswerForDisplay(markdown, "definition"));
     }
 
     @Test
@@ -239,7 +270,8 @@ class ChatServiceScopeTest {
                 .thenReturn(course(courseId, semesterId));
         when(learningScope.requireActiveWorkspace(courseId))
                 .thenReturn(workspace(workspaceId, courseId));
-        when(documents.findByCourseIdAndProcessingStatusOrderByUploadedAtDesc(courseId, "PROCESSED"))
+        when(documents.findByCourseIdAndProcessingStatusAndIndexingStatusOrderByUploadedAtDesc(
+                courseId, "PROCESSED", "INDEXED"))
                 .thenReturn(List.of(available));
         when(messages.save(any(ChatMessage.class))).thenAnswer(invocation -> {
             ChatMessage message = invocation.getArgument(0);
@@ -281,6 +313,11 @@ class ChatServiceScopeTest {
 
         verify(ai, never()).callRewriteQuery(any());
         verify(retrieval).retrieve(any());
+        org.mockito.ArgumentCaptor<PythonAiDto.GenerateRequest> generateRequest =
+                org.mockito.ArgumentCaptor.forClass(PythonAiDto.GenerateRequest.class);
+        verify(ai).callGenerate(generateRequest.capture(), any());
+        assertEquals("definition", generateRequest.getValue().answer_profile);
+        assertEquals("SHORT", generateRequest.getValue().answer_depth);
     }
 
     @Test
@@ -306,7 +343,8 @@ class ChatServiceScopeTest {
         when(roles.findByUserIdAndIsActiveTrue(userId)).thenReturn(List.of(adminRole));
         when(learningScope.requireAccessibleCourse(courseId, userId, true)).thenReturn(course(courseId, semesterId));
         when(learningScope.requireActiveWorkspace(courseId)).thenReturn(workspace(UUID.randomUUID(), courseId));
-        when(documents.findByCourseIdAndProcessingStatusOrderByUploadedAtDesc(courseId, "PROCESSED"))
+        when(documents.findByCourseIdAndProcessingStatusAndIndexingStatusOrderByUploadedAtDesc(
+                courseId, "PROCESSED", "INDEXED"))
                 .thenReturn(List.of(available));
         when(messages.save(any(ChatMessage.class))).thenAnswer(invocation -> {
             ChatMessage message = invocation.getArgument(0);
@@ -349,7 +387,8 @@ class ChatServiceScopeTest {
                 .thenReturn(course(courseId, semesterId));
         when(learningScope.requireActiveWorkspace(courseId))
                 .thenReturn(workspace(UUID.randomUUID(), courseId));
-        when(documents.findByCourseIdAndProcessingStatusOrderByUploadedAtDesc(courseId, "PROCESSED"))
+        when(documents.findByCourseIdAndProcessingStatusAndIndexingStatusOrderByUploadedAtDesc(
+                courseId, "PROCESSED", "INDEXED"))
                 .thenReturn(List.of(available));
         when(documents.findAllById(List.of(available.getDocumentId())))
                 .thenReturn(List.of(available));

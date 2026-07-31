@@ -39,7 +39,7 @@ class AppSettings:
     local_base_model: str = "Qwen/Qwen2.5-1.5B-Instruct"
     local_max_input_tokens: int = 2048
     local_max_new_tokens: int = 256
-    benchmark_batch_size: int = 1
+    benchmark_batch_size: int = 4
     benchmark_max_new_tokens: int = 192
     benchmark_max_input_tokens: int = 1536
     dataset_version: str = "triethoc-v1"
@@ -76,7 +76,7 @@ def load_settings() -> AppSettings:
         local_base_model=os.getenv("LOCAL_BASE_MODEL", "Qwen/Qwen2.5-1.5B-Instruct"),
         local_max_input_tokens=max(256, int(os.getenv("LOCAL_MAX_INPUT_TOKENS", "2048"))),
         local_max_new_tokens=max(1, int(os.getenv("LOCAL_MAX_NEW_TOKENS", "256"))),
-        benchmark_batch_size=max(1, int(os.getenv("BENCHMARK_BATCH_SIZE", "1"))),
+        benchmark_batch_size=max(1, int(os.getenv("BENCHMARK_BATCH_SIZE", "4"))),
         benchmark_max_new_tokens=max(1, int(os.getenv("BENCHMARK_MAX_NEW_TOKENS", "192"))),
         benchmark_max_input_tokens=max(256, int(os.getenv("BENCHMARK_MAX_INPUT_TOKENS", "1536"))),
         dataset_version=os.getenv("RESEARCH_DATASET_VERSION", "triethoc-v1"),
