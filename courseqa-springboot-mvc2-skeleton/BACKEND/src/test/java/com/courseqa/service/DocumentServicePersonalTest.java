@@ -1,5 +1,6 @@
 package com.courseqa.service;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
@@ -28,6 +29,9 @@ import com.courseqa.repository.DocumentPageRepository;
 import com.courseqa.repository.SemesterWorkspaceRepository;
 import com.courseqa.repository.UserRepository;
 import com.courseqa.repository.UserRoleRepository;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -35,6 +39,7 @@ import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.web.server.ResponseStatusException;
 
 class DocumentServicePersonalTest {
     private final CourseDocumentRepository documents = mock(CourseDocumentRepository.class);
@@ -66,7 +71,10 @@ class DocumentServicePersonalTest {
                 "uploads",
                 "",
                 "",
-                "");
+                "",
+                "",
+                "vie+eng", 60,
+                new ChunkTokenCounter("", false), disabledSemantics(), 450, 55, 250, 40);
         when(documents.save(any(CourseDocument.class))).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
@@ -184,5 +192,37 @@ class DocumentServicePersonalTest {
                 eq(documentId));
         verify(documents).delete(document);
         verify(documents).flush();
+    }
+
+    @Test
+    void aFileWhoseBytesDoNotMatchItsExtensionIsRejectedBeforeAnythingParsesIt() throws Exception {
+        UUID ownerId = UUID.randomUUID();
+        UUID workspaceId = UUID.randomUUID();
+        CourseWorkspace personal = new CourseWorkspace();
+        personal.setWorkspaceId(workspaceId);
+        personal.setOwnerUserId(ownerId);
+        personal.setVisibility("PRIVATE");
+        when(users.existsById(ownerId)).thenReturn(true);
+        when(workspaces.findById(workspaceId)).thenReturn(Optional.of(personal));
+        when(documents.sumFileSizeByUploadedBy(ownerId)).thenReturn(0L);
+
+        // Anyone can name a file ".pdf"; only the leading bytes say what it is.
+        Path staged = Files.createTempFile("staged", ".tmp");
+        Files.write(staged, "MZ this is a windows executable".getBytes(StandardCharsets.UTF_8));
+
+        try {
+            assertThatThrownBy(() -> service.registerStagedUpload(
+                    staged, "giaotrinh.pdf", "application/pdf", workspaceId, null, null, ownerId))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("not a valid PDF file");
+            verify(documents, org.mockito.Mockito.never()).save(any(CourseDocument.class));
+        } finally {
+            Files.deleteIfExists(staged);
+        }
+    }
+
+    /** Structural chunking only: semantic mode is opt-in and needs a live model. */
+    private static SemanticBoundaryDetector disabledSemantics() {
+        return new SemanticBoundaryDetector(mock(EmbeddingService.class), false, 0.62, 4000);
     }
 }

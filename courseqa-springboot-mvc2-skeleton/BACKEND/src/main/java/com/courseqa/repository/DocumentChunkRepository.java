@@ -20,11 +20,24 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, UU
 
     List<DocumentChunk> findByDocumentIdOrderByChunkIndexAsc(UUID documentId);
 
+    List<DocumentChunk> findByDocumentIdAndIsActiveTrueOrderByChunkIndexAsc(UUID documentId);
+
+    List<DocumentChunk> findByDocumentIdAndChunkVersionOrderByChunkIndexAsc(UUID documentId, Integer chunkVersion);
+
+    @Query("SELECT COALESCE(MAX(c.chunkVersion), 0) FROM DocumentChunk c WHERE c.documentId = :documentId")
+    Integer findMaxChunkVersion(@Param("documentId") UUID documentId);
+
     List<DocumentChunk> findByWorkspaceIdOrderByCreatedAtAsc(UUID workspaceId);
 
     List<DocumentChunk> findByWorkspaceIdInOrderByCreatedAtAsc(List<UUID> workspaceIds);
 
     List<DocumentChunk> findByDocumentIdInOrderByCreatedAtAsc(List<UUID> documentIds);
+
+    List<DocumentChunk> findByWorkspaceIdAndIsActiveTrueOrderByCreatedAtAsc(UUID workspaceId);
+
+    List<DocumentChunk> findByWorkspaceIdInAndIsActiveTrueOrderByCreatedAtAsc(List<UUID> workspaceIds);
+
+    List<DocumentChunk> findByDocumentIdInAndIsActiveTrueOrderByCreatedAtAsc(List<UUID> documentIds);
 
     @Query(value = """
             SELECT chunk_id AS chunkId, document_id AS documentId,
@@ -34,6 +47,7 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, UU
             FROM document_chunks
             WHERE document_id IN (:documentIds)
               AND content_compressed IS NOT NULL
+              AND is_active = 1
             ORDER BY created_at ASC
             """, nativeQuery = true)
     List<CompressedChunkView> findCompressedByDocumentIds(
@@ -47,6 +61,7 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, UU
             FROM document_chunks
             WHERE workspace_id IN (:workspaceIds)
               AND content_compressed IS NOT NULL
+              AND is_active = 1
             ORDER BY created_at ASC
             """, nativeQuery = true)
     List<CompressedChunkView> findCompressedByWorkspaceIds(

@@ -59,6 +59,15 @@ public class DocumentChunk {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
+    @Column(name = "heading_path")
+    private String headingPath;
+
+    @Column(name = "chunk_version")
+    private Integer chunkVersion;
+
+    @Column(name = "is_active")
+    private Boolean isActive;
+
     public DocumentChunk() { }
 
     public UUID getChunkId() { return chunkId; }
@@ -110,5 +119,14 @@ public class DocumentChunk {
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
+    public String getHeadingPath() { return headingPath; }
+    public void setHeadingPath(String headingPath) { this.headingPath = headingPath; }
+
+    public Integer getChunkVersion() { return chunkVersion; }
+    public void setChunkVersion(Integer chunkVersion) { this.chunkVersion = chunkVersion; }
+
+    public Boolean getIsActive() { return isActive; }
+    public void setIsActive(Boolean isActive) { this.isActive = isActive; }
 
 }

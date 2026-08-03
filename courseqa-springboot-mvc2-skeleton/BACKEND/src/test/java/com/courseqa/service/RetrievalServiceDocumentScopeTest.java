@@ -73,7 +73,7 @@ class RetrievalServiceDocumentScopeTest {
         embedding.setEmbeddingModelId(modelId);
         embedding.setEmbeddingJson("[0,1]");
 
-        when(chunks.findByDocumentIdInOrderByCreatedAtAsc(any())).thenReturn(List.of(chunk));
+        when(chunks.findByDocumentIdInAndIsActiveTrueOrderByCreatedAtAsc(any())).thenReturn(List.of(chunk));
         when(documents.findAllById(any())).thenReturn(List.of(document));
         when(embeddings.findByEmbeddingModelIdAndChunkIdIn(any(), any())).thenReturn(List.of(embedding));
         when(embeddingService.resolveModel(any())).thenReturn(model);
@@ -140,7 +140,7 @@ class RetrievalServiceDocumentScopeTest {
         definitionEmbedding.setEmbeddingModelId(modelId);
         definitionEmbedding.setEmbeddingJson("[0.64,0]");
 
-        when(chunks.findByDocumentIdInOrderByCreatedAtAsc(any()))
+        when(chunks.findByDocumentIdInAndIsActiveTrueOrderByCreatedAtAsc(any()))
                 .thenReturn(List.of(generic, definition));
         when(embeddings.findByEmbeddingModelIdAndChunkIdIn(any(), any()))
                 .thenReturn(List.of(genericEmbedding, definitionEmbedding));
@@ -172,7 +172,7 @@ class RetrievalServiceDocumentScopeTest {
                 90,
                 "Lich su nhom trien khai mo ta cac thanh vien va nhung cot moc cua du an.");
         List<DocumentChunk> candidates = List.of(primary, supporting, unrelated);
-        when(chunks.findByDocumentIdInOrderByCreatedAtAsc(any())).thenReturn(candidates);
+        when(chunks.findByDocumentIdInAndIsActiveTrueOrderByCreatedAtAsc(any())).thenReturn(candidates);
 
         List<ChunkEmbedding> prepared = List.of(
                 embedding(primary, modelId, "[0.70,0]"),
@@ -214,7 +214,7 @@ class RetrievalServiceDocumentScopeTest {
                 6,
                 "Van de co ban cua triet hoc co hai mat: cai nao co truoc va con nguoi co "
                         + "kha nang nhan thuc the gioi hay khong.");
-        when(chunks.findByDocumentIdInOrderByCreatedAtAsc(any()))
+        when(chunks.findByDocumentIdInAndIsActiveTrueOrderByCreatedAtAsc(any()))
                 .thenReturn(List.of(distractor, definition, components));
         when(embeddings.findByEmbeddingModelIdAndChunkIdIn(any(), any()))
                 .thenReturn(List.of(
@@ -254,7 +254,7 @@ class RetrievalServiceDocumentScopeTest {
         DocumentChunk page21 = chunk(21, "Nho gia lay Nhan Nghia va cac van de chinh tri dao duc lam cot loi.");
         DocumentChunk page22 = chunk(22, "Dao gia do Lao Tu khoi xuong, de cao Dao va tu tuong Vo vi.");
         List<DocumentChunk> candidates = List.of(page19a, page19b, page21, page22);
-        when(chunks.findByDocumentIdInOrderByCreatedAtAsc(any())).thenReturn(candidates);
+        when(chunks.findByDocumentIdInAndIsActiveTrueOrderByCreatedAtAsc(any())).thenReturn(candidates);
 
         List<ChunkEmbedding> prepared = candidates.stream().map(chunk -> {
             ChunkEmbedding embedding = new ChunkEmbedding();
@@ -292,7 +292,7 @@ class RetrievalServiceDocumentScopeTest {
                 chunk(94, "Dieu kien vat chat thay doi thi y thuc som muon thay doi theo."),
                 chunk(109, "Ket cau vat chat quyet dinh ket qua cua mot qua trinh.")
         );
-        when(chunks.findByDocumentIdInOrderByCreatedAtAsc(any())).thenReturn(candidates);
+        when(chunks.findByDocumentIdInAndIsActiveTrueOrderByCreatedAtAsc(any())).thenReturn(candidates);
 
         List<ChunkEmbedding> prepared = candidates.stream().map(candidate -> {
             ChunkEmbedding embedding = new ChunkEmbedding();
