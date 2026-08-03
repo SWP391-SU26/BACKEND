@@ -343,21 +343,12 @@ public class RetrievalService {
         }
 
         Map<UUID, CourseDocument> documents = loadDocumentsById(chunks);
-        Map<UUID, Boolean> hasCanonicalIndex = chunks.stream()
-                .collect(Collectors.groupingBy(
-                        DocumentChunk::getDocumentId,
-                        Collectors.collectingAndThen(
-                                Collectors.toList(),
-                                values -> values.stream().anyMatch(this::isCanonicalChunk))));
         return chunks.stream()
                 .filter(chunk -> {
                     CourseDocument document = documents.get(chunk.getDocumentId());
-                    boolean canonicalRequired = Boolean.TRUE.equals(
-                            hasCanonicalIndex.get(chunk.getDocumentId()));
                     return document != null
                             && "PROCESSED".equals(document.getProcessingStatus())
-                            && "INDEXED".equals(document.getIndexingStatus())
-                            && (!canonicalRequired || isCanonicalChunk(chunk));
+                            && "INDEXED".equals(document.getIndexingStatus());
                 })
                 .toList();
     }
@@ -368,7 +359,7 @@ public class RetrievalService {
         if (compressed != null && !compressed.isEmpty()) {
             return compressed.stream().map(this::toDocumentChunk).toList();
         }
-        return documentChunkRepository.findByDocumentIdInOrderByCreatedAtAsc(documentIds);
+        return documentChunkRepository.findByDocumentIdInAndIsActiveTrueOrderByCreatedAtAsc(documentIds);
     }
 
     private List<DocumentChunk> compressedWorkspaceChunks(List<UUID> workspaceIds) {
@@ -378,8 +369,8 @@ public class RetrievalService {
             return compressed.stream().map(this::toDocumentChunk).toList();
         }
         return workspaceIds.size() == 1
-                ? documentChunkRepository.findByWorkspaceIdOrderByCreatedAtAsc(workspaceIds.get(0))
-                : documentChunkRepository.findByWorkspaceIdInOrderByCreatedAtAsc(workspaceIds);
+                ? documentChunkRepository.findByWorkspaceIdAndIsActiveTrueOrderByCreatedAtAsc(workspaceIds.get(0))
+                : documentChunkRepository.findByWorkspaceIdInAndIsActiveTrueOrderByCreatedAtAsc(workspaceIds);
     }
 
     private DocumentChunk toDocumentChunk(DocumentChunkRepository.CompressedChunkView source) {
@@ -392,11 +383,6 @@ public class RetrievalService {
         chunk.setPageEnd(source.getPageEnd());
         chunk.setContent(EmbeddingService.decompressUnicodeText(source.getContentCompressed()));
         return chunk;
-    }
-
-    private boolean isCanonicalChunk(DocumentChunk chunk) {
-        return chunk != null
-                && "paragraph_700_120".equalsIgnoreCase(chunk.getChunkStrategy());
     }
 
     private boolean isBroadIntent(QuestionIntentAnalyzer.QueryIntent intent) {

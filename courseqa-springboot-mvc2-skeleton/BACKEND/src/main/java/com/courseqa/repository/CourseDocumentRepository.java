@@ -3,12 +3,18 @@ package com.courseqa.repository;
 import com.courseqa.model.entity.CourseDocument;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 public interface CourseDocumentRepository extends JpaRepository<CourseDocument, UUID> {
     List<CourseDocument> findAllByOrderByUploadedAtDesc();
+
+    Optional<CourseDocument> findFirstByUploadedByAndContentHash(UUID uploadedBy, String contentHash);
+
+    List<CourseDocument> findByIndexingStatusInAndUpdatedAtBefore(
+            List<String> indexingStatuses, LocalDateTime cutoff);
 
     List<CourseDocument> findByUploadedByOrderByUploadedAtDesc(UUID uploadedBy);
 

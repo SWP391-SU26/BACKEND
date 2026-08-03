@@ -10,6 +10,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import java.util.concurrent.Executor;
 
 @Configuration
+@org.springframework.scheduling.annotation.EnableScheduling
 public class AppConfig {
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -41,8 +42,8 @@ public class AppConfig {
     @Bean("documentIndexingTaskExecutor")
     public Executor documentIndexingTaskExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(1);
-        executor.setMaxPoolSize(1);
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(3);
         executor.setQueueCapacity(20);
         executor.setThreadNamePrefix("document-indexing-");
         executor.setWaitForTasksToCompleteOnShutdown(false);
