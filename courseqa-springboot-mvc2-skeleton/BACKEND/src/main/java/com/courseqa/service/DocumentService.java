@@ -96,10 +96,6 @@ public class DocumentService {
     /** Marks where an embedded image sat, so its OCR text lands in the right place. */
     private static final String IMAGE_PLACEHOLDER_PREFIX = String.valueOf((char) 1) + "IMG:";
     private static final String IMAGE_PLACEHOLDER_SUFFIX = String.valueOf((char) 1);
-    private static final long PERSONAL_FILE_LIMIT = 20L * 1024 * 1024;
-    private static final long PERSONAL_STORAGE_LIMIT = 200L * 1024 * 1024;
-    private static final long PERSONAL_DOCUMENT_LIMIT = 20;
-
     private final CourseDocumentRepository courseDocumentRepository;
     private final CourseRepository courseRepository;
     private final ChapterRepository chapterRepository;
@@ -116,6 +112,7 @@ public class DocumentService {
     private final Path previewRoot;
     private final Cloudinary cloudinary;
     private final PersonalWorkspaceService personalWorkspaceService;
+    private final SubscriptionService subscriptionService;
     private final String ocrTessdataPath;
     private final String ocrLanguage;
     private final double ocrMinConfidence;
@@ -140,6 +137,7 @@ public class DocumentService {
             DocumentChapterSuggestionRepository documentChapterSuggestionRepository,
             JdbcTemplate jdbcTemplate,
             PersonalWorkspaceService personalWorkspaceService,
+            SubscriptionService subscriptionService,
             @Value("${app.upload-dir:uploads}") String uploadDir,
             @Value("${cloudinary.cloud-name:}") String cloudinaryCloudName,
             @Value("${cloudinary.api-key:}") String cloudinaryApiKey,
@@ -167,6 +165,7 @@ public class DocumentService {
         this.documentChapterSuggestionRepository = documentChapterSuggestionRepository;
         this.jdbcTemplate = jdbcTemplate;
         this.personalWorkspaceService = personalWorkspaceService;
+        this.subscriptionService = subscriptionService;
         this.uploadRoot = Path.of(uploadDir).toAbsolutePath().normalize();
         this.previewRoot = this.uploadRoot.resolve("previews").normalize();
         this.cloudinary = createCloudinary(cloudinaryCloudName, cloudinaryApiKey, cloudinaryApiSecret);
@@ -2428,21 +2427,30 @@ public class DocumentService {
      * exceed the document count, the storage total and the accepted file types.
      */
     public void validatePersonalQuota(String filename, long sizeBytes, UUID userId) {
+        com.courseqa.model.entity.SubscriptionPlan plan = subscriptionService.effectivePlanForQuota(userId);
         String fileType = resolveFileType(sanitizeFilename(filename));
         if (!List.of("PDF", "DOCX", "PPTX").contains(fileType)) {
             throw new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE,
                     "Personal uploads support PDF, DOCX, and PPTX files only.");
         }
-        if (sizeBytes > PERSONAL_FILE_LIMIT) {
-            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Each file is limited to 20 MB.");
+        if (sizeBytes > plan.getMaxFileBytes()) {
+            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE,
+                    "Each file is limited to " + toMegabytes(plan.getMaxFileBytes()) + " MB on your plan.");
         }
-        if (courseDocumentRepository.countByUploadedBy(userId) >= PERSONAL_DOCUMENT_LIMIT) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "You can store at most 20 documents.");
+        if (courseDocumentRepository.countByUploadedByAndDocumentScope(userId, "PERSONAL") >= plan.getMaxDocuments()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Your plan supports at most " + plan.getMaxDocuments() + " personal documents.");
         }
-        long usedBytes = java.util.Optional.ofNullable(courseDocumentRepository.sumFileSizeByUploadedBy(userId)).orElse(0L);
-        if (usedBytes + sizeBytes > PERSONAL_STORAGE_LIMIT) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Your personal document storage is limited to 200 MB.");
+        long usedBytes = java.util.Optional.ofNullable(
+                courseDocumentRepository.sumFileSizeByUploadedByAndDocumentScope(userId, "PERSONAL")).orElse(0L);
+        if (usedBytes + sizeBytes > plan.getMaxStorageBytes()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Your plan includes " + toMegabytes(plan.getMaxStorageBytes()) + " MB of personal storage.");
         }
+    }
+
+    private static long toMegabytes(long bytes) {
+        return bytes / 1024 / 1024;
     }
 
     private CourseDocument requireOwnedDocument(UUID documentId, UUID userId) {

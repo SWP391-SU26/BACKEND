@@ -126,3 +126,7 @@ set GENERATION_PROVIDER=lora
 set LORA_ADAPTER_DIR=models/ten-mon
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
 ```
+
+## 7. VNPay Sandbox
+
+Xem [VNPAY_PRO_SETUP.md](VNPAY_PRO_SETUP.md). Local Sandbox dùng Return URL `http://localhost:8080` và không bắt buộc tunnel; mỗi thành viên vẫn phải tự tạo `.env` và điền credential Sandbox qua kênh bảo mật.

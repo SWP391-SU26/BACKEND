@@ -24,6 +24,11 @@ IF COL_LENGTH('experiment_results', 'ragas_error') IS NULL
 IF COL_LENGTH('experiment_results', 'ragas_evaluated_at') IS NULL
     ALTER TABLE experiment_results ADD ragas_evaluated_at DATETIME2 NULL;
 
+-- SQL Server binds the UPDATE statements below before evaluating the ALTERs
+-- above. Split the batch so this migration also works on legacy backups where
+-- these RAGAS columns do not exist yet.
+GO
+
 UPDATE experiments
 SET ragas_status = CASE
         WHEN status = 'COMPLETED' THEN 'COMPLETED'

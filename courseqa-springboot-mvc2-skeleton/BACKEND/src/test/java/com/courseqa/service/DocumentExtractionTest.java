@@ -370,7 +370,7 @@ class DocumentExtractionTest {
                 mock(UserRepository.class), mock(UserRoleRepository.class),
                 mock(SemesterWorkspaceRepository.class), mock(DocumentChapterRangeRepository.class),
                 mock(DocumentChapterSuggestionRepository.class), mock(JdbcTemplate.class),
-                mock(PersonalWorkspaceService.class), "uploads", "", "", "", "", "vie+eng", 60,
+                mock(PersonalWorkspaceService.class), mock(SubscriptionService.class), "uploads", "", "", "", "", "vie+eng", 60,
                 new ChunkTokenCounter("", false), disabledSemantics(), 450, 55, 250, 40);
     }
 
