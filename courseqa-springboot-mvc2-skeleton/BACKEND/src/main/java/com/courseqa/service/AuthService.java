@@ -36,6 +36,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final ObjectProvider<JavaMailSender> mailSenderProvider;
+    private final SubscriptionService subscriptionService;
     private final String mailFrom;
     private final String mailHost;
     private final String mailUsername;
@@ -47,6 +48,7 @@ public class AuthService {
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
             ObjectProvider<JavaMailSender> mailSenderProvider,
+            SubscriptionService subscriptionService,
             @Value("${app.mail.from:no-reply@courseqa.local}") String mailFrom,
             @Value("${spring.mail.host:}") String mailHost,
             @Value("${spring.mail.username:}") String mailUsername,
@@ -57,6 +59,7 @@ public class AuthService {
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.mailSenderProvider = mailSenderProvider;
+        this.subscriptionService = subscriptionService;
         this.mailFrom = mailFrom;
         this.mailHost = mailHost;
         this.mailUsername = mailUsername;
@@ -100,6 +103,7 @@ public class AuthService {
         role.setAssignedAt(now);
         role.setIsActive(true);
         userRoleRepository.save(role);
+        subscriptionService.ensureFreeSubscription(savedUser.getUserId());
 
         return buildAuthResponse(savedUser);
     }

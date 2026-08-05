@@ -15,4 +15,9 @@ public interface CourseWorkspaceRepository extends JpaRepository<CourseWorkspace
 
     Optional<CourseWorkspace> findFirstByOwnerUserIdAndCourseIdIsNullAndVisibilityAndIsActiveTrueOrderByCreatedAtDesc(
             UUID ownerUserId, String visibility);
+
+    List<CourseWorkspace> findByOwnerUserIdAndCourseIdIsNullAndVisibilityAndIsActiveTrueOrderByCreatedAtDesc(
+            UUID ownerUserId, String visibility);
+
+    long countByOwnerUserIdAndCourseIdIsNullAndVisibilityAndIsActiveTrue(UUID ownerUserId, String visibility);
 }

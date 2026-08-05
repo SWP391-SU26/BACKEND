@@ -33,6 +33,7 @@ public interface CourseDocumentRepository extends JpaRepository<CourseDocument, 
             UUID courseId, String processingStatus, String indexingStatus);
     List<CourseDocument> findByReviewStatusOrderBySubmittedAtAsc(String reviewStatus);
     long countByUploadedBy(UUID uploadedBy);
+    long countByUploadedByAndDocumentScope(UUID uploadedBy, String documentScope);
     long countByProcessingStatus(String processingStatus);
     long countByReviewStatus(String reviewStatus);
     long countByCloudinaryPreviewUrlIsNullAndFileTypeNot(String fileType);
@@ -41,6 +42,9 @@ public interface CourseDocumentRepository extends JpaRepository<CourseDocument, 
 
     @Query("select coalesce(sum(d.fileSizeBytes), 0) from CourseDocument d where d.uploadedBy = :uploadedBy")
     Long sumFileSizeByUploadedBy(UUID uploadedBy);
+
+    @Query("select coalesce(sum(d.fileSizeBytes), 0) from CourseDocument d where d.uploadedBy = :uploadedBy and d.documentScope = :documentScope")
+    Long sumFileSizeByUploadedByAndDocumentScope(UUID uploadedBy, String documentScope);
 
     @Query("select coalesce(sum(d.fileSizeBytes), 0) from CourseDocument d")
     Long sumFileSize();

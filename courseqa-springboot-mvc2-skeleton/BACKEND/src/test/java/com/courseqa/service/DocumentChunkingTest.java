@@ -203,6 +203,7 @@ class DocumentChunkingTest {
                 mock(DocumentChapterSuggestionRepository.class),
                 mock(JdbcTemplate.class),
                 mock(PersonalWorkspaceService.class),
+                mock(SubscriptionService.class),
                 "uploads",
                 "",
                 "",
