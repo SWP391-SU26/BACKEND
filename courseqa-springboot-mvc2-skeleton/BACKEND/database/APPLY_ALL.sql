@@ -51,5 +51,9 @@ GO
 GO
 :r V20260805__vnpay_pro_subscriptions.sql
 GO
+:r V20260807__chat_message_feedback.sql
+GO
 
 PRINT 'Schema and all migrations applied.';
+
+
