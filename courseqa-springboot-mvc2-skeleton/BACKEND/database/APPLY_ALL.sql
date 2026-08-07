@@ -45,5 +45,8 @@ GO
 GO
 :r V20260804__resumable_uploads.sql
 GO
-
+:r V20260807__chat_message_feedback.sql
+GO
 PRINT 'Schema and all migrations applied.';
+
+
