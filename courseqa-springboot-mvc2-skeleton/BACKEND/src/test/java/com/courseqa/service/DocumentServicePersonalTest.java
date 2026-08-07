@@ -16,6 +16,7 @@ import com.courseqa.model.entity.CourseDocument;
 import com.courseqa.model.entity.CourseWorkspace;
 import com.courseqa.model.entity.DocumentChunk;
 import com.courseqa.model.entity.SemesterWorkspace;
+import com.courseqa.model.entity.SubscriptionPlan;
 import com.courseqa.model.entity.User;
 import com.courseqa.model.entity.UserRole;
 import com.courseqa.repository.ChapterRepository;
@@ -50,6 +51,7 @@ class DocumentServicePersonalTest {
     private final UserRoleRepository roles = mock(UserRoleRepository.class);
     private final SemesterWorkspaceRepository semesters = mock(SemesterWorkspaceRepository.class);
     private final JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+    private final SubscriptionService subscriptions = mock(SubscriptionService.class);
     private DocumentService service;
 
     @BeforeEach
@@ -68,6 +70,7 @@ class DocumentServicePersonalTest {
                 mock(DocumentChapterSuggestionRepository.class),
                 jdbcTemplate,
                 mock(PersonalWorkspaceService.class),
+                subscriptions,
                 "uploads",
                 "",
                 "",
@@ -76,6 +79,13 @@ class DocumentServicePersonalTest {
                 "vie+eng", 60,
                 new ChunkTokenCounter("", false), disabledSemantics(), 450, 55, 250, 40);
         when(documents.save(any(CourseDocument.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        SubscriptionPlan free = new SubscriptionPlan();
+        free.setPlanCode("FREE");
+        free.setMaxFileBytes(10L * 1024 * 1024);
+        free.setMaxDocuments(10);
+        free.setMaxStorageBytes(100L * 1024 * 1024);
+        free.setMaxPersonalWorkspaces(1);
+        when(subscriptions.effectivePlanForQuota(any(UUID.class))).thenReturn(free);
     }
 
     @Test
@@ -204,7 +214,7 @@ class DocumentServicePersonalTest {
         personal.setVisibility("PRIVATE");
         when(users.existsById(ownerId)).thenReturn(true);
         when(workspaces.findById(workspaceId)).thenReturn(Optional.of(personal));
-        when(documents.sumFileSizeByUploadedBy(ownerId)).thenReturn(0L);
+        when(documents.sumFileSizeByUploadedByAndDocumentScope(ownerId, "PERSONAL")).thenReturn(0L);
 
         // Anyone can name a file ".pdf"; only the leading bytes say what it is.
         Path staged = Files.createTempFile("staged", ".tmp");

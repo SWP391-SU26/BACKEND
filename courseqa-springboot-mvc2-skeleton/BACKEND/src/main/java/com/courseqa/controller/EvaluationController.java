@@ -21,6 +21,7 @@ import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -47,6 +48,7 @@ public class EvaluationController {
     private final EvaluationService evaluationService;
     private final EvaluationReportService reportService;
 
+    @Autowired
     public EvaluationController(EvaluationService evaluationService, EvaluationReportService reportService) {
         this.evaluationService = evaluationService;
         this.reportService = reportService;

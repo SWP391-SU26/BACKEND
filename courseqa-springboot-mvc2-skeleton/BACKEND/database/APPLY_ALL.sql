@@ -43,10 +43,17 @@ GO
 GO
 :r V20260801__document_processing_jobs.sql
 GO
+:r V20260802__evaluation_report_exports.sql
+GO
 :r V20260804__resumable_uploads.sql
+GO
+:r V20260805__bootstrap_hainam_admin.sql
+GO
+:r V20260805__vnpay_pro_subscriptions.sql
 GO
 :r V20260807__chat_message_feedback.sql
 GO
+
 PRINT 'Schema and all migrations applied.';
 
 
