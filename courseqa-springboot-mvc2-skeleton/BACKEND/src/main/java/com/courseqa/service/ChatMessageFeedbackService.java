@@ -9,6 +9,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import com.courseqa.service.ChatService;
+
 
 import java.util.Optional;
 import java.util.UUID;
@@ -20,11 +22,13 @@ public class ChatMessageFeedbackService {
 
     private final ChatMessageFeedbackRepository feedbackRepository;
     private final ChatMessageRepository chatMessageRepository;
-
+    private final ChatService chatService;
     public ChatMessageFeedbackService(ChatMessageFeedbackRepository feedbackRepository,
-                                      ChatMessageRepository chatMessageRepository) {
+                                      ChatMessageRepository chatMessageRepository,
+                                      ChatService chatService) {
         this.feedbackRepository = feedbackRepository;
         this.chatMessageRepository = chatMessageRepository;
+        this.chatService = chatService;
     }
 
     @Transactional
@@ -40,6 +44,8 @@ public class ChatMessageFeedbackService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Feedback can only be given on assistant messages.");
         }
+          
+        chatService.requireSessionOwner(message.getChatSessionId(), userId);
 
         Optional<ChatMessageFeedback> existing =
                 feedbackRepository.findByMessageIdAndUserId(messageId, userId);
