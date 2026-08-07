@@ -4,6 +4,7 @@ import com.courseqa.model.entity.DocumentChunk;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -68,4 +69,13 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, UU
             @Param("workspaceIds") List<UUID> workspaceIds);
 
     void deleteByDocumentId(UUID documentId);
+
+    /**
+     * Moving a document to a new personal workspace must carry its chunks along:
+     * retrieval scopes by workspaceId, so a document left with stale chunk
+     * workspace ids would silently vanish from the new workspace's answers.
+     */
+    @Modifying
+    @Query("UPDATE DocumentChunk c SET c.workspaceId = :workspaceId WHERE c.documentId = :documentId")
+    int updateWorkspaceIdByDocumentId(@Param("documentId") UUID documentId, @Param("workspaceId") UUID workspaceId);
 }

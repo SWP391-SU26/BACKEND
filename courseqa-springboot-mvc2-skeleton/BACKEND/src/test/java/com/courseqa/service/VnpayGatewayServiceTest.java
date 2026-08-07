@@ -22,7 +22,7 @@ class VnpayGatewayServiceTest {
     void setUp() {
         VnpayProperties properties = new VnpayProperties();
         properties.setEnabled(true);
-        properties.setTmnCode("TESTMERCHANT");
+        properties.setTmnCode("TEST1234");
         properties.setHashSecret("sandbox-secret-that-must-not-be-logged");
         properties.setPaymentUrl("https://sandbox.vnpayment.vn/paymentv2/vpcpay.html");
         properties.setReturnUrl("https://example.test/api/payments/vnpay/return");

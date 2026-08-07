@@ -555,6 +555,7 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
         answer_is_well_formed,
         ensure_grounded_answer,
         extract_explicit_definition,
+        extract_historical_origin,
         format_grounded_answer,
         select_context_windows,
     )
@@ -610,10 +611,12 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
         if request.answer_profile == "definition"
         else None
     )
-    if explicit_definition is not None:
-        used_ids = set(explicit_definition.used_chunk_ids)
+    historical_origin = extract_historical_origin(request.question, contexts)
+    extractive_evidence = explicit_definition or historical_origin
+    if extractive_evidence is not None:
+        used_ids = set(extractive_evidence.used_chunk_ids)
         return GenerateResponse(
-            answer=explicit_definition.answer,
+            answer=extractive_evidence.answer,
             is_out_of_scope=False,
             sources=[
                 source
@@ -623,10 +626,14 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
             provider_used="document-extractive",
             base_model=pipeline.settings.local_base_model,
             embedding_model=pipeline.embedding_provider.model,
-            generation_mode="EXTRACTIVE_DEFINITION",
+            generation_mode=(
+                "EXTRACTIVE_DEFINITION"
+                if explicit_definition is not None
+                else "EXTRACTIVE_HISTORICAL_ORIGIN"
+            ),
             dataset_version=pipeline.settings.dataset_version,
             prompt_version=pipeline.settings.prompt_version,
-            used_chunk_ids=explicit_definition.used_chunk_ids,
+            used_chunk_ids=extractive_evidence.used_chunk_ids,
             peak_vram_bytes=0,
             grounding_status="GROUNDED",
             grounding_score=1.0,
@@ -762,6 +769,39 @@ def generate_answer(request: GenerateRequest) -> GenerateResponse:
                 generated = repaired
         except Exception:
             pass
+    # A small local model can still emit a refusal or an unsupported claim even
+    # when retrieval found strong evidence. Do not turn that model weakness into
+    # a false "out of scope" response: fall back to deterministic sentences from
+    # the already-authorized document context, then run the same grounding gate.
+    if not grounded.answer and contexts:
+        extractive = pipeline._generate_extractive_answer(
+            request.question,
+            contexts,
+            sources_dict_list,
+        )
+        extractive_body = re.sub(
+            r"\n\nNguồn:\s*.*$",
+            "",
+            extractive,
+            flags=re.IGNORECASE | re.DOTALL,
+        ).strip()
+        if extractive_body and extractive_body != OUT_OF_SCOPE_MESSAGE:
+            extractive_grounding = ensure_grounded_answer(
+                request.question,
+                extractive_body,
+                contexts,
+                minimum_support=0.38,
+                embedding_provider=pipeline.embedding_provider,
+                answer_profile=request.answer_profile,
+            )
+            if extractive_grounding.answer:
+                grounded = extractive_grounding
+                generated = replace(
+                    generated,
+                    answer=extractive_grounding.answer,
+                    provider_used="document-extractive",
+                    generation_mode="EXTRACTIVE_GROUNDED_FALLBACK",
+                )
     answer = (
         grounded.answer
         if answer_is_well_formed(grounded.answer)
@@ -853,7 +893,11 @@ def generate_answer_batch(request: GenerateBatchRequest) -> GenerateBatchRespons
             detail=f"Batch contains {len(request.items)} items; maximum is {settings.benchmark_batch_size}.",
         )
 
-    from src.grounded_answer import extract_explicit_definition, select_context_windows
+    from src.grounded_answer import (
+        extract_explicit_definition,
+        extract_historical_origin,
+        select_context_windows,
+    )
 
     prepared = []
     source_maps: dict[str, dict[str, dict[str, Any]]] = {}
@@ -864,6 +908,10 @@ def generate_answer_batch(request: GenerateBatchRequest) -> GenerateBatchRespons
             explicit = extract_explicit_definition(item.question, contexts)
             if explicit is not None:
                 explicit_definitions[item.request_id] = explicit
+        if item.request_id not in explicit_definitions:
+            historical_origin = extract_historical_origin(item.question, contexts)
+            if historical_origin is not None:
+                explicit_definitions[item.request_id] = historical_origin
         contexts = select_context_windows(
             item.standalone_query or item.question,
             contexts,

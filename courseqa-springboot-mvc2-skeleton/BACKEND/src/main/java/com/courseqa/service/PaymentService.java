@@ -86,9 +86,12 @@ public class PaymentService {
 
         LocalDateTime now = LocalDateTime.now(BUSINESS_ZONE);
         subscriptionService.assertPurchaseAllowed(userId);
-        if (orders.existsByUserIdAndStatusAndExpiresAtAfter(userId, "PENDING", now)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "A payment order is already pending. Complete it or wait until it expires before trying again.");
+        PaymentOrder pending = orders
+                .findFirstByUserIdAndPlanCodeSnapshotAndStatusAndExpiresAtAfterOrderByCreatedAtDesc(
+                        userId, plan.getPlanCode(), "PENDING", now)
+                .orElse(null);
+        if (pending != null) {
+            return toCreateOrderResponse(pending);
         }
         PaymentOrder order = new PaymentOrder();
         order.setVnpTxnRef(newTxnRef(planCode, now));
@@ -105,6 +108,10 @@ public class PaymentService {
         order.setExpiresAt(now.plusMinutes(properties.getOrderTtlMinutes()));
         order = orders.save(order);
 
+        return toCreateOrderResponse(order);
+    }
+
+    private PaymentDto.CreateOrderResponse toCreateOrderResponse(PaymentOrder order) {
         PaymentDto.CreateOrderResponse response = new PaymentDto.CreateOrderResponse();
         response.orderId = order.getPaymentOrderId();
         response.txnRef = order.getVnpTxnRef();

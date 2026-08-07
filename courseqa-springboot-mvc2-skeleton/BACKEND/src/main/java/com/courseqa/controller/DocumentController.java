@@ -68,9 +68,10 @@ public class DocumentController {
     @PostMapping("/personal")
     public ApiResponse<DocumentDto.DocumentResponse> uploadPersonalDocument(
             @RequestParam("file") MultipartFile file,
+            @RequestParam(required = false) UUID workspaceId,
             @AuthenticationPrincipal JwtPrincipal principal
     ) {
-        DocumentDto.DocumentResponse response = documentService.uploadPersonalDocument(file, principal.userId());
+        DocumentDto.DocumentResponse response = documentService.uploadPersonalDocument(file, principal.userId(), workspaceId);
         documentProcessingService.enqueueUpload(response.documentId, principal.userId());
         return ApiResponse.ok(response);
     }
@@ -129,6 +130,16 @@ public class DocumentController {
             @AuthenticationPrincipal JwtPrincipal principal
     ) {
         return ApiResponse.ok(documentService.cancelSubmission(documentId, principal.userId()));
+    }
+
+    /** REQ-02 WS-US-03: cross-workspace document transfer without re-uploading. */
+    @PatchMapping("/{documentId}/workspace")
+    public ApiResponse<DocumentDto.DocumentResponse> moveToWorkspace(
+            @PathVariable UUID documentId,
+            @RequestBody DocumentDto.MoveWorkspaceRequest request,
+            @AuthenticationPrincipal JwtPrincipal principal
+    ) {
+        return ApiResponse.ok(documentService.moveToWorkspace(documentId, principal.userId(), request.workspaceId));
     }
 
     @GetMapping("/review-queue")

@@ -43,7 +43,7 @@ BEGIN TRY
         ) VALUES (
             'FREE', N'FREE', 0, NULL,
             10485760, 10, 104857600,
-            1, N'["Tối đa 10 MB mỗi file","Tối đa 10 tài liệu","100 MB tổng dung lượng","1 Personal Workspace"]', 1
+            5, N'["Tối đa 10 MB mỗi file","Tối đa 10 tài liệu","100 MB tổng dung lượng","5 Personal Workspaces"]', 1
         );
 
     IF NOT EXISTS (SELECT 1 FROM subscription_plans WHERE plan_code = 'PRO')

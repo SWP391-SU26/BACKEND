@@ -53,6 +53,12 @@ GO
 GO
 :r V20260807__chat_message_feedback.sql
 GO
+:r V20260808__chat_feedback_promotion.sql
+GO
+:r V20260808__resumable_upload_temp_path_nullable.sql
+GO
+:r V20260809__free_five_personal_workspaces.sql
+GO
 
 PRINT 'Schema and all migrations applied.';
 

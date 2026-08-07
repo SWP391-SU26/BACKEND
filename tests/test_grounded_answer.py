@@ -4,6 +4,7 @@ from src.grounded_answer import (
     answer_is_well_formed,
     ensure_grounded_answer,
     extract_explicit_definition,
+    extract_historical_origin,
     format_grounded_answer,
     select_context_windows,
 )
@@ -398,6 +399,66 @@ def test_explicit_definition_is_extracted_across_adjacent_pages() -> None:
     assert "removing stale entries" in result.answer
     assert result.answer.endswith('source.”')
     assert result.used_chunk_ids == ["chunk-1", "chunk-2"]
+
+
+def test_explicit_definition_accepts_unquoted_textbook_summary_cue() -> None:
+    result = extract_explicit_definition(
+        "Triết học là gì?",
+        [chunk(
+            "definition",
+            "Đã có nhiều cách định nghĩa khác nhau. Khái quát lại, có thể hiểu: "
+            "Triết học là hệ thống tri thức lý luận chung nhất của con người về thế giới; "
+            "về vị trí, vai trò của con người trong thế giới ấy.",
+            page=4,
+        )],
+    )
+
+    assert result is not None
+    assert "hệ thống tri thức lý luận chung nhất" in result.answer
+    assert result.used_chunk_ids == ["definition"]
+
+
+def test_historical_origin_uses_the_complete_direct_source_statement() -> None:
+    result = extract_historical_origin(
+        "Triết học ra đời sớm nhất ở đâu?",
+        [
+            chunk(
+                "distractor",
+                "Triết học cổ điển Đức đạt đỉnh cao với Hêghđn vào thế kỷ XIX.",
+                page=5,
+            ),
+            chunk(
+                "origin",
+                "Triết học ra đời ở cả phương Đông và phương Tây gần như cùng một "
+                "thời gian, khoảng thế kỷ VIII đến VI trước Công nguyên, tại Trung Quốc, "
+                "Ấn Độ và Hy Lạp.",
+                page=2,
+            ),
+        ],
+    )
+
+    assert result is not None
+    assert "phương Đông và phương Tây" in result.answer
+    assert "Trung Quốc, Ấn Độ và Hy Lạp" in result.answer
+    assert result.used_chunk_ids == ["origin"]
+
+
+def test_explicit_definition_accepts_subject_sentence_after_definition_cue() -> None:
+    result = extract_explicit_definition(
+        "Vật chất theo quan điểm của Lênin là gì?",
+        [chunk(
+            "definition",
+            "Như vậy, định nghĩa vật chất của V.I.Lênin bao gồm nội dung cơ bản sau: "
+            "Vật chất là cái tồn tại khách quan bên ngoài ý thức và không phụ thuộc "
+            "vào ý thức, bất kể con người đã nhận thức được hay chưa. "
+            "Lênin đã cho phép xác định cái gì là vật chất trong lĩnh vực xã hội.",
+            page=81,
+        )],
+    )
+
+    assert result is not None
+    assert "tồn tại khách quan" in result.answer
+    assert result.used_chunk_ids == ["definition"]
 
 
 def test_unrelated_quotation_is_not_used_as_a_definition() -> None:

@@ -52,7 +52,7 @@ class PaymentServiceTest {
         auditService = mock(PaymentCallbackAuditService.class);
         VnpayProperties properties = new VnpayProperties();
         properties.setEnabled(true);
-        properties.setTmnCode("TEST");
+        properties.setTmnCode("TEST1234");
         properties.setHashSecret("test-secret");
         properties.setPaymentUrl("https://sandbox.vnpayment.vn/paymentv2/vpcpay.html");
         properties.setReturnUrl("https://example.test/return");
@@ -126,6 +126,37 @@ class PaymentServiceTest {
     }
 
     @Test
+    void createOrderReturnsTheExistingPendingCheckoutInsteadOfRejectingTheUser() {
+        UUID userId = UUID.randomUUID();
+        User user = new User();
+        user.setUserId(userId);
+        user.setIsActive(true);
+        SubscriptionPlan pro = new SubscriptionPlan();
+        pro.setPlanId(UUID.randomUUID());
+        pro.setPlanCode("PRO");
+        pro.setPriceVnd(49_000L);
+        pro.setDurationDays(30);
+        PaymentOrder pending = paidOrder(userId);
+        pending.setPlanCodeSnapshot("PRO");
+        pending.setAmountVnd(49_000L);
+        pending.setStatus("PENDING");
+        pending.setExpiresAt(LocalDateTime.now().plusMinutes(10));
+        when(users.findById(userId)).thenReturn(Optional.of(user));
+        when(plans.requireActive("PRO")).thenReturn(pro);
+        when(orders.findFirstByUserIdAndPlanCodeSnapshotAndStatusAndExpiresAtAfterOrderByCreatedAtDesc(
+                any(UUID.class), any(String.class), any(String.class), any(LocalDateTime.class)))
+                .thenReturn(Optional.of(pending));
+        when(gateway.createPaymentUrl(pending)).thenReturn("https://sandbox.vnpayment.vn/resume");
+
+        PaymentDto.CreateOrderResponse response = service.createOrder(userId, "PRO", "127.0.0.1");
+
+        assertEquals(pending.getPaymentOrderId(), response.orderId);
+        assertEquals("https://sandbox.vnpayment.vn/resume", response.paymentUrl);
+        assertEquals("PENDING", response.status);
+        verify(orders, never()).save(any(PaymentOrder.class));
+    }
+
+    @Test
     void verifiedReturnSettlesTheOrderWhenIpnIsUnavailable() {
         UUID userId = UUID.randomUUID();
         PaymentOrder order = paidOrder(userId);
@@ -133,7 +164,7 @@ class PaymentServiceTest {
         Map<String, String> raw = Map.of("vnp_SecureHash", "signed");
         Map<String, String> params = Map.of(
                 "vnp_TxnRef", order.getVnpTxnRef(),
-                "vnp_TmnCode", "TEST",
+                "vnp_TmnCode", "TEST1234",
                 "vnp_Amount", "9900000",
                 "vnp_ResponseCode", "00",
                 "vnp_TransactionStatus", "00"

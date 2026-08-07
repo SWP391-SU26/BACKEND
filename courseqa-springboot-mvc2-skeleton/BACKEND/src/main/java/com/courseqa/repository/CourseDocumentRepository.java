@@ -20,6 +20,8 @@ public interface CourseDocumentRepository extends JpaRepository<CourseDocument, 
 
     List<CourseDocument> findByWorkspaceIdOrderByUploadedAtDesc(UUID workspaceId);
 
+    long countByWorkspaceId(UUID workspaceId);
+
     List<CourseDocument> findByWorkspaceIdAndUploadedByOrderByUploadedAtDesc(UUID workspaceId, UUID uploadedBy);
     List<CourseDocument> findByCourseIdOrderByUploadedAtDesc(UUID courseId);
     List<CourseDocument> findByCourseIdAndProcessingStatusOrderByUploadedAtDesc(UUID courseId, String processingStatus);

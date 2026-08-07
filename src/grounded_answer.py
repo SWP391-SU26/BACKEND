@@ -42,6 +42,69 @@ class ExplicitDefinitionEvidence:
     used_chunk_ids: list[str]
 
 
+def extract_historical_origin(
+    question: str,
+    contexts: Sequence[RetrievedChunk],
+) -> ExplicitDefinitionEvidence | None:
+    """Extract a direct where/when statement instead of letting generation invent one."""
+    normalized_question = normalize_text(question)
+    if "ra doi" not in normalized_question or not any(
+        marker in normalized_question
+        for marker in ("o dau", "khi nao", "som nhat", "thoi gian", "where", "when")
+    ):
+        return None
+
+    subject_text = normalized_question.split("ra doi", 1)[0]
+    raw_subject_match = re.search(r"^(.*?)\s+ra\s+đời\b", question, flags=re.I)
+    raw_subject = raw_subject_match.group(1).strip() if raw_subject_match else ""
+    subject_terms = (
+        content_terms(subject_text)
+        - VIETNAMESE_STOPWORDS
+        - GENERIC_QUESTION_TERMS
+    )
+    best: tuple[float, str, str] | None = None
+    for context in contexts:
+        for sentence in split_sentences(context.content or ""):
+            normalized_sentence = normalize_text(sentence)
+            if "ra doi" not in normalized_sentence:
+                continue
+            sentence_terms = content_terms(sentence)
+            if subject_terms and not subject_terms.issubset(sentence_terms):
+                continue
+            has_place = any(
+                marker in normalized_sentence
+                for marker in (
+                    "phuong dong", "phuong tay", "trung quoc", "an do", "hy lap",
+                    "tai ", "o ca ",
+                )
+            )
+            has_time = any(
+                marker in normalized_sentence
+                for marker in (
+                    "the ky", "truoc cong nguyen", "cung mot thoi gian", "khoang ",
+                )
+            )
+            if not (has_place or has_time):
+                continue
+            if raw_subject:
+                direct_start = re.search(
+                    rf"{re.escape(raw_subject)}\s+ra\s+đời\b",
+                    sentence,
+                    flags=re.I,
+                )
+                if direct_start is not None:
+                    sentence = sentence[direct_start.start():]
+            score = 1.0 + float(has_place) + float(has_time)
+            if "ra doi o ca" in normalized_sentence:
+                score += 1.0
+            if best is None or score > best[0]:
+                best = (score, " ".join(sentence.split()), context.chunk_id)
+
+    if best is None:
+        return None
+    return ExplicitDefinitionEvidence(answer=best[1], used_chunk_ids=[best[2]])
+
+
 def extract_explicit_definition(
     question: str,
     contexts: Sequence[RetrievedChunk],
@@ -170,14 +233,32 @@ def extract_explicit_definition(
         definition_patterns = (
             (
                 re.compile(
+                    r"(?:khái quát lại\s*,?\s*)?(?:có thể hiểu|được hiểu)\s*:\s*"
+                    r"(.{30,700}?[.!?])(?:\s|$)",
+                    flags=re.I | re.S,
+                ),
+                True,
+                False,
+            ),
+            (
+                re.compile(
                     r"(?:định nghĩa|dinh nghia|definition|defined as)\s*:\s*[\"“](.{30,700}?)[\"”]",
                     flags=re.I | re.S,
                 ),
                 True,
+                False,
             ),
-            (re.compile(r"[\"“](.{30,700}?)[\"”]", flags=re.S), False),
+            (
+                re.compile(
+                    r"(?:^|[.!?:]\s*|[-•]\s+)([^.!?\n]{2,100}\s+(?:là|la|is)\s+.{20,500}?[.!?])",
+                    flags=re.I | re.S,
+                ),
+                False,
+                True,
+            ),
+            (re.compile(r"[\"“](.{30,700}?)[\"”]", flags=re.S), False, False),
         )
-        for pattern, direct_definition in definition_patterns:
+        for pattern, direct_definition, requires_subject_match in definition_patterns:
             for match in pattern.finditer(combined):
                 quote = " ".join(match.group(1).split()).strip()
                 quote_terms = content_terms(quote)
@@ -209,6 +290,24 @@ def extract_explicit_definition(
                 if not used_ids:
                     continue
                 score = overlap + min(len(quote_terms), 80) / 400
+                normalized_quote = normalize_text(quote)
+                subject_match = re.match(r"^(.{1,120}?)\s+(?:la|is)\s+", normalized_quote)
+                subject_overlap = 0.0
+                if subject_match:
+                    subject_terms = (
+                        content_terms(subject_match.group(1))
+                        - VIETNAMESE_STOPWORDS
+                        - GENERIC_QUESTION_TERMS
+                    )
+                    if subject_terms:
+                        subject_overlap = len(query_terms & subject_terms) / len(subject_terms)
+                        score += subject_overlap * 1.2
+                        if subject_overlap >= 0.75 and len(subject_terms) <= 4:
+                            score += 0.4
+                if requires_subject_match and (
+                    subject_match is None or subject_overlap < 0.50
+                ):
+                    continue
                 if direct_definition:
                     score += 1.0
                 if best is None or score > best[0]:

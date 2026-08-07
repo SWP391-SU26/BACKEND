@@ -31,8 +31,8 @@ public class VnpayProperties {
         if (!"sandbox".equals(normalizedEnvironment) && !"production".equals(normalizedEnvironment)) {
             throw new IllegalStateException("VNPAY_ENVIRONMENT must be sandbox or production.");
         }
-        require(tmnCode, "VNPAY_TMN_CODE");
-        require(hashSecret, "VNPAY_HASH_SECRET");
+        requireTmnCode(tmnCode);
+        requireCredential(hashSecret, "VNPAY_HASH_SECRET");
         require(paymentUrl, "VNPAY_PAYMENT_URL");
         require(returnUrl, "VNPAY_RETURN_URL");
         require(frontendReturnUrl, "FRONTEND_PAYMENT_RETURN_URL");
@@ -59,6 +59,33 @@ public class VnpayProperties {
     private static void require(String value, String name) {
         if (value == null || value.isBlank() || value.contains("replace-with")) {
             throw new IllegalStateException(name + " must be configured when VNPay is enabled.");
+        }
+    }
+
+    private static void requireTmnCode(String value) {
+        requireCredential(value, "VNPAY_TMN_CODE");
+        if (!value.trim().matches("[A-Za-z0-9]{8}")) {
+            throw new IllegalStateException(
+                    "VNPAY_TMN_CODE must be the 8-character alphanumeric website code issued by VNPay.");
+        }
+    }
+
+    private static void requireCredential(String value, String name) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException(name + " must be configured when VNPay is enabled.");
+        }
+        String normalized = value.trim().toLowerCase(java.util.Locale.ROOT);
+        if (normalized.contains("replace-with")
+                || normalized.contains("placeholder")
+                || normalized.contains("your_")
+                || normalized.contains("your-")
+                || normalized.contains("tmn_code")
+                || normalized.contains("hash_secret")
+                || normalized.contains("change_me")
+                || normalized.contains("changeme")
+                || normalized.contains("example")
+                || normalized.contains("sample")) {
+            throw new IllegalStateException(name + " still contains a placeholder value.");
         }
     }
 

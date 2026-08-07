@@ -126,6 +126,17 @@ public final class PaymentDto {
         public PlanResponse plan;
     }
 
+    /** REQ-02 WS-US-02: lets the upload UI show remaining quota before it fails a request. */
+    public static class StorageUsageResponse {
+        public long usedBytes;
+        public long maxStorageBytes;
+        public int documentCount;
+        public int maxDocuments;
+        public long maxFileBytes;
+        public int workspaceCount;
+        public int maxPersonalWorkspaces;
+    }
+
     public static class SubscriptionHistoryResponse {
         public UUID historyId;
         public UUID orderId;

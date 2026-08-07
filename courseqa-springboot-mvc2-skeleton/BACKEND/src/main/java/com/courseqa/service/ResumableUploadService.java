@@ -87,6 +87,12 @@ public class ResumableUploadService {
         session.setStatus(IN_PROGRESS);
         session.setCreatedAt(now);
         session.setUpdatedAt(now);
+        // temp_path depends on the generated id, so it can only be known after the
+        // first insert - the column must allow NULL for that instant (see
+        // V20260808__resumable_upload_temp_path_nullable.sql). Pre-assigning the id
+        // to avoid this second save makes Spring Data JPA treat the entity as
+        // already-persisted and call merge() instead of persist(), which fails here
+        // because there is nothing to merge into yet.
         UploadSession saved = uploadSessionRepository.save(session);
 
         Path temp = stagingRoot.resolve(saved.getUploadId() + ".part").normalize();

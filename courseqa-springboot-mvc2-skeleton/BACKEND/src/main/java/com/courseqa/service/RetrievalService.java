@@ -883,6 +883,7 @@ public class RetrievalService {
                     (lexicalScore * 0.70)
                             + (phraseScore * 0.30)
                             + definitionCueBoost(intent, queryText, chunk.getContent())
+                            + historicalOriginCueBoost(queryText, chunk.getContent())
             );
             return new ScoredChunk(
                     chunk,
@@ -899,6 +900,7 @@ public class RetrievalService {
                         + (lexicalScore * 0.20)
                         + (phraseScore * 0.12)
                         + definitionCueBoost(intent, queryText, chunk.getContent())
+                        + historicalOriginCueBoost(queryText, chunk.getContent())
         );
         return new ScoredChunk(
                 chunk,
@@ -939,6 +941,22 @@ public class RetrievalService {
         return hasDefinitionCue && subjectCoverage >= 0.60 ? 0.08 : 0.0;
     }
 
+    private double historicalOriginCueBoost(String queryText, String content) {
+        String query = normalizeLoose(queryText);
+        if (!query.contains("ra doi")
+                || !(query.contains("o dau") || query.contains("khi nao")
+                        || query.contains("thoi gian") || query.contains("som nhat"))) {
+            return 0.0;
+        }
+        String normalizedContent = normalizeLoose(content);
+        boolean directOriginStatement = normalizedContent.contains("ra doi o ca")
+                || (normalizedContent.contains("ra doi o ")
+                        && normalizedContent.contains("trung tam"))
+                || (normalizedContent.contains("ra doi")
+                        && normalizedContent.contains("gan nhu cung mot thoi gian"));
+        return directOriginStatement ? 0.35 : 0.0;
+    }
+
     private String definitionSubject(String queryText) {
         String definitionQuery = queryText == null ? "" : queryText.trim();
         int attributionComma = definitionQuery.indexOf(',');
@@ -952,6 +970,7 @@ public class RetrievalService {
                         "\\s+(la gi|duoc dinh nghia nhu the nao|duoc hieu nhu the nao|what is)"
                                 + "(?:\\s+va\\s+.*)?$",
                         "")
+                .replaceFirst("\\s+theo\\s+(?:quan diem cua\\s+)?[^,?]+$", "")
                 .trim();
         return subject;
     }

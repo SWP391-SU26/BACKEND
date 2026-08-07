@@ -57,10 +57,14 @@ import org.springframework.web.server.ResponseStatusException;
 public class EvaluationService {
     private static final Logger log = LoggerFactory.getLogger(EvaluationService.class);
     private static final Set<String> TERMINAL_STATUSES = Set.of("COMPLETED", "FAILED", "CANCELLED");
-    private static final int BENCHMARK_BATCH_SIZE = 4;
+    // Keep local-model ownership short enough for interactive chat to take a turn
+    // between benchmark questions. A four-question GPU batch can hold the shared
+    // Qwen runtime longer than Spring's chat timeout and make an otherwise valid
+    // chat request fail while a benchmark is running.
+    private static final int BENCHMARK_BATCH_SIZE = 1;
     private static final int BENCHMARK_REPETITIONS = 1;
     private static final int RAGAS_BATCH_SIZE = 10;
-    private static final String BENCHMARK_PROFILE_VERSION = "qwen1.5b-batched-v3";
+    private static final String BENCHMARK_PROFILE_VERSION = "qwen1.5b-interleaved-v4";
 
     private final EvaluationDatasetRepository datasets;
     private final EvaluationDatasetDocumentRepository datasetDocuments;

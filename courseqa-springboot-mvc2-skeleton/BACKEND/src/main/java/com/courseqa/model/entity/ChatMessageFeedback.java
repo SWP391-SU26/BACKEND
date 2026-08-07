@@ -29,22 +29,37 @@ public class ChatMessageFeedback {
     @Column(name = "comment", columnDefinition = "NVARCHAR(1000)")
     private String comment;
 
+    /** Set once the feedback has been turned into an evaluation question. */
+    @Column(name = "promoted_question_id")
+    private UUID promotedQuestionId;
+
+    @Column(name = "promoted_at")
+    private LocalDateTime promotedAt;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    /**
+     * UTC, to match the SYSUTCDATETIME() defaults the migration puts on these
+     * columns. Server-local time here would silently mix two clocks in one table.
+     */
+    private static LocalDateTime nowUtc() {
+        return LocalDateTime.now(java.time.ZoneOffset.UTC);
+    }
+
     @PrePersist
     void onCreate() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = nowUtc();
         this.createdAt = now;
         this.updatedAt = now;
     }
 
     @PreUpdate
     void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = nowUtc();
     }
 
     public ChatMessageFeedback() { }
@@ -66,6 +81,13 @@ public class ChatMessageFeedback {
     public String getComment() { return comment; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public UUID getPromotedQuestionId() { return promotedQuestionId; }
+    public LocalDateTime getPromotedAt() { return promotedAt; }
+
+    public void markPromoted(UUID questionId) {
+        this.promotedQuestionId = questionId;
+        this.promotedAt = nowUtc();
+    }
 
     public void setHelpful(boolean helpful) { this.helpful = helpful; }
     public void setReasonCode(FeedbackReason reasonCode) { this.reasonCode = reasonCode; }

@@ -18,7 +18,8 @@ public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, UUID
     Optional<PaymentOrder> findByPaymentOrderIdAndUserId(UUID paymentOrderId, UUID userId);
     Page<PaymentOrder> findByUserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
     boolean existsByPlanId(UUID planId);
-    boolean existsByUserIdAndStatusAndExpiresAtAfter(UUID userId, String status, LocalDateTime expiresAt);
+    Optional<PaymentOrder> findFirstByUserIdAndPlanCodeSnapshotAndStatusAndExpiresAtAfterOrderByCreatedAtDesc(
+            UUID userId, String planCodeSnapshot, String status, LocalDateTime expiresAt);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from PaymentOrder o where o.vnpTxnRef = :txnRef")

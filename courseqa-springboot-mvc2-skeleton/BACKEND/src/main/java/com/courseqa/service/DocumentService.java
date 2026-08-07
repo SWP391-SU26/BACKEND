@@ -328,9 +328,18 @@ public class DocumentService {
             UUID chapterId,
             UUID uploadedBy) {
         DocumentDto.UploadDocumentRequest request = new DocumentDto.UploadDocumentRequest();
+        // A course upload with no explicit workspaceId (the resumable path never
+        // sends one) must resolve the COURSE's own workspace, not the uploader's
+        // personal one - falling back to personal unconditionally here meant every
+        // resumable upload into a course (any file over 2 MB) got rejected with
+        // "Workspace does not belong to the selected course.", since a personal
+        // workspace always has courseId = null.
         request.workspaceId = workspaceId != null
                 ? workspaceId
-                : personalWorkspaceService.getOrCreate(uploadedBy).getWorkspaceId();
+                : courseId != null
+                    ? courseWorkspaceRepository.findByCourseIdOrderByCreatedAtDesc(courseId).stream()
+                        .findFirst().map(CourseWorkspace::getWorkspaceId).orElse(null)
+                    : personalWorkspaceService.getOrCreate(uploadedBy).getWorkspaceId();
         request.courseId = courseId;
         request.chapterId = chapterId;
         request.uploadedBy = uploadedBy;
@@ -502,9 +511,16 @@ public class DocumentService {
 
     @Transactional
     public DocumentDto.DocumentResponse uploadPersonalDocument(MultipartFile file, UUID userId) {
+        return uploadPersonalDocument(file, userId, null);
+    }
+
+    @Transactional
+    public DocumentDto.DocumentResponse uploadPersonalDocument(MultipartFile file, UUID userId, UUID workspaceId) {
         requireRequester(userId);
         validatePersonalQuota(file, userId);
-        CourseWorkspace workspace = personalWorkspaceService.getOrCreate(userId);
+        CourseWorkspace workspace = workspaceId == null
+                ? personalWorkspaceService.getOrCreate(userId)
+                : personalWorkspaceService.requireOwnedWorkspace(userId, workspaceId);
         DocumentDto.UploadDocumentRequest request = new DocumentDto.UploadDocumentRequest();
         request.workspaceId = workspace.getWorkspaceId();
         request.uploadedBy = userId;
@@ -543,6 +559,29 @@ public class DocumentService {
         document.setRejectionReason(null);
         document.setUpdatedAt(now);
         return toResponse(courseDocumentRepository.save(document), userId);
+    }
+
+    /**
+     * REQ-02 WS-US-03: moves a personal document to another of the owner's
+     * workspaces without re-uploading. Quota is account-wide (not per-workspace),
+     * so nothing needs re-validating against plan limits here.
+     */
+    @Transactional
+    public DocumentDto.DocumentResponse moveToWorkspace(UUID documentId, UUID userId, UUID targetWorkspaceId) {
+        CourseDocument document = requireOwnedDocument(documentId, userId);
+        if (!"PERSONAL".equals(document.getDocumentScope())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Only personal documents can be moved between workspaces.");
+        }
+        CourseWorkspace target = personalWorkspaceService.requireOwnedWorkspace(userId, targetWorkspaceId);
+        if (target.getWorkspaceId().equals(document.getWorkspaceId())) {
+            return toResponse(document, userId);
+        }
+        document.setWorkspaceId(target.getWorkspaceId());
+        document.setUpdatedAt(LocalDateTime.now());
+        CourseDocument saved = courseDocumentRepository.save(document);
+        documentChunkRepository.updateWorkspaceIdByDocumentId(documentId, target.getWorkspaceId());
+        return toResponse(saved, userId);
     }
 
     @Transactional
@@ -2436,10 +2475,6 @@ public class DocumentService {
         if (sizeBytes > plan.getMaxFileBytes()) {
             throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE,
                     "Each file is limited to " + toMegabytes(plan.getMaxFileBytes()) + " MB on your plan.");
-        }
-        if (courseDocumentRepository.countByUploadedByAndDocumentScope(userId, "PERSONAL") >= plan.getMaxDocuments()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Your plan supports at most " + plan.getMaxDocuments() + " personal documents.");
         }
         long usedBytes = java.util.Optional.ofNullable(
                 courseDocumentRepository.sumFileSizeByUploadedByAndDocumentScope(userId, "PERSONAL")).orElse(0L);

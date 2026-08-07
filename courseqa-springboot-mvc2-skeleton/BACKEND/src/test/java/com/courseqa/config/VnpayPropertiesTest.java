@@ -36,12 +36,36 @@ class VnpayPropertiesTest {
         assertDoesNotThrow(properties::assertReady);
     }
 
+    @Test
+    void rejectsAPlaceholderMerchantCodeBeforeRedirectingToVnpay() {
+        VnpayProperties properties = configured("sandbox");
+        properties.setTmnCode("your_vnpay_tmn_code_here");
+
+        assertThrows(IllegalStateException.class, properties::assertReady);
+    }
+
+    @Test
+    void rejectsMerchantCodesThatDoNotMatchVnpayFormat() {
+        VnpayProperties properties = configured("sandbox");
+        properties.setTmnCode("TOO-LONG-CODE");
+
+        assertThrows(IllegalStateException.class, properties::assertReady);
+    }
+
+    @Test
+    void rejectsAPlaceholderHashSecretBeforeRedirectingToVnpay() {
+        VnpayProperties properties = configured("sandbox");
+        properties.setHashSecret("your_vnpay_hash_secret_here");
+
+        assertThrows(IllegalStateException.class, properties::assertReady);
+    }
+
     private static VnpayProperties configured(String environment) {
         VnpayProperties properties = new VnpayProperties();
         properties.setEnabled(true);
         properties.setEnvironment(environment);
-        properties.setTmnCode("TEST");
-        properties.setHashSecret("test-secret");
+        properties.setTmnCode("TEST1234");
+        properties.setHashSecret("8f2d7a4c9b6e1f305d8c2a7b4e9f1063");
         properties.setPaymentUrl("https://sandbox.vnpayment.vn/paymentv2/vpcpay.html");
         properties.setFrontendReturnUrl("http://localhost:5173/payment/result");
         return properties;

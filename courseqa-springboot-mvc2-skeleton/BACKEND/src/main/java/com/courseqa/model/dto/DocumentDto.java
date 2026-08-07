@@ -209,6 +209,10 @@ public class DocumentDto {
         public UUID courseId;
     }
 
+    public static class MoveWorkspaceRequest {
+        public UUID workspaceId;
+    }
+
     public static class ReviewRequest {
         public String status;
         public UUID courseId;
