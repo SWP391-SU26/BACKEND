@@ -1,15 +1,18 @@
 package com.courseqa.controller;
 
 import com.courseqa.model.dto.ApiResponse;
+import com.courseqa.model.dto.EvaluationDto.CreateReportRequest;
 import com.courseqa.model.dto.LearningScopeDto;
 import com.courseqa.model.dto.EvaluationDto.RunExperimentRequest;
 import com.courseqa.model.dto.EvaluationDto.RunPairRequest;
 import com.courseqa.model.entity.CourseDocument;
 import com.courseqa.model.entity.EvaluationDataset;
+import com.courseqa.model.entity.EvaluationReport;
 import com.courseqa.model.entity.EvaluationQuestion;
 import com.courseqa.model.entity.Experiment;
 import com.courseqa.model.entity.ExperimentResult;
 import com.courseqa.security.JwtPrincipal;
+import com.courseqa.service.EvaluationReportService;
 import com.courseqa.service.EvaluationService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -18,11 +21,17 @@ import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -37,9 +46,16 @@ import org.springframework.web.multipart.MultipartFile;
 @CrossOrigin
 public class EvaluationController {
     private final EvaluationService evaluationService;
+    private final EvaluationReportService reportService;
 
-    public EvaluationController(EvaluationService evaluationService) {
+    @Autowired
+    public EvaluationController(EvaluationService evaluationService, EvaluationReportService reportService) {
         this.evaluationService = evaluationService;
+        this.reportService = reportService;
+    }
+
+    EvaluationController(EvaluationService evaluationService) {
+        this(evaluationService, null);
     }
 
     @GetMapping("/scopes")
@@ -159,6 +175,68 @@ public class EvaluationController {
             @RequestParam UUID fineTunedExperimentId) {
         return ResponseEntity.ok(ApiResponse.ok(evaluationService.comparison(datasetId, ragExperimentId,
                 fineTunedExperimentId)));
+    }
+
+    @PostMapping("/reports")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<EvaluationReport>> createReport(
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @Valid @RequestBody CreateReportRequest request) {
+        if (request.datasetId == null || request.ragExperimentId == null || request.fineTunedExperimentId == null) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "datasetId, ragExperimentId and fineTunedExperimentId are required.");
+        }
+        EvaluationReport report = reportService.createReport(request.datasetId, request.ragExperimentId,
+                request.fineTunedExperimentId, request.language, request.title, principal.userId());
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.ok(report));
+    }
+
+    @GetMapping("/reports")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<List<EvaluationReport>>> listReports(
+            @AuthenticationPrincipal JwtPrincipal principal) {
+        return ResponseEntity.ok(ApiResponse.ok(reportService.listReports(principal.userId())));
+    }
+
+    @GetMapping("/reports/{reportId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<EvaluationReport>> getReport(
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @PathVariable UUID reportId) {
+        return ResponseEntity.ok(ApiResponse.ok(reportService.getReport(reportId, principal.userId())));
+    }
+
+    @GetMapping("/reports/{reportId}/download")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Resource> downloadReport(
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @PathVariable UUID reportId,
+            @RequestParam String format) {
+        EvaluationReportService.DownloadedReport download = reportService.download(reportId, format, principal.userId());
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                        .filename(download.filename(), java.nio.charset.StandardCharsets.UTF_8)
+                        .build().toString())
+                .contentType(MediaType.parseMediaType(download.contentType()))
+                .body(download.resource());
+    }
+
+    @PostMapping("/reports/{reportId}/retry")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<EvaluationReport>> retryReport(
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @PathVariable UUID reportId) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(ApiResponse.ok(reportService.retryReport(reportId, principal.userId())));
+    }
+
+    @DeleteMapping("/reports/{reportId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> deleteReport(
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @PathVariable UUID reportId) {
+        reportService.deleteReport(reportId, principal.userId());
+        return ResponseEntity.ok(ApiResponse.ok(Map.of("deleted", true, "reportId", reportId)));
     }
 
     public static class CreateDatasetRequest {

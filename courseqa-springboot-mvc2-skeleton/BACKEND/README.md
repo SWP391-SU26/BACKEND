@@ -47,13 +47,22 @@ src/main/java/com/courseqa
 
 1. Mở folder này bằng VS Code.
 2. Cài extension Java + Spring Boot.
-3. Sửa SQL Server trong:
+3. Tạo database. `VietnameseCourseQA20DB.sql` chỉ là schema gốc và đã cũ hơn code
+   hiện tại, nên phải chạy kèm toàn bộ migration — `APPLY_ALL.sql` làm cả hai
+   theo đúng thứ tự và chạy lại nhiều lần vẫn an toàn:
+
+```text
+cd database
+sqlcmd -S localhost,1433 -U sa -P <password> -C -i APPLY_ALL.sql
+```
+
+4. Sửa SQL Server trong:
 
 ```text
 src/main/resources/application.properties
 ```
 
-4. Chạy file:
+5. Chạy file:
 
 ```text
 src/main/java/com/courseqa/CourseQaApplication.java

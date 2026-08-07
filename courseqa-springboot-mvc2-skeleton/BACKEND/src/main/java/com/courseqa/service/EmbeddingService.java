@@ -31,6 +31,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class EmbeddingService {
+    /** Chunks per call to the Python embedding service. */
+    static final int EMBED_BATCH_SIZE = 32;
     private static final int DEFAULT_DIMENSION = 128;
     private static final Set<String> SEARCH_STOPWORDS = Set.of(
             "trong", "tai", "lieu", "document", "file", "co", "khong", "cua", "cho",
@@ -87,7 +89,19 @@ public class EmbeddingService {
         return RagDto.EmbeddingModelResponse.fromEntity(embeddingModelRepository.save(model));
     }
 
+    /** Reports how many chunks have been embedded so far, after every batch. */
+    public interface ProgressListener {
+        void onProgress(int embedded, int total);
+
+        ProgressListener NONE = (embedded, total) -> { };
+    }
+
     public RagDto.PrepareEmbeddingsResponse prepareEmbeddings(RagDto.PrepareEmbeddingsRequest request) {
+        return prepareEmbeddings(request, ProgressListener.NONE);
+    }
+
+    public RagDto.PrepareEmbeddingsResponse prepareEmbeddings(
+            RagDto.PrepareEmbeddingsRequest request, ProgressListener progressListener) {
         if (request == null || (request.workspaceId == null && request.documentId == null)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "workspaceId or documentId is required.");
         }
@@ -96,9 +110,15 @@ public class EmbeddingService {
         List<DocumentChunk> chunks = request.documentId != null
                 ? documentChunkRepository.findByDocumentIdOrderByChunkIndexAsc(request.documentId)
                 : documentChunkRepository.findByWorkspaceIdOrderByCreatedAtAsc(request.workspaceId);
-        if (request.documentId != null) {
+        if (request.documentId != null && !chunks.isEmpty()) {
+            // Embed the newest chunk version only (relevant when a reindex has just
+            // created a new, not-yet-active version alongside the still-active old one).
+            int latestVersion = chunks.stream()
+                    .mapToInt(chunk -> chunk.getChunkVersion() == null ? 1 : chunk.getChunkVersion())
+                    .max()
+                    .orElse(1);
             List<DocumentChunk> canonical = chunks.stream()
-                    .filter(chunk -> "paragraph_700_120".equalsIgnoreCase(chunk.getChunkStrategy()))
+                    .filter(chunk -> latestVersion == (chunk.getChunkVersion() == null ? 1 : chunk.getChunkVersion()))
                     .toList();
             if (!canonical.isEmpty()) {
                 chunks = canonical;
@@ -124,8 +144,8 @@ public class EmbeddingService {
             missingChunks.add(chunk);
         }
 
-        for (int start = 0; start < missingChunks.size(); start += 32) {
-            int end = Math.min(start + 32, missingChunks.size());
+        for (int start = 0; start < missingChunks.size(); start += EMBED_BATCH_SIZE) {
+            int end = Math.min(start + EMBED_BATCH_SIZE, missingChunks.size());
             List<DocumentChunk> batch = missingChunks.subList(start, end);
             List<double[]> preparedVectors = embedDocuments(batch, model);
             List<ChunkEmbedding> embeddings = new ArrayList<>(batch.size());
@@ -144,6 +164,9 @@ public class EmbeddingService {
             }
             chunkEmbeddingRepository.saveAllAndFlush(embeddings);
             created += embeddings.size();
+            // Heartbeat: a long embedding run must keep reporting progress, otherwise
+            // the stale-job reconciler cannot tell it apart from a crashed worker.
+            progressListener.onProgress(skipped + created, chunks.size());
         }
 
         RagDto.PrepareEmbeddingsResponse response = new RagDto.PrepareEmbeddingsResponse();
@@ -202,7 +225,15 @@ public class EmbeddingService {
                     .map(text -> createHashedVector(text, model.getDimension()))
                     .toList();
         }
-        return callSemanticEmbeddings(texts, model);
+        // Batched: the semantic-boundary pass can hand over thousands of blocks at
+        // once, and a single request that large risks timeouts and large memory
+        // spikes on the Python side.
+        List<double[]> vectors = new ArrayList<>(texts.size());
+        for (int start = 0; start < texts.size(); start += EMBED_BATCH_SIZE) {
+            int end = Math.min(start + EMBED_BATCH_SIZE, texts.size());
+            vectors.addAll(callSemanticEmbeddings(texts.subList(start, end), model));
+        }
+        return vectors;
     }
 
     public double cosineVectorScore(double[] left, double[] right) {

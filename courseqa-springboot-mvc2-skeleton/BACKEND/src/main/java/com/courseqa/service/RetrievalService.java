@@ -343,21 +343,12 @@ public class RetrievalService {
         }
 
         Map<UUID, CourseDocument> documents = loadDocumentsById(chunks);
-        Map<UUID, Boolean> hasCanonicalIndex = chunks.stream()
-                .collect(Collectors.groupingBy(
-                        DocumentChunk::getDocumentId,
-                        Collectors.collectingAndThen(
-                                Collectors.toList(),
-                                values -> values.stream().anyMatch(this::isCanonicalChunk))));
         return chunks.stream()
                 .filter(chunk -> {
                     CourseDocument document = documents.get(chunk.getDocumentId());
-                    boolean canonicalRequired = Boolean.TRUE.equals(
-                            hasCanonicalIndex.get(chunk.getDocumentId()));
                     return document != null
                             && "PROCESSED".equals(document.getProcessingStatus())
-                            && "INDEXED".equals(document.getIndexingStatus())
-                            && (!canonicalRequired || isCanonicalChunk(chunk));
+                            && "INDEXED".equals(document.getIndexingStatus());
                 })
                 .toList();
     }
@@ -368,7 +359,7 @@ public class RetrievalService {
         if (compressed != null && !compressed.isEmpty()) {
             return compressed.stream().map(this::toDocumentChunk).toList();
         }
-        return documentChunkRepository.findByDocumentIdInOrderByCreatedAtAsc(documentIds);
+        return documentChunkRepository.findByDocumentIdInAndIsActiveTrueOrderByCreatedAtAsc(documentIds);
     }
 
     private List<DocumentChunk> compressedWorkspaceChunks(List<UUID> workspaceIds) {
@@ -378,8 +369,8 @@ public class RetrievalService {
             return compressed.stream().map(this::toDocumentChunk).toList();
         }
         return workspaceIds.size() == 1
-                ? documentChunkRepository.findByWorkspaceIdOrderByCreatedAtAsc(workspaceIds.get(0))
-                : documentChunkRepository.findByWorkspaceIdInOrderByCreatedAtAsc(workspaceIds);
+                ? documentChunkRepository.findByWorkspaceIdAndIsActiveTrueOrderByCreatedAtAsc(workspaceIds.get(0))
+                : documentChunkRepository.findByWorkspaceIdInAndIsActiveTrueOrderByCreatedAtAsc(workspaceIds);
     }
 
     private DocumentChunk toDocumentChunk(DocumentChunkRepository.CompressedChunkView source) {
@@ -392,11 +383,6 @@ public class RetrievalService {
         chunk.setPageEnd(source.getPageEnd());
         chunk.setContent(EmbeddingService.decompressUnicodeText(source.getContentCompressed()));
         return chunk;
-    }
-
-    private boolean isCanonicalChunk(DocumentChunk chunk) {
-        return chunk != null
-                && "paragraph_700_120".equalsIgnoreCase(chunk.getChunkStrategy());
     }
 
     private boolean isBroadIntent(QuestionIntentAnalyzer.QueryIntent intent) {
@@ -897,6 +883,7 @@ public class RetrievalService {
                     (lexicalScore * 0.70)
                             + (phraseScore * 0.30)
                             + definitionCueBoost(intent, queryText, chunk.getContent())
+                            + historicalOriginCueBoost(queryText, chunk.getContent())
             );
             return new ScoredChunk(
                     chunk,
@@ -913,6 +900,7 @@ public class RetrievalService {
                         + (lexicalScore * 0.20)
                         + (phraseScore * 0.12)
                         + definitionCueBoost(intent, queryText, chunk.getContent())
+                        + historicalOriginCueBoost(queryText, chunk.getContent())
         );
         return new ScoredChunk(
                 chunk,
@@ -953,6 +941,22 @@ public class RetrievalService {
         return hasDefinitionCue && subjectCoverage >= 0.60 ? 0.08 : 0.0;
     }
 
+    private double historicalOriginCueBoost(String queryText, String content) {
+        String query = normalizeLoose(queryText);
+        if (!query.contains("ra doi")
+                || !(query.contains("o dau") || query.contains("khi nao")
+                        || query.contains("thoi gian") || query.contains("som nhat"))) {
+            return 0.0;
+        }
+        String normalizedContent = normalizeLoose(content);
+        boolean directOriginStatement = normalizedContent.contains("ra doi o ca")
+                || (normalizedContent.contains("ra doi o ")
+                        && normalizedContent.contains("trung tam"))
+                || (normalizedContent.contains("ra doi")
+                        && normalizedContent.contains("gan nhu cung mot thoi gian"));
+        return directOriginStatement ? 0.35 : 0.0;
+    }
+
     private String definitionSubject(String queryText) {
         String definitionQuery = queryText == null ? "" : queryText.trim();
         int attributionComma = definitionQuery.indexOf(',');
@@ -966,6 +970,7 @@ public class RetrievalService {
                         "\\s+(la gi|duoc dinh nghia nhu the nao|duoc hieu nhu the nao|what is)"
                                 + "(?:\\s+va\\s+.*)?$",
                         "")
+                .replaceFirst("\\s+theo\\s+(?:quan diem cua\\s+)?[^,?]+$", "")
                 .trim();
         return subject;
     }

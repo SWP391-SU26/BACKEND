@@ -244,9 +244,11 @@ class LocalLoraGenerator:
         max_input_tokens: int | None,
     ) -> tuple[list[dict[str, str]], list[RetrievedChunk]]:
         system = (
-            "Bạn là trợ lý học tập. Chỉ trả lời dựa trên tài liệu context. "
-            f"Nếu context không chứa câu trả lời, hãy nói: {OUT_OF_SCOPE_MESSAGE} "
-            "Trả lời ngắn gọn bằng tiếng Việt và nêu nguồn."
+            "Bạn là trợ lý học tập. Chỉ trả lời bằng tiếng Việt từ context; "
+            "không thêm kiến thức, số liệu hay trích dẫn ngoài context. "
+            "Nếu context có bằng chứng liên quan, hãy trả lời từ bằng chứng đó. "
+            f"Chỉ nói \"{OUT_OF_SCOPE_MESSAGE}\" khi context hoàn toàn không liên quan. "
+            "Nêu nguồn [Tên tài liệu, trang]."
         )
         included: list[RetrievedChunk] = []
 

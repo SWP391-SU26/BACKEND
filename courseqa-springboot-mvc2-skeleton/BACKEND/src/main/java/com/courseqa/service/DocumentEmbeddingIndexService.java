@@ -7,7 +7,6 @@ import com.courseqa.repository.CourseDocumentRepository;
 import java.time.LocalDateTime;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -27,8 +26,17 @@ public class DocumentEmbeddingIndexService {
         this.documentRepository = documentRepository;
     }
 
-    @Async("documentIndexingTaskExecutor")
     public void prepareDocument(UUID documentId) {
+        prepareDocument(documentId, EmbeddingService.ProgressListener.NONE);
+    }
+
+    /**
+     * Runs synchronously — the caller ({@link DocumentProcessingService}) is
+     * already executing on a background thread, so this no longer needs its
+     * own {@code @Async} indirection. The progress listener lets that caller
+     * keep the processing job's heartbeat fresh during a long embedding run.
+     */
+    public void prepareDocument(UUID documentId, EmbeddingService.ProgressListener progressListener) {
         if (documentId == null) {
             return;
         }
@@ -44,7 +52,8 @@ public class DocumentEmbeddingIndexService {
 
             documentService.ensureCanonicalChunks(documentId);
             EmbeddingModel model = embeddingService.resolveModel(null);
-            RagDto.PrepareEmbeddingsResponse response = embeddingService.prepareEmbeddings(request);
+            RagDto.PrepareEmbeddingsResponse response =
+                    embeddingService.prepareEmbeddings(request, progressListener);
             int prepared = response.createdEmbeddings + response.skippedExisting;
             if (response.totalChunks <= 0 || prepared != response.totalChunks) {
                 throw new IllegalStateException(
@@ -72,6 +81,10 @@ public class DocumentEmbeddingIndexService {
                 documentRepository.save(document);
             });
             log.error("Semantic indexing failed for document {}.", documentId, exception);
+            // The caller decides what a failure means for the job: swallowing it
+            // here made the job report COMPLETED, and let a reindex activate a
+            // chunk version whose embeddings were never finished.
+            throw exception;
         }
     }
 }

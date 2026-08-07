@@ -17,6 +17,128 @@ public class DocumentDto {
         public UUID uploadedBy;
     }
 
+    /** Opens a resumable upload: the client declares the file before sending it. */
+    public static class ResumableUploadRequest {
+        public String filename;
+        public String mimeType;
+        public Long totalBytes;
+        public UUID workspaceId;
+        public UUID courseId;
+        public UUID chapterId;
+    }
+
+    /** Tells the client exactly which byte to send next after an interruption. */
+    public static class ResumableUploadStatus {
+        public UUID uploadId;
+        public String status;
+        public long receivedBytes;
+        public long totalBytes;
+        public long nextOffset;
+        public int percent;
+        public UUID documentId;
+
+        public static ResumableUploadStatus fromEntity(com.courseqa.model.entity.UploadSession session) {
+            ResumableUploadStatus status = new ResumableUploadStatus();
+            status.uploadId = session.getUploadId();
+            status.status = session.getStatus();
+            status.receivedBytes = session.getReceivedBytes() == null ? 0 : session.getReceivedBytes();
+            status.totalBytes = session.getTotalBytes() == null ? 0 : session.getTotalBytes();
+            status.nextOffset = status.receivedBytes;
+            status.percent = status.totalBytes <= 0
+                    ? 0
+                    : (int) Math.min(100, Math.round(status.receivedBytes * 100.0 / status.totalBytes));
+            status.documentId = session.getDocumentId();
+            return status;
+        }
+    }
+
+    /**
+     * Progress of the background processing job in a form the UI can render
+     * directly. The percentage is derived here rather than in the browser so the
+     * client never has to parse the internal step format.
+     */
+    public static class ProcessingStatusResponse {
+        public UUID jobId;
+        public UUID documentId;
+        public String jobType;
+        public String status;
+        public String step;
+        public Integer processedItems;
+        public Integer totalItems;
+        public int percent;
+        public boolean finished;
+        public boolean failed;
+        public String errorMessage;
+        public LocalDateTime startedAt;
+        public LocalDateTime completedAt;
+        public LocalDateTime updatedAt;
+
+        /** Share of the bar reserved for embedding, the dominant phase. */
+        private static final int EMBEDDING_FLOOR = 45;
+        private static final int EMBEDDING_CEILING = 95;
+
+        public static ProcessingStatusResponse fromEntity(
+                com.courseqa.model.entity.ProcessingJob job) {
+            ProcessingStatusResponse response = new ProcessingStatusResponse();
+            response.jobId = job.getJobId();
+            response.documentId = job.getDocumentId();
+            response.jobType = job.getJobType();
+            response.status = job.getStatus();
+            response.errorMessage = job.getErrorMessage();
+            response.startedAt = job.getStartedAt();
+            response.completedAt = job.getCompletedAt();
+            response.updatedAt = job.getUpdatedAt();
+
+            String rawStep = job.getProgressStep() == null ? "" : job.getProgressStep().trim();
+            String[] parts = rawStep.split("\\s+", 2);
+            response.step = parts[0].isEmpty() ? null : parts[0];
+            if (parts.length == 2 && parts[1].contains("/")) {
+                String[] counts = parts[1].split("/", 2);
+                response.processedItems = parseInteger(counts[0]);
+                response.totalItems = parseInteger(counts[1]);
+            }
+
+            String status = response.status == null ? "" : response.status;
+            response.failed = status.startsWith("FAILED");
+            response.finished = response.failed || "COMPLETED".equals(status);
+            response.percent = computePercent(response, status);
+            return response;
+        }
+
+        private static int computePercent(ProcessingStatusResponse response, String status) {
+            if (response.finished) {
+                return 100;
+            }
+            if ("QUEUED".equals(status)) {
+                return 5;
+            }
+            String step = response.step == null ? "" : response.step;
+            return switch (step) {
+                case "EXTRACTING" -> 15;
+                case "OCR" -> 25;
+                case "CHUNKING" -> 35;
+                case "EMBEDDING" -> embeddingPercent(response);
+                default -> 10;
+            };
+        }
+
+        private static int embeddingPercent(ProcessingStatusResponse response) {
+            if (response.processedItems == null || response.totalItems == null || response.totalItems <= 0) {
+                return EMBEDDING_FLOOR;
+            }
+            double ratio = Math.min(1d, (double) response.processedItems / response.totalItems);
+            return EMBEDDING_FLOOR + (int) Math.round(ratio * (EMBEDDING_CEILING - EMBEDDING_FLOOR));
+        }
+
+        private static Integer parseInteger(String value) {
+            try {
+                return Integer.parseInt(value.trim());
+            } catch (NumberFormatException exception) {
+                return null;
+            }
+        }
+    }
+
     public static class DocumentResponse {
         public UUID documentId;
         public UUID workspaceId;
@@ -85,6 +207,10 @@ public class DocumentDto {
 
     public static class SubmissionRequest {
         public UUID courseId;
+    }
+
+    public static class MoveWorkspaceRequest {
+        public UUID workspaceId;
     }
 
     public static class ReviewRequest {

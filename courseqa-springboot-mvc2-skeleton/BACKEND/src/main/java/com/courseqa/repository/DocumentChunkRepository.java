@@ -4,6 +4,7 @@ import com.courseqa.model.entity.DocumentChunk;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -20,11 +21,24 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, UU
 
     List<DocumentChunk> findByDocumentIdOrderByChunkIndexAsc(UUID documentId);
 
+    List<DocumentChunk> findByDocumentIdAndIsActiveTrueOrderByChunkIndexAsc(UUID documentId);
+
+    List<DocumentChunk> findByDocumentIdAndChunkVersionOrderByChunkIndexAsc(UUID documentId, Integer chunkVersion);
+
+    @Query("SELECT COALESCE(MAX(c.chunkVersion), 0) FROM DocumentChunk c WHERE c.documentId = :documentId")
+    Integer findMaxChunkVersion(@Param("documentId") UUID documentId);
+
     List<DocumentChunk> findByWorkspaceIdOrderByCreatedAtAsc(UUID workspaceId);
 
     List<DocumentChunk> findByWorkspaceIdInOrderByCreatedAtAsc(List<UUID> workspaceIds);
 
     List<DocumentChunk> findByDocumentIdInOrderByCreatedAtAsc(List<UUID> documentIds);
+
+    List<DocumentChunk> findByWorkspaceIdAndIsActiveTrueOrderByCreatedAtAsc(UUID workspaceId);
+
+    List<DocumentChunk> findByWorkspaceIdInAndIsActiveTrueOrderByCreatedAtAsc(List<UUID> workspaceIds);
+
+    List<DocumentChunk> findByDocumentIdInAndIsActiveTrueOrderByCreatedAtAsc(List<UUID> documentIds);
 
     @Query(value = """
             SELECT chunk_id AS chunkId, document_id AS documentId,
@@ -34,6 +48,7 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, UU
             FROM document_chunks
             WHERE document_id IN (:documentIds)
               AND content_compressed IS NOT NULL
+              AND is_active = 1
             ORDER BY created_at ASC
             """, nativeQuery = true)
     List<CompressedChunkView> findCompressedByDocumentIds(
@@ -47,10 +62,20 @@ public interface DocumentChunkRepository extends JpaRepository<DocumentChunk, UU
             FROM document_chunks
             WHERE workspace_id IN (:workspaceIds)
               AND content_compressed IS NOT NULL
+              AND is_active = 1
             ORDER BY created_at ASC
             """, nativeQuery = true)
     List<CompressedChunkView> findCompressedByWorkspaceIds(
             @Param("workspaceIds") List<UUID> workspaceIds);
 
     void deleteByDocumentId(UUID documentId);
+
+    /**
+     * Moving a document to a new personal workspace must carry its chunks along:
+     * retrieval scopes by workspaceId, so a document left with stale chunk
+     * workspace ids would silently vanish from the new workspace's answers.
+     */
+    @Modifying
+    @Query("UPDATE DocumentChunk c SET c.workspaceId = :workspaceId WHERE c.documentId = :documentId")
+    int updateWorkspaceIdByDocumentId(@Param("documentId") UUID documentId, @Param("workspaceId") UUID workspaceId);
 }

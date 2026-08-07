@@ -115,6 +115,9 @@ public class CourseDocument {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    @Column(name = "content_hash")
+    private String contentHash;
+
     public CourseDocument() { }
 
     public UUID getDocumentId() { return documentId; }
@@ -218,5 +221,8 @@ public class CourseDocument {
 
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+
+    public String getContentHash() { return contentHash; }
+    public void setContentHash(String contentHash) { this.contentHash = contentHash; }
 
 }

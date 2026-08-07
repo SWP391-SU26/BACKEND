@@ -2,7 +2,8 @@ package com.courseqa.controller;
 
 import com.courseqa.model.dto.ApiResponse;
 import com.courseqa.model.dto.DocumentDto;
-import com.courseqa.service.DocumentEmbeddingIndexService;
+import com.courseqa.model.entity.ProcessingJob;
+import com.courseqa.service.DocumentProcessingService;
 import com.courseqa.service.DocumentService;
 import com.courseqa.repository.CourseWorkspaceRepository;
 import com.courseqa.security.JwtPrincipal;
@@ -33,16 +34,16 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 @CrossOrigin
 public class DocumentController {
     private final DocumentService documentService;
-    private final DocumentEmbeddingIndexService documentEmbeddingIndexService;
+    private final DocumentProcessingService documentProcessingService;
     private final CourseWorkspaceRepository courseWorkspaceRepository;
 
     public DocumentController(
             DocumentService documentService,
-            DocumentEmbeddingIndexService documentEmbeddingIndexService,
+            DocumentProcessingService documentProcessingService,
             CourseWorkspaceRepository courseWorkspaceRepository
     ) {
         this.documentService = documentService;
-        this.documentEmbeddingIndexService = documentEmbeddingIndexService;
+        this.documentProcessingService = documentProcessingService;
         this.courseWorkspaceRepository = courseWorkspaceRepository;
     }
 
@@ -60,17 +61,18 @@ public class DocumentController {
         request.chapterId = chapterId;
         request.uploadedBy = principal.userId();
         DocumentDto.DocumentResponse response = documentService.uploadDocument(file, request);
-        documentEmbeddingIndexService.prepareDocument(response.documentId);
+        documentProcessingService.enqueueUpload(response.documentId, principal.userId());
         return ApiResponse.ok(response);
     }
 
     @PostMapping("/personal")
     public ApiResponse<DocumentDto.DocumentResponse> uploadPersonalDocument(
             @RequestParam("file") MultipartFile file,
+            @RequestParam(required = false) UUID workspaceId,
             @AuthenticationPrincipal JwtPrincipal principal
     ) {
-        DocumentDto.DocumentResponse response = documentService.uploadPersonalDocument(file, principal.userId());
-        documentEmbeddingIndexService.prepareDocument(response.documentId);
+        DocumentDto.DocumentResponse response = documentService.uploadPersonalDocument(file, principal.userId(), workspaceId);
+        documentProcessingService.enqueueUpload(response.documentId, principal.userId());
         return ApiResponse.ok(response);
     }
 
@@ -81,10 +83,29 @@ public class DocumentController {
     ) {
         DocumentDto.DocumentResponse response =
                 documentService.requireReindexAccess(documentId, principal.userId());
-        documentEmbeddingIndexService.prepareDocument(documentId);
+        documentProcessingService.enqueueReindex(documentId, principal.userId());
         response.indexingStatus = "EMBEDDING";
         response.indexError = null;
         return ApiResponse.ok(response);
+    }
+
+    @PostMapping("/{documentId}/retry")
+    public ApiResponse<ProcessingJob> retryDocument(
+            @PathVariable UUID documentId,
+            @AuthenticationPrincipal JwtPrincipal principal
+    ) {
+        documentService.requireReindexAccess(documentId, principal.userId());
+        return ApiResponse.ok(documentProcessingService.enqueueRetry(documentId, principal.userId()));
+    }
+
+    @GetMapping("/{documentId}/processing-status")
+    public ApiResponse<DocumentDto.ProcessingStatusResponse> getProcessingStatus(
+            @PathVariable UUID documentId,
+            @AuthenticationPrincipal JwtPrincipal principal
+    ) {
+        documentService.getDocument(documentId, principal.userId());
+        ProcessingJob job = documentProcessingService.getLatestJob(documentId);
+        return ApiResponse.ok(job == null ? null : DocumentDto.ProcessingStatusResponse.fromEntity(job));
     }
 
     @GetMapping("/mine")
@@ -109,6 +130,16 @@ public class DocumentController {
             @AuthenticationPrincipal JwtPrincipal principal
     ) {
         return ApiResponse.ok(documentService.cancelSubmission(documentId, principal.userId()));
+    }
+
+    /** REQ-02 WS-US-03: cross-workspace document transfer without re-uploading. */
+    @PatchMapping("/{documentId}/workspace")
+    public ApiResponse<DocumentDto.DocumentResponse> moveToWorkspace(
+            @PathVariable UUID documentId,
+            @RequestBody DocumentDto.MoveWorkspaceRequest request,
+            @AuthenticationPrincipal JwtPrincipal principal
+    ) {
+        return ApiResponse.ok(documentService.moveToWorkspace(documentId, principal.userId(), request.workspaceId));
     }
 
     @GetMapping("/review-queue")

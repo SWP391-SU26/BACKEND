@@ -67,6 +67,14 @@ public class EvaluationDto {
         public Boolean allowUnverifiedModel;
     }
 
+    public static class CreateReportRequest {
+        public UUID datasetId;
+        public UUID ragExperimentId;
+        public UUID fineTunedExperimentId;
+        public String language;
+        public String title;
+    }
+
     @Data
     @Builder
     @NoArgsConstructor

@@ -39,6 +39,15 @@ public class DocumentPage {
     @Column(name = "extracted_at")
     private LocalDateTime extractedAt;
 
+    @Column(name = "ocr_applied")
+    private Boolean ocrApplied;
+
+    @Column(name = "ocr_confidence")
+    private Double ocrConfidence;
+
+    @Column(name = "heading_path")
+    private String headingPath;
+
     public DocumentPage() { }
 
     public UUID getPageId() { return pageId; }
@@ -70,5 +79,14 @@ public class DocumentPage {
 
     public LocalDateTime getExtractedAt() { return extractedAt; }
     public void setExtractedAt(LocalDateTime extractedAt) { this.extractedAt = extractedAt; }
+
+    public Boolean getOcrApplied() { return ocrApplied; }
+    public void setOcrApplied(Boolean ocrApplied) { this.ocrApplied = ocrApplied; }
+
+    public Double getOcrConfidence() { return ocrConfidence; }
+    public void setOcrConfidence(Double ocrConfidence) { this.ocrConfidence = ocrConfidence; }
+
+    public String getHeadingPath() { return headingPath; }
+    public void setHeadingPath(String headingPath) { this.headingPath = headingPath; }
 
 }

@@ -29,7 +29,9 @@ public class SecurityConfig {
                         .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/forgot-password").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/plans", "/api/payments/vnpay/return", "/api/payments/vnpay/ipn").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/error").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/payments/vnpay/orders").hasRole("STUDENT")
                         .requestMatchers("/api/auth/users/**").hasRole("ADMIN")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/semester-workspaces/**").hasRole("ADMIN")
@@ -41,6 +43,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/api/documents/*").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/documents/review-queue").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PATCH, "/api/documents/*/review").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PATCH, "/api/documents/*/workspace").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/courses/**", "/api/documents/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/courses/**", "/api/documents/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PATCH, "/api/courses/**", "/api/documents/**").hasRole("ADMIN")
@@ -71,7 +74,9 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOriginPatterns(java.util.List.of("http://localhost:*", "http://127.0.0.1:*"));
         config.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(java.util.List.of("Authorization", "Content-Type"));
+        // X-Upload-Offset carries the resumable-upload byte position; without it the
+        // browser preflight rejects every chunk PUT.
+        config.setAllowedHeaders(java.util.List.of("Authorization", "Content-Type", "X-Upload-Offset"));
         config.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);

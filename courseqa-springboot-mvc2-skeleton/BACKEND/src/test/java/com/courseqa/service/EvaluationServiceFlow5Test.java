@@ -231,9 +231,9 @@ class EvaluationServiceFlow5Test {
         String config = ReflectionTestUtils.invokeMethod(service, "withBenchmarkProfile", "{}", 50);
         var parsed = new ObjectMapper().readTree(config).path("benchmarkProfile");
 
-        assertEquals("qwen1.5b-batched-v3", parsed.path("version").asText());
+        assertEquals("qwen1.5b-interleaved-v4", parsed.path("version").asText());
+        assertEquals(1, parsed.path("batchSize").asInt());
         assertEquals(50, parsed.path("questionCount").asInt());
-        assertEquals(4, parsed.path("batchSize").asInt());
         assertEquals(1, parsed.path("repetitions").asInt());
         assertEquals(1024, parsed.path("tokenBudgets").path("SHORT").path("maxInputTokens").asInt());
         assertEquals(160, parsed.path("tokenBudgets").path("STANDARD").path("maxNewTokens").asInt());
